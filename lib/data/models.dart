@@ -111,6 +111,8 @@ class Chat {
   bool left = false;
   /// Groups: who is typing right now.
   String? typingName;
+  /// Groups: icon version we have.
+  int photoVer = 0;
   String? phone;
   /// Real chats only: "online" / "last seen …" from the server.
   String? presence;
@@ -166,6 +168,7 @@ class Chat {
         if (members.isNotEmpty) 'mem': members,
         if (admins.isNotEmpty) 'adm': admins.toList(),
         if (left) 'left': true,
+        if (photoVer > 0) 'pv': photoVer,
         'pinned': pinned,
         'archived': archived,
         'unread': unread,
@@ -195,6 +198,7 @@ class Chat {
     c.members = [for (final x in (j['mem'] as List? ?? [])) x.toString()];
     c.admins = {for (final x in (j['adm'] as List? ?? [])) x.toString()};
     c.left = j['left'] == true;
+    c.photoVer = (j['pv'] as int?) ?? 0;
     c.disappear = (j['dis'] as int?) ?? 0;
     final mute = j['mute'] as int?;
     if (mute != null) c.mutedUntil = DateTime.fromMillisecondsSinceEpoch(mute);

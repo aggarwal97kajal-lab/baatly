@@ -119,7 +119,27 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           color: on ? context.primary.withOpacity(0.15) : Colors.transparent,
                           borderRadius: BorderRadius.circular(15),
                         ),
-                        child: Icon(on ? it.$2 : it.$1, color: col, size: 22),
+                        child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
+                          Icon(on ? it.$2 : it.$1, color: col, size: 22),
+                          if (i == 0)
+                            ListenableBuilder(
+                              listenable: AppState.instance,
+                              builder: (context, _) {
+                                final n = AppState.instance.chats.where((c) => c.unread > 0 && !c.archived).length;
+                                if (n == 0) return const SizedBox.shrink();
+                                return Positioned(
+                                  top: -4,
+                                  right: on ? 6 : -8,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    constraints: const BoxConstraints(minWidth: 18),
+                                    decoration: BoxDecoration(color: context.primary, borderRadius: BorderRadius.circular(9)),
+                                    child: Text('$n', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700)),
+                                  ),
+                                );
+                              },
+                            ),
+                        ]),
                       ),
                       const SizedBox(height: 3),
                       Text(it.$3, style: TextStyle(fontSize: 10.5, color: col, fontWeight: on ? FontWeight.w700 : FontWeight.w500)),

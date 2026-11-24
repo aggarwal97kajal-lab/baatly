@@ -917,6 +917,8 @@ class Messenger {
     }
     chat.members = members;
     chat.admins = admins;
+    final pv = (g['photo_ver'] as int?) ?? 0;
+    if (pv > 0 && pv != chat.photoVer) unawaited(_syncGroupPhoto(chat, pv));
     chat.left = _uid != null && !members.contains(_uid);
     chat.about = memberLine(chat);
     return chat;
@@ -1030,6 +1032,32 @@ class Messenger {
     final d = await Api.instance.request('PATCH', '/v1/groups/${chat.groupId}', {'name': name});
     _upsertGroup((d['group'] as Map).cast<String, dynamic>());
     _s.changed();
+  }
+
+  Future<void> setGroupPhoto(Chat chat, String path) async {
+    final bytes = await File(path).readAsBytes();
+    await Api.instance.request('PUT', '/v1/groups/${chat.groupId}/photo', {'photo': base64Encode(bytes)});
+    await _syncGroupPhoto(chat, -1);
+  }
+
+  Future<void> _syncGroupPhoto(Chat chat, int ver) async {
+    try {
+      final d = await Api.instance.request('GET', '/v1/groups/${chat.groupId}/photo');
+      final v = (d['ver'] as int?) ?? 1;
+      final dir = Directory('${(await getApplicationDocumentsDirectory()).path}/photos');
+      await dir.create(recursive: true);
+      final f = File('${dir.path}/g_${chat.groupId}_$v.jpg');
+      await f.writeAsBytes(base64Decode(d['photo'] as String), flush: true);
+      final old = chat.photo;
+      chat.photo = f.path;
+      chat.photoVer = v;
+      _s.changed();
+      if (old != null && old != f.path) {
+        try {
+          await File(old).delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   Future<void> leaveGroup(Chat chat) async {

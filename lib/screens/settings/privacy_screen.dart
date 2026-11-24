@@ -79,6 +79,13 @@ class PrivacyScreen extends StatelessWidget {
               value: s.readReceipts,
               onChanged: (v) => s.toggle(() => s.readReceipts = v),
             ),
+            SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              title: Text('App lock', style: TextStyle(fontSize: 16, color: bc.text)),
+              subtitle: Text('Ask for fingerprint or screen lock when opening BAATLY', style: TextStyle(color: bc.muted)),
+              value: s.appLock,
+              onChanged: (v) => s.toggle(() => s.appLock = v),
+            ),
             const Divider(height: 24),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),

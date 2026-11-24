@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../data/api.dart';
 import '../../data/app_state.dart';
@@ -118,7 +120,35 @@ class GroupInfoScreen extends StatelessWidget {
           appBar: AppBar(title: const Text('Group info')),
           body: ListView(children: [
             const SizedBox(height: 12),
-            Center(child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 96)),
+            Center(
+              child: GestureDetector(
+                onTap: chat.left
+                    ? null
+                    : () async {
+                        final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600);
+                        if (f == null) return;
+                        final c = await ImageCropper().cropImage(
+                          sourcePath: f.path,
+                          aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+                          maxWidth: 1080,
+                          maxHeight: 1080,
+                          compressQuality: 85,
+                          uiSettings: [AndroidUiSettings(toolbarTitle: 'Group icon', lockAspectRatio: true, cropStyle: CropStyle.circle, hideBottomControls: true)],
+                        );
+                        if (c == null) return;
+                        await run(() => ms.setGroupPhoto(chat, c.path));
+                      },
+                child: Stack(clipBehavior: Clip.none, children: [
+                  Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 96),
+                  if (!chat.left)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: CircleAvatar(radius: 16, backgroundColor: context.primary, child: const Icon(Icons.photo_camera_rounded, size: 16, color: Colors.white)),
+                    ),
+                ]),
+              ),
+            ),
             const SizedBox(height: 12),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Flexible(child: Text(chat.name, textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: bc.text))),
