@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "69592152328",
+    "project_id": "baatly-6ae7f",
+    "storage_bucket": "baatly-6ae7f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:69592152328:android:56eaed79b005fb4462d4bd",
+        "android_client_info": {
+          "package_name": "app.baatly.baatly"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyABzXr53Gp8-4171bRpJrdUh-F10n5w8TQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
