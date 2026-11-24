@@ -91,10 +91,11 @@ class _OtpScreenState extends State<OtpScreen> {
       }
       final r = await Api.instance.verifyOtp(_req!.requestId, _ctrl.text);
       s.phone = r.user.phone;
-      s.setPasskey(r.hasPasskey);
+      final fp = Api.instance.hasFingerprint;
+      s.setPasskey(fp);
       if (r.user.name.isEmpty || r.user.username == null) {
-        _go(ProfileSetupScreen(offerPasskey: !r.hasPasskey));
-      } else if (!r.hasPasskey) {
+        _go(ProfileSetupScreen(offerPasskey: !fp));
+      } else if (!fp) {
         s.finishOnboarding(name: r.user.name, username: r.user.username!, about: r.user.about);
         _go(const PasskeySetupScreen());
       } else {

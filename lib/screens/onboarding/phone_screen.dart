@@ -93,7 +93,7 @@ class _PhoneScreenState extends State<PhoneScreen> {
   Future<void> _passkey() async {
     setState(() => _passkeyBusy = true);
     try {
-      final r = await Api.instance.loginWithPasskey(countryCode: _code, number: _ctrl.text);
+      final r = await Api.instance.loginWithFingerprint();
       if (!mounted) return;
       final s = AppState.instance;
       s.phone = r.user.phone;
@@ -184,7 +184,7 @@ class _PhoneScreenState extends State<PhoneScreen> {
                     : const Text('Continue'),
               ),
             ),
-            if (kHasBackend) ...[
+            if (kHasBackend && Api.instance.hasFingerprint) ...[
               const SizedBox(height: 22),
               Row(children: [
                 Expanded(child: Divider(color: bc.line)),
@@ -203,7 +203,7 @@ class _PhoneScreenState extends State<PhoneScreen> {
                 icon: _passkeyBusy
                     ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.primary))
                     : const Icon(Icons.fingerprint_rounded),
-                label: const Text('Log in with passkey', style: TextStyle(fontWeight: FontWeight.w700)),
+                label: const Text('Log in with fingerprint', style: TextStyle(fontWeight: FontWeight.w700)),
               ),
             ],
           ],

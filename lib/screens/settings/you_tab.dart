@@ -45,11 +45,11 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone),
                 _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => _privacy(context)),
-                _row(context, Icons.fingerprint_rounded, 'Passkey',
-                    trailing: !kHasBackend ? 'Not in demo' : (s.hasPasskey ? 'Created ✓' : 'Create'),
+                _row(context, Icons.fingerprint_rounded, 'Fingerprint login',
+                    trailing: !kHasBackend ? 'Not in demo' : (Api.instance.hasFingerprint ? 'On ✓' : 'Turn on'),
                     onTap: !kHasBackend
                         ? null
-                        : s.hasPasskey
+                        : Api.instance.hasFingerprint
                             ? () => _passkeyInfo(context)
                             : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PasskeySetupScreen(next: const _PopBack())))),
                 _row(context, Icons.shield_outlined, 'Security'),
@@ -173,10 +173,10 @@ class YouTab extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.verified_user_rounded, size: 56, color: Color(0xFF3E7C5A)),
             const SizedBox(height: 12),
-            const Text('Passkey created', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            const Text('Fingerprint login is on', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Text(
-              'Your BAATLY passkey is saved on this phone. Next time, enter your number and tap "Log in with passkey" — no OTP needed.',
+              'Next time you open BAATLY after logging out, tap "Log in with fingerprint" — no OTP needed. It works only on this phone.',
               textAlign: TextAlign.center,
               style: TextStyle(color: sheet.bc.muted, height: 1.4),
             ),
@@ -187,17 +187,17 @@ class YouTab extends StatelessWidget {
               onPressed: () async {
                 Navigator.pop(sheet);
                 try {
-                  await Api.instance.resetPasskeys();
+                  await Api.instance.disableFingerprint();
                   AppState.instance.setPasskey(false);
                   if (!context.mounted) return;
-                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PasskeySetupScreen(next: _PopBack())));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fingerprint login turned off')));
                 } on ApiException catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
                   }
                 }
               },
-              child: const Text("Passkey not working? Reset and create again", style: TextStyle(color: Color(0xFFB3261E))),
+              child: const Text("Turn off fingerprint login", style: TextStyle(color: Color(0xFFB3261E))),
             ),
           ]),
         ),

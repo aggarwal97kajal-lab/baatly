@@ -254,6 +254,61 @@ async function passkeyLoginVerify(c: Ctx) {
   return json({ token, isNew: false, hasPasskey: true, user: publicUser(user) });
 }
 
+// --------------------------------------------------------------- fingerprint (device key) login
+async function deviceKeyRegister(c: Ctx) {
+  const { user } = await requireUser(c);
+  const b = await readJson<{ publicKey: string; device?: string }>(c.req);
+  let raw: Uint8Array;
+  try {
+    raw = fromB64url(String(b.publicKey ?? ''));
+  } catch {
+    throw new HttpError(400, 'INVALID_KEY');
+  }
+  if (raw.length !== 32) throw new HttpError(400, 'INVALID_KEY');
+  const id = randomId();
+  await c.env.DB.prepare('INSERT INTO device_keys (id, user_id, public_key, device, created_at) VALUES (?,?,?,?,?)')
+    .bind(id, user.id, b64url(raw), (b.device ?? '').slice(0, 80), now())
+    .run();
+  return json({ keyId: id });
+}
+
+async function deviceKeyChallenge(c: Ctx) {
+  const b = await readJson<{ keyId: string }>(c.req);
+  const k = await c.env.DB.prepare('SELECT id FROM device_keys WHERE id = ?').bind(String(b.keyId ?? '')).first();
+  if (!k) throw new HttpError(404, 'DEVICE_KEY_NOT_FOUND', 'Fingerprint login is not set up for this phone anymore. Log in with OTP.');
+  const challenge = randomId(32);
+  const flowId = await saveChallenge(c.env, 'login', challenge, `dk:${b.keyId}`);
+  return json({ flowId, challenge });
+}
+
+async function deviceKeyVerify(c: Ctx) {
+  const b = await readJson<{ flowId: string; keyId: string; signature: string; device?: string }>(c.req);
+  const ch = await takeChallenge(c.env, String(b.flowId ?? ''), 'login');
+  if (ch.user_id !== `dk:${b.keyId}`) throw new HttpError(400, 'CHALLENGE_MISMATCH');
+  const k = await c.env.DB.prepare('SELECT * FROM device_keys WHERE id = ?')
+    .bind(b.keyId)
+    .first<{ id: string; user_id: string; public_key: string }>();
+  if (!k) throw new HttpError(404, 'DEVICE_KEY_NOT_FOUND', 'Fingerprint login is not set up for this phone anymore. Log in with OTP.');
+  let ok = false;
+  try {
+    const key = await crypto.subtle.importKey('raw', fromB64url(k.public_key), { name: 'Ed25519' }, false, ['verify']);
+    ok = await crypto.subtle.verify({ name: 'Ed25519' }, key, fromB64url(String(b.signature ?? '')), new TextEncoder().encode(ch.challenge));
+  } catch {
+    ok = false;
+  }
+  if (!ok) throw new HttpError(401, 'BAD_SIGNATURE', 'Fingerprint login failed. Log in with OTP.');
+  await c.env.DB.prepare('UPDATE device_keys SET last_used_at = ? WHERE id = ?').bind(now(), k.id).run();
+  const user = (await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(k.user_id).first<User>())!;
+  const token = await createSession(c.env, user.id, 'passkey', b.device ?? '');
+  return json({ token, isNew: false, hasPasskey: true, user: publicUser(user) });
+}
+
+async function deviceKeyDelete(c: Ctx, id: string) {
+  const { user } = await requireUser(c);
+  await c.env.DB.prepare('DELETE FROM device_keys WHERE id = ? AND user_id = ?').bind(id, user.id).run();
+  return json({ ok: true });
+}
+
 // --------------------------------------------------------------- profile & devices
 async function me(c: Ctx) {
   const { user } = await requireUser(c);
@@ -317,6 +372,7 @@ async function deleteAccount(c: Ctx) {
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?').bind(user.id),
+    c.env.DB.prepare('DELETE FROM device_keys WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM challenges WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
   ]);
@@ -355,6 +411,11 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'GET' && p === '/v1/username/available') return usernameAvailable(c);
   if (m === 'GET' && p === '/v1/me/sessions') return listSessions(c);
   if (m === 'DELETE' && p === '/v1/me/passkeys') return resetPasskeys(c);
+  if (m === 'POST' && p === '/v1/auth/device/register') return deviceKeyRegister(c);
+  if (m === 'POST' && p === '/v1/auth/device/challenge') return deviceKeyChallenge(c);
+  if (m === 'POST' && p === '/v1/auth/device/verify') return deviceKeyVerify(c);
+  const dk = p.match(/^\/v1\/me\/device-keys\/([\w-]+)$/);
+  if (m === 'DELETE' && dk) return deviceKeyDelete(c, dk[1]);
   const s = p.match(/^\/v1\/me\/sessions\/([\w-]+)$/);
   if (m === 'DELETE' && s) return revokeSession(c, s[1]);
   throw new HttpError(404, 'NOT_FOUND');

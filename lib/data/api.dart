@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import 'package:cryptography/cryptography.dart' as crypto;
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
@@ -54,13 +57,22 @@ class Api {
   String? _token;
   final _auth = PasskeyAuthenticator();
 
+  static const _dkIdKey = 'device_key_id';
+  static const _dkSeedKey = 'device_key_seed';
+  String? _deviceKeyId;
+  final _localAuth = LocalAuthentication();
+
   Future<void> load() async {
     try {
       _token = await _storage.read(key: _tokenKey);
+      _deviceKeyId = await _storage.read(key: _dkIdKey);
     } catch (_) {
       _token = null;
     }
   }
+
+  /// True when fingerprint login is set up on this phone.
+  bool get hasFingerprint => _deviceKeyId != null;
 
   bool get loggedIn => _token != null;
 
@@ -159,7 +171,92 @@ class Api {
   Future<void> deleteAccount() async {
     await _call('DELETE', '/v1/me');
     await _setToken(null);
+    await _clearDeviceKey();
   }
+
+  // ------------------------------------------------------------ fingerprint (device key)
+  // A private key is created on this phone and stays in Android Keystore-backed
+  // storage. The server only keeps the public key. Logging in = fingerprint /
+  // screen lock check, then signing a one-time challenge from the server.
+
+  Future<void> _askFingerprint(String reason) async {
+    bool ok;
+    try {
+      if (!await _localAuth.isDeviceSupported()) {
+        throw ApiException(-1, 'NO_LOCK', 'Set a fingerprint or screen lock on this phone first (phone Settings → Security).');
+      }
+      ok = await _localAuth.authenticate(
+        localizedReason: reason,
+        options: const AuthenticationOptions(biometricOnly: false, stickyAuth: true),
+      );
+    } on PlatformException catch (e) {
+      throw ApiException(-1, 'FINGERPRINT', "Fingerprint didn't work. [${e.code}] ${e.message ?? ''}".trim());
+    }
+    if (!ok) throw ApiException(-1, 'CANCELLED', 'Cancelled');
+  }
+
+  /// Turns on fingerprint login for the logged-in user on this phone.
+  Future<void> enableFingerprint() async {
+    await _askFingerprint('Confirm to turn on fingerprint login');
+    final algo = crypto.Ed25519();
+    final kp = await algo.newKeyPair();
+    final seed = await kp.extractPrivateKeyBytes();
+    final pub = (await kp.extractPublicKey()).bytes;
+    final d = await _call('POST', '/v1/auth/device/register', {'publicKey': _b64url(pub), 'device': _device});
+    final id = d['keyId'] as String;
+    await _storage.write(key: _dkSeedKey, value: base64Encode(seed));
+    await _storage.write(key: _dkIdKey, value: id);
+    _deviceKeyId = id;
+  }
+
+  /// Logs in with the key saved on this phone after a fingerprint check.
+  Future<AuthResult> loginWithFingerprint() async {
+    final id = _deviceKeyId;
+    final seedB64 = await _storage.read(key: _dkSeedKey);
+    if (id == null || seedB64 == null) {
+      await _clearDeviceKey();
+      throw ApiException(-1, 'NO_KEY', 'Fingerprint login is not set up on this phone. Log in with OTP.');
+    }
+    await _askFingerprint('Confirm it\'s you to log in to BAATLY');
+    final Map<String, dynamic> ch;
+    try {
+      ch = await _call('POST', '/v1/auth/device/challenge', {'keyId': id});
+    } on ApiException catch (e) {
+      if (e.code == 'DEVICE_KEY_NOT_FOUND') await _clearDeviceKey();
+      rethrow;
+    }
+    final kp = await crypto.Ed25519().newKeyPairFromSeed(base64Decode(seedB64));
+    final sig = await crypto.Ed25519().sign(utf8.encode(ch['challenge'] as String), keyPair: kp);
+    try {
+      final d = await _call('POST', '/v1/auth/device/verify',
+          {'flowId': ch['flowId'], 'keyId': id, 'signature': _b64url(sig.bytes), 'device': _device});
+      return _session(d);
+    } on ApiException catch (e) {
+      if (e.code == 'DEVICE_KEY_NOT_FOUND' || e.code == 'BAD_SIGNATURE') await _clearDeviceKey();
+      rethrow;
+    }
+  }
+
+  /// Turns fingerprint login off for this phone.
+  Future<void> disableFingerprint() async {
+    final id = _deviceKeyId;
+    if (id != null && _token != null) {
+      try {
+        await _call('DELETE', '/v1/me/device-keys/$id');
+      } catch (_) {}
+    }
+    await _clearDeviceKey();
+  }
+
+  Future<void> _clearDeviceKey() async {
+    _deviceKeyId = null;
+    try {
+      await _storage.delete(key: _dkIdKey);
+      await _storage.delete(key: _dkSeedKey);
+    } catch (_) {}
+  }
+
+  static String _b64url(List<int> b) => base64Url.encode(b).replaceAll('=', '');
 
   // ------------------------------------------------------------ passkeys
   /// Creates a passkey for the logged-in user (fingerprint / screen lock).
