@@ -15,9 +15,9 @@ class _IntroScreenState extends State<IntroScreen> {
   int _page = 0;
 
   static const _pages = [
-    (Icons.forum_rounded, 'Har baat, turant.', 'Messages, photos and voice notes —\neven on a weak network.'),
+    (Icons.forum_rounded, 'Instant conversations.', 'Messages, photos and voice notes —\neven on a weak network.'),
     (Icons.lock_rounded, 'Your conversations stay yours.', 'Personal chats will be end-to-end\nencrypted. (Encryption arrives in an\nupcoming milestone.)'),
-    (Icons.videocam_rounded, 'Aamne-saamne baat.', 'Audio and video calls — one-to-one\nor with the whole family.'),
+    (Icons.videocam_rounded, 'Talk face to face.', 'Audio and video calls — one-to-one\nor with the whole family.'),
   ];
 
   void _next() {

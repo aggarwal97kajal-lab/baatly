@@ -110,6 +110,9 @@ class Api {
       'OTP_EXPIRED' => 'Code expired. Request a new one.',
       'USERNAME_TAKEN' => 'This username is already taken',
       'OTP_NOT_CONFIGURED' => 'OTP service is not set up yet',
+      'OTP_PROVIDER_AUTH_FAILED' || 'OTP_SEND_FAILED' || 'OTP_CHECK_FAILED' =>
+        "We couldn't send the SMS right now. Please try again in a few minutes. ($code)",
+      'SERVER_ERROR' => 'Something went wrong on our side. Please try again. ($code)',
       _ => 'Something went wrong. Please try again.',
     };
   }
