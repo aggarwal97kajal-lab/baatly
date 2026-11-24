@@ -22,6 +22,15 @@ export async function push(env: Env, to: string, event: unknown): Promise<number
   }
 }
 
+/** Tell people who have this user saved that their photo/name/about changed. */
+export async function profileChanged(env: Env, userId: string) {
+  const r = await env.DB.prepare('SELECT user_id FROM user_contacts WHERE contact_id = ? LIMIT 1000').bind(userId).all<{ user_id: string }>();
+  const ids = r.results.map((x) => x.user_id);
+  for (let i = 0; i < ids.length; i += 20) {
+    await Promise.all(ids.slice(i, i + 20).map((id) => push(env, id, { type: 'profile', user: userId })));
+  }
+}
+
 /** Store an event for `to` and push it live if they are connected. */
 async function deliver(env: Env, to: string, event: Record<string, unknown>) {
   const id = randomId();
@@ -119,14 +128,28 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
   if (m === 'PUT' && p === '/v1/me/photo') {
     const b = await readJson<{ photo: string }>(c.req);
     const photo = String(b.photo ?? '');
-    if (photo.length < 100 || photo.length > 700_000) throw new HttpError(413, 'PHOTO_TOO_LARGE', 'This photo is too large.');
+    if (photo.length < 100 || photo.length > 1_200_000) throw new HttpError(413, 'PHOTO_TOO_LARGE', 'This photo is too large.');
     await env.DB.prepare('UPDATE users SET photo = ?, photo_ver = photo_ver + 1 WHERE id = ?').bind(photo, me.id).run();
     const r = await env.DB.prepare('SELECT photo_ver FROM users WHERE id = ?').bind(me.id).first<{ photo_ver: number }>();
+    await profileChanged(env, me.id);
     return json({ ver: r?.photo_ver ?? 1 });
   }
 
   if (m === 'DELETE' && p === '/v1/me/photo') {
     await env.DB.prepare('UPDATE users SET photo = NULL, photo_ver = 0 WHERE id = ?').bind(me.id).run();
+    await profileChanged(env, me.id);
+    return json({ ok: true });
+  }
+
+  if (m === 'PUT' && p === '/v1/mutes') {
+    const b = await readJson<{ peer: string; until: number | null }>(c.req);
+    const peer = String(b.peer ?? '');
+    if (!peer) throw new HttpError(400, 'BAD_PEER');
+    if (b.until && Number(b.until) > now()) {
+      await env.DB.prepare('INSERT OR REPLACE INTO mutes (user_id, peer_id, until) VALUES (?,?,?)').bind(me.id, peer, Number(b.until)).run();
+    } else {
+      await env.DB.prepare('DELETE FROM mutes WHERE user_id = ? AND peer_id = ?').bind(me.id, peer).run();
+    }
     return json({ ok: true });
   }
 

@@ -58,6 +58,10 @@ async function accessToken(a: ServiceAccount): Promise<string> {
 export async function notify(env: Env, userId: string, title: string, body: string, data: Record<string, string>) {
   const a = sa(env);
   if (!a) return;
+  if (data.chat) {
+    const muted = await env.DB.prepare('SELECT 1 FROM mutes WHERE user_id = ? AND peer_id = ? AND until > ?').bind(userId, data.chat, Date.now()).first();
+    if (muted) return;
+  }
   const rows = await env.DB.prepare('SELECT token FROM push_tokens WHERE user_id = ?').bind(userId).all<{ token: string }>();
   if (!rows.results.length) return;
   const at = await accessToken(a);

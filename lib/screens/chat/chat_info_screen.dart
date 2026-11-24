@@ -5,6 +5,8 @@ import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/chat_dialogs.dart';
 import '../../widgets/common.dart';
+import '../../widgets/photo_viewer.dart';
+import 'starred_screen.dart';
 import '../settings/wallpaper_screen.dart';
 
 class ChatInfoScreen extends StatelessWidget {
@@ -39,7 +41,12 @@ class ChatInfoScreen extends StatelessWidget {
         body: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           children: [
-            Center(child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 104))),
+            Center(
+              child: GestureDetector(
+                onTap: () => PhotoViewerScreen.open(context, chat.photo, chat.name),
+                child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 104)),
+              ),
+            ),
             const SizedBox(height: 12),
             Text(chat.name, textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: bc.text)),
             Text(chat.isGroup ? 'Group · ${chat.about}' : chat.about,
@@ -52,6 +59,12 @@ class ChatInfoScreen extends StatelessWidget {
             ]),
             const SizedBox(height: 14),
             _Card(children: [
+              ListTile(
+                leading: Icon(Icons.star_outline_rounded, color: context.primary),
+                title: const Text('Starred messages'),
+                trailing: Text('${chat.messages.where((m) => m.starred).length}', style: TextStyle(color: bc.muted)),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StarredScreen(only: chat))),
+              ),
               ListTile(
                 leading: Icon(Icons.notifications_off_outlined, color: context.primary),
                 title: const Text('Mute notifications'),

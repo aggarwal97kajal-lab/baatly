@@ -74,9 +74,9 @@ Future<void> changeProfilePhoto(BuildContext context) async {
     cropped = await ImageCropper().cropImage(
       sourcePath: file.path,
       aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      maxWidth: 640,
-      maxHeight: 640,
-      compressQuality: 78,
+      maxWidth: 1080,
+      maxHeight: 1080,
+      compressQuality: 85,
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: 'Move and scale',

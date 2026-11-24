@@ -9,6 +9,7 @@ import '../onboarding/passkey_setup_screen.dart';
 import '../onboarding/splash_screen.dart';
 import 'appearance_screen.dart';
 import 'privacy_screen.dart';
+import '../chat/starred_screen.dart';
 import 'profile_photo.dart';
 import 'wallpaper_screen.dart';
 
@@ -62,6 +63,8 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone),
                 _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrivacyScreen()))),
+                _row(context, Icons.star_outline_rounded, 'Starred messages',
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StarredScreen()))),
                 _row(context, Icons.fingerprint_rounded, 'Fingerprint login',
                     trailing: !kHasBackend ? 'Not in demo' : (Api.instance.hasFingerprint ? 'On ✓' : 'Turn on'),
                     onTap: !kHasBackend
@@ -138,12 +141,21 @@ class YouTab extends StatelessWidget {
           TextField(controller: about, maxLength: 140, decoration: const InputDecoration(labelText: 'About')),
           const SizedBox(height: 10),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
+              final n = name.text.trim().isNotEmpty ? name.text.trim() : s.name;
+              if (kHasBackend && Api.instance.loggedIn && s.username.isNotEmpty) {
+                try {
+                  await Api.instance.updateProfile(name: n, username: s.username, about: about.text.trim());
+                } on ApiException catch (e) {
+                  if (sheet.mounted) ScaffoldMessenger.of(sheet).showSnackBar(SnackBar(content: Text(e.message)));
+                  return;
+                }
+              }
               s.toggle(() {
-                if (name.text.trim().isNotEmpty) s.name = name.text.trim();
+                s.name = n;
                 s.about = about.text.trim();
               });
-              Navigator.pop(sheet);
+              if (sheet.mounted) Navigator.pop(sheet);
             },
             child: const Text('Save'),
           ),

@@ -91,6 +91,14 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
           ListTile(
+            leading: Icon(m.starred ? Icons.star_rounded : Icons.star_outline_rounded),
+            title: Text(m.starred ? 'Unstar' : 'Star'),
+            onTap: () {
+              AppState.instance.toggleStar(m);
+              Navigator.pop(sheet);
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.copy_rounded),
             title: const Text('Copy'),
             onTap: () {
@@ -312,6 +320,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         content,
         const SizedBox(height: 3),
         Row(mainAxisSize: MainAxisSize.min, children: [
+          if (m.starred) ...[Icon(Icons.star_rounded, size: 12, color: fg.withOpacity(0.7)), const SizedBox(width: 3)],
+          if (m.expiresAt != null) ...[Icon(Icons.timer_outlined, size: 11, color: fg.withOpacity(0.7)), const SizedBox(width: 3)],
           Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: fg.withOpacity(0.7))),
           if (me) ...[const SizedBox(width: 4), Ticks(status: m.status, color: Colors.white, readColor: kReadBlueOnBubble)],
         ]),

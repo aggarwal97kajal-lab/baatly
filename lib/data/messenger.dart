@@ -325,6 +325,9 @@ class Messenger {
       case 'presence':
         _onPresence(ev);
         ok = false;
+      case 'profile':
+        unawaited(_onProfile(ev['user'] as String));
+        ok = false;
       case 'status':
         StatusService.instance.refreshSoon();
         ok = false;
@@ -379,6 +382,14 @@ class Messenger {
           await File(old).delete();
         } catch (_) {}
       }
+    } catch (_) {}
+  }
+
+  /// Loads a user's profile (photo etc.) if we don't know them yet.
+  Future<void> ensurePeer(String id) async {
+    if (_peers.containsKey(id)) return;
+    try {
+      await _peer(id);
     } catch (_) {}
   }
 
@@ -506,6 +517,29 @@ class Messenger {
       }
     }
     _s.changed();
+  }
+
+  /// A contact changed photo/name/about: fetch it now so it shows instantly.
+  Future<void> _onProfile(String user) async {
+    if (!_peers.containsKey(user) && !_s.chats.any((c) => c.peerId == user)) {
+      StatusService.instance.refreshSoon();
+      return;
+    }
+    try {
+      final p = await _peer(user, refresh: true);
+      for (final c in _s.chats) {
+        if (c.peerId == user) c.about = p.about;
+      }
+      _s.changed();
+    } catch (_) {}
+  }
+
+  /// Muted chats: the server must know, so it doesn't send notifications.
+  void syncMute(Chat c) {
+    final until = c.mutedUntil;
+    unawaited(Api.instance
+        .request('PUT', '/v1/mutes', {'peer': c.peerId, 'until': until == null ? null : (until.year >= 9999 ? DateTime(9999).millisecondsSinceEpoch : until.millisecondsSinceEpoch)})
+        .then((_) {}, onError: (_) {}));
   }
 
   void _onPresence(Map<String, dynamic> ev) {

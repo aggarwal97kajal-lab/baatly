@@ -15,6 +15,7 @@ class Message {
   bool readSent;
   /// Disappearing messages: deleted from this phone after this time.
   DateTime? expiresAt;
+  bool starred;
 
   Message({
     required this.id,
@@ -27,6 +28,7 @@ class Message {
     this.reaction,
     this.readSent = false,
     this.expiresAt,
+    this.starred = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -38,6 +40,7 @@ class Message {
         if (reaction != null) 'r': reaction,
         if (readSent) 'rs': true,
         if (expiresAt != null) 'x': expiresAt!.millisecondsSinceEpoch,
+        if (starred) 'st': true,
       };
 
   factory Message.fromJson(Map<String, dynamic> j) => Message(
@@ -49,6 +52,7 @@ class Message {
         reaction: j['r'] as String?,
         readSent: j['rs'] == true,
         expiresAt: j['x'] is int ? DateTime.fromMillisecondsSinceEpoch(j['x'] as int) : null,
+        starred: j['st'] == true,
       );
 }
 

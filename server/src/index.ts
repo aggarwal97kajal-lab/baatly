@@ -21,7 +21,7 @@ import {
   readJson,
   sha256Hex,
 } from './util';
-import { chatRoute } from './chat';
+import { chatRoute, profileChanged } from './chat';
 import { pushConfigured } from './fcm';
 import { deleteUserStatuses, expireStatuses, statusRoute } from './status';
 
@@ -334,6 +334,7 @@ async function updateMe(c: Ctx) {
   await c.env.DB.prepare('UPDATE users SET name = ?, username = ?, about = ?, updated_at = ? WHERE id = ?')
     .bind(name, username, about, now(), user.id)
     .run();
+  await profileChanged(c.env, user.id);
   return json({ user: publicUser({ ...user, name, username, about }) });
 }
 
@@ -433,7 +434,7 @@ async function route(c: Ctx): Promise<Response> {
     const r = await statusRoute(c, user, m, p);
     if (r) return r;
   }
-  if (/^\/v1\/(keys|contacts|users|messages|receipts|typing|inbox|ws|push)(\/|$)/.test(p) || /^\/v1\/me\/(photo|privacy)$/.test(p)) {
+  if (/^\/v1\/(keys|contacts|users|messages|receipts|typing|inbox|ws|push)(\/|$)/.test(p) || /^\/v1\/(me\/(photo|privacy)|mutes)$/.test(p)) {
     const { user, sessionId } = await requireUser(c);
     const r = await chatRoute(c, user, m, p, sessionId);
     if (r) return r;

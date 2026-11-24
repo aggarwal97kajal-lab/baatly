@@ -186,6 +186,9 @@ class StatusService {
       });
       items.sort((a, b) => b.slides.last.at.compareTo(a.slides.last.at));
       _s.useRealStatuses(items, [...myList, ...keep]);
+      for (final owner in byOwner.keys) {
+        unawaited(Messenger.instance.ensurePeer(owner));
+      }
       lastError = null;
     } on ApiException catch (e) {
       lastError = e.message;

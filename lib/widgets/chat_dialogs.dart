@@ -9,6 +9,7 @@ import '../screens/chat/chat_screen.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'common.dart';
+import 'photo_viewer.dart';
 
 String muteLabel(Chat c) {
   if (!c.muted) return 'Off';
@@ -85,7 +86,13 @@ void showProfilePeek(BuildContext context, Chat chat) {
           aspectRatio: 1,
           child: Stack(fit: StackFit.expand, children: [
             if (chat.photo != null)
-              Image.file(File(chat.photo!), fit: BoxFit.cover)
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  PhotoViewerScreen.open(context, chat.photo, chat.name);
+                },
+                child: Image.file(File(chat.photo!), fit: BoxFit.cover, filterQuality: FilterQuality.high),
+              )
             else
               Container(
                 color: c,

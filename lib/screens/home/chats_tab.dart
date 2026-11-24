@@ -215,6 +215,7 @@ class _ChatRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
         child: Row(children: [
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () => showProfilePeek(context, chat),
             child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 52, online: chat.online)),
           ),

@@ -14,6 +14,7 @@ import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
 import 'status_privacy_screen.dart';
 import '../../data/status_service.dart';
+import '../../data/messenger.dart';
 
 class StatusTab extends StatelessWidget {
   const StatusTab({super.key});
@@ -25,8 +26,10 @@ class StatusTab extends StatelessWidget {
     return ListenableBuilder(
       listenable: s,
       builder: (context, _) {
-        final fresh = s.statuses.where((x) => !x.seen).toList();
-        final seen = s.statuses.where((x) => x.seen).toList();
+        bool hidden(StatusItem x) => x.ownerId != null && s.hiddenStatus.contains(x.ownerId);
+        final fresh = s.statuses.where((x) => !x.seen && !hidden(x)).toList();
+        final seen = s.statuses.where((x) => x.seen && !hidden(x)).toList();
+        final hiddenList = s.statuses.where(hidden).toList();
         final myName = s.name.isEmpty ? 'You' : s.name;
         return Scaffold(
           backgroundColor: bc.bg,
@@ -79,9 +82,7 @@ class StatusTab extends StatelessWidget {
                       _Ring(
                         segments: math.max(1, s.myStatuses.length),
                         active: s.myStatuses.isNotEmpty,
-                        child: s.myStatuses.isEmpty
-                            ? Avatar(initials: myName[0].toUpperCase(), colorIndex: 2, size: 44, photo: s.myPhoto)
-                            : StatusThumb(slide: s.myStatuses.last, size: 44),
+                        child: Avatar(initials: myName[0].toUpperCase(), colorIndex: 2, size: 44, photo: s.myPhoto),
                       ),
                       if (s.myStatuses.isEmpty)
                         Positioned(
@@ -124,7 +125,10 @@ class StatusTab extends StatelessWidget {
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 14),
-                    children: [for (final st in fresh) _StoryCard(item: st)],
+                    children: [
+                      for (final st in fresh) _StoryCard(item: st),
+                      if (hiddenList.isNotEmpty) _HiddenCard(count: hiddenList.length, onTap: () => _showHidden(context, hiddenList)),
+                    ],
                   ),
                 ),
               ],
@@ -133,11 +137,21 @@ class StatusTab extends StatelessWidget {
                 for (final st in seen)
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                    leading: _Ring(segments: st.slides.length, active: false, child: Avatar(initials: st.initials, colorIndex: st.colorIndex, size: 44)),
+                    leading: _Ring(segments: st.slides.length, active: false, child: Avatar(initials: st.initials, colorIndex: st.colorIndex, size: 44, photo: ownerPhoto(st))),
                     title: Text(st.name, style: const TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text(st.when),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StatusViewer(item: st))),
+                    onLongPress: () => askHideStatus(context, st),
                   ),
+              ],
+              if (fresh.isEmpty && hiddenList.isNotEmpty) ...[
+                const SectionLabel('Hidden updates'),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                  leading: CircleAvatar(radius: 26, backgroundColor: bc.raised, child: Icon(Icons.visibility_off_outlined, color: bc.muted)),
+                  title: Text('${hiddenList.length} hidden', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  onTap: () => _showHidden(context, hiddenList),
+                ),
               ],
               const SizedBox(height: 90),
             ]),
@@ -149,6 +163,88 @@ class StatusTab extends StatelessWidget {
   }
 }
 
+String? ownerPhoto(StatusItem it) => it.ownerId == null ? null : Messenger.instance.photoOf(it.ownerId!);
+
+/// Like WhatsApp: hide someone's statuses (they move to "Hidden").
+Future<void> askHideStatus(BuildContext context, StatusItem item) async {
+  final owner = item.ownerId;
+  if (owner == null) return;
+  final s = AppState.instance;
+  final isHidden = s.hiddenStatus.contains(owner);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (d) => AlertDialog(
+      title: Text(isHidden ? "Unhide ${item.name}'s statuses?" : "Hide ${item.name}'s statuses?"),
+      content: Text(isHidden
+          ? "New statuses from ${item.name} will appear under recent updates again."
+          : "New statuses from ${item.name} won't appear under recent updates anymore."),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(d, true), child: Text(isHidden ? 'Unhide' : 'Hide')),
+      ],
+    ),
+  );
+  if (ok == true) s.setStatusHidden(owner, !isHidden);
+}
+
+void _showHidden(BuildContext context, List<StatusItem> list) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheet) => SafeArea(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Align(alignment: Alignment.centerLeft, child: Text('Hidden updates', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+        ),
+        for (final st in list)
+          ListTile(
+            leading: Avatar(initials: st.initials, colorIndex: st.colorIndex, size: 44, photo: ownerPhoto(st)),
+            title: Text(st.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text(st.when),
+            trailing: TextButton(
+              onPressed: () {
+                Navigator.pop(sheet);
+                AppState.instance.setStatusHidden(st.ownerId!, false);
+              },
+              child: const Text('Unhide'),
+            ),
+            onTap: () {
+              Navigator.pop(sheet);
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => StatusViewer(item: st)));
+            },
+          ),
+        const SizedBox(height: 8),
+      ]),
+    ),
+  );
+}
+
+class _HiddenCard extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+  const _HiddenCard({required this.count, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 96,
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: bc.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: bc.line)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.visibility_off_outlined, color: bc.muted),
+          const Spacer(),
+          Text('Hidden', style: TextStyle(fontWeight: FontWeight.w700, color: bc.text)),
+          Text('$count', style: TextStyle(fontSize: 12, color: bc.muted)),
+        ]),
+      ),
+    );
+  }
+}
+
 class _StoryCard extends StatelessWidget {
   final StatusItem item;
   const _StoryCard({required this.item});
@@ -156,6 +252,7 @@ class _StoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StatusViewer(item: item))),
+      onLongPress: () => askHideStatus(context, item),
       child: Container(
         width: 96,
         margin: const EdgeInsets.only(right: 8),
@@ -173,7 +270,7 @@ class _StoryCard extends StatelessWidget {
             segments: item.slides.length,
             active: true,
             color: Colors.white,
-            child: Avatar(initials: item.initials, colorIndex: item.colorIndex, size: 30),
+            child: Avatar(initials: item.initials, colorIndex: item.colorIndex, size: 30, photo: ownerPhoto(item)),
           ),
           const Spacer(),
           Text(item.slides.first.text ?? item.slides.first.caption ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white70)),
@@ -396,7 +493,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
               ),
             ),
             ListTile(
-              leading: Avatar(initials: it.initials, colorIndex: it.colorIndex, size: 40),
+              leading: Avatar(initials: it.initials, colorIndex: it.colorIndex, size: 40, photo: widget.mine ? AppState.instance.myPhoto : ownerPhoto(it)),
               title: Text(it.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
               subtitle: Text(widget.mine ? statusAgo(slide.at) : it.when, style: const TextStyle(color: Colors.white70)),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -410,7 +507,12 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                 duration: Mitti.medium,
                 child: slide.isPhoto
                     ? Column(key: ValueKey('p$_i'), children: [
-                        Expanded(child: Image.file(File(slide.imagePath!), fit: BoxFit.contain, width: double.infinity)),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Center(child: Image.file(File(slide.imagePath!), fit: BoxFit.contain, filterQuality: FilterQuality.high)),
+                          ),
+                        ),
                         if ((slide.caption ?? '').isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),

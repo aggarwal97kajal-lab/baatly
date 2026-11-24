@@ -70,6 +70,8 @@ class AppState extends ChangeNotifier {
   int defaultTimer = 0;
   /// My profile photo on this phone.
   String? myPhoto;
+  /// People whose statuses I've hidden (user ids).
+  Set<String> hiddenStatus = {};
 
   Map<String, dynamic> privacyJson() => {
         'lastSeen': lastSeenRule.toJson(),
@@ -157,6 +159,7 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
       defaultTimer = p.getInt('defaultTimer') ?? 0;
       myPhoto = p.getString('myPhoto');
+      hiddenStatus = (p.getStringList('hiddenStatus') ?? []).toSet();
     } catch (_) {
       // Storage unavailable (e.g. tests): fall back to defaults.
     }
@@ -185,6 +188,7 @@ class AppState extends ChangeNotifier {
     p.setBool('statusAllowSharing', statusAllowSharing);
     p.setString('privacy', jsonEncode(privacyJson()));
     p.setInt('defaultTimer', defaultTimer);
+    p.setStringList('hiddenStatus', hiddenStatus.toList());
     if (myPhoto == null) {
       p.remove('myPhoto');
     } else {
@@ -345,6 +349,18 @@ class AppState extends ChangeNotifier {
   /// [until] null = unmute.
   void muteChat(Chat c, DateTime? until) {
     c.mutedUntil = until;
+    notifyListeners();
+    if (c.isReal) Messenger.instance.syncMute(c);
+  }
+
+  void toggleStar(Message m) {
+    m.starred = !m.starred;
+    notifyListeners();
+  }
+
+  void setStatusHidden(String userId, bool hidden) {
+    hidden ? hiddenStatus.add(userId) : hiddenStatus.remove(userId);
+    _save();
     notifyListeners();
   }
 
