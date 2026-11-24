@@ -20,6 +20,10 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - name: Resolve D1 id
+        run: |
+          ID=$(npx wrangler d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);const db=j.find(x=>x.name==="baatly-db");console.log(db?db.uuid:"")})')
+          sed -i "s/00000000-0000-0000-0000-000000000000/$ID/" wrangler.toml
       - name: Passkeys on record (no secrets / no keys printed)
         run: |
           npx wrangler d1 execute baatly-db --remote --json --command \
