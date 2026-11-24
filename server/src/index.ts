@@ -176,11 +176,23 @@ async function passkeyRegisterVerify(c: Ctx) {
     throw new HttpError(400, 'PASSKEY_INVALID', (e as Error).message);
   }
   if (!v.verified) throw new HttpError(400, 'PASSKEY_INVALID');
-  const cred = v.registrationInfo.credential;
+  const info = v.registrationInfo;
+  const cred = info.credential;
   await c.env.DB.prepare(
-    'INSERT OR REPLACE INTO passkeys (id, user_id, public_key, counter, transports, device, created_at) VALUES (?,?,?,?,?,?,?)',
+    'INSERT OR REPLACE INTO passkeys (id, user_id, public_key, counter, transports, device, created_at, aaguid, device_type, backed_up) VALUES (?,?,?,?,?,?,?,?,?,?)',
   )
-    .bind(cred.id, user.id, b64url(cred.publicKey), cred.counter, JSON.stringify(cred.transports ?? []), (body.device ?? '').slice(0, 80), now())
+    .bind(
+      cred.id,
+      user.id,
+      b64url(cred.publicKey),
+      cred.counter,
+      JSON.stringify(cred.transports ?? body.response?.response?.transports ?? []),
+      (body.device ?? '').slice(0, 80),
+      now(),
+      info.aaguid ?? '',
+      info.credentialDeviceType ?? '',
+      info.credentialBackedUp ? 1 : 0,
+    )
     .run();
   return json({ ok: true });
 }

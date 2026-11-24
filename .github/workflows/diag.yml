@@ -8,18 +8,23 @@ on:
 jobs:
   diag:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Live server checks
-        env:
-          MC_CUSTOMER_ID: ${{ secrets.MC_CUSTOMER_ID }}
-          MC_PASSWORD: ${{ secrets.MC_PASSWORD }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Passkeys on record (no secrets / no keys printed)
         run: |
-          B=https://baatly-api.pitaragames.workers.dev
-          echo "== root"; curl -s $B/; echo
-          echo "== passkey login options"; curl -s -X POST $B/v1/auth/passkey/login/options | head -c 300; echo
-          echo "== otp send invalid number (no SMS)"; curl -s -X POST $B/v1/auth/otp/send -H 'content-type: application/json' -d '{"countryCode":"91","number":"12"}'; echo
-          echo "== Message Central token (direct)"
-          KEY=$(printf '%s' "$MC_PASSWORD" | base64 -w0)
-          echo "customerId length: ${#MC_CUSTOMER_ID}, starts: ${MC_CUSTOMER_ID:0:2}"
-          R=$(curl -s -w "\nHTTP %{http_code}" "https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=$MC_CUSTOMER_ID&key=$KEY&scope=NEW&country=91" -H 'accept: */*')
-          echo "$R" | sed -E 's/"token":"[^"]+"/"token":"<redacted>"/'
+          npx wrangler d1 execute baatly-db --remote --json --command \
+            "SELECT substr(p.id,1,12) AS cred, p.aaguid, p.device_type, p.backed_up, p.transports, datetime(p.created_at/1000,'unixepoch') AS created, datetime(p.last_used_at/1000,'unixepoch') AS used, substr(u.phone,1,5)||'*****'||substr(u.phone,-2) AS phone FROM passkeys p JOIN users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 10"
+      - name: Recent passkey challenges
+        run: |
+          npx wrangler d1 execute baatly-db --remote --json --command \
+            "SELECT kind, datetime(expires_at/1000,'unixepoch') AS expires FROM challenges ORDER BY expires_at DESC LIMIT 10"
