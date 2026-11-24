@@ -7,3 +7,6 @@ const String kApiBase = String.fromEnvironment('API_BASE', defaultValue: kDefaul
 const String kDefaultApiBase = 'https://baatly-api.pitaragames.workers.dev';
 
 bool get kHasBackend => kApiBase.isNotEmpty;
+
+/// Set by CI (--dart-define=PUSH=true) once google-services.json is in the repo.
+const bool kPushEnabled = bool.fromEnvironment('PUSH');

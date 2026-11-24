@@ -53,6 +53,16 @@ jobs:
           sed -i 's/io.flutter.embedding.android.FlutterActivity/io.flutter.embedding.android.FlutterFragmentActivity/; s/: FlutterActivity()/: FlutterFragmentActivity()/' $MA
           cat $MA
           grep -q "FlutterFragmentActivity()" $MA
+          # Push notifications: only once google-services.json is committed.
+          if [ -f android_overrides/google-services.json ]; then
+            cp android_overrides/google-services.json android/app/google-services.json
+            sed -i '/id("com.android.application") version/a\    id("com.google.gms.google-services") version "4.4.2" apply false' android/settings.gradle.kts
+            sed -i '0,/^\s*id("com.android.application")\s*$/s//    id("com.android.application")\n    id("com.google.gms.google-services")/' $GRADLE
+            grep -n "google-services" android/settings.gradle.kts $GRADLE
+            echo "DART_DEFINES=--dart-define=PUSH=true" >> $GITHUB_ENV
+          else
+            echo "::notice::android_overrides/google-services.json missing - building without push notifications"
+          fi
 
       - name: Get packages
         run: flutter pub get
@@ -64,7 +74,7 @@ jobs:
         run: flutter test
 
       - name: Build release APK
-        run: flutter build apk --release --build-number=${{ github.run_number }}
+        run: flutter build apk --release --build-number=${{ github.run_number }} $DART_DEFINES
 
       - name: Sign with BAATLY release key
         env:

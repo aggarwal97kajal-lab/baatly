@@ -13,6 +13,7 @@ import 'app_state.dart';
 import 'contacts.dart';
 import 'e2e.dart';
 import 'models.dart';
+import 'push.dart';
 
 /// Someone we chat with: their public key is cached so we can encrypt.
 class Peer {
@@ -73,6 +74,7 @@ class Messenger {
     }
     _paused = false;
     unawaited(_connect());
+    unawaited(Push.instance.start());
   }
 
   Future<void> _publishKey(String uid) async {
@@ -93,6 +95,7 @@ class Messenger {
     _closeSocket();
     _retry?.cancel();
     _uid = null;
+    Push.instance.forget();
     _peers.clear();
     _handled.clear();
   }

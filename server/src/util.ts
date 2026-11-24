@@ -8,7 +8,8 @@ export interface Env {
   // secrets (wrangler secret put)
   MC_CUSTOMER_ID?: string;
   MC_PASSWORD?: string;
-  DEMO_OTP?: string; // "true" only while Message Central is not configured
+  DEMO_OTP?: string;
+  FCM_SERVICE_ACCOUNT?: string; // Firebase service-account JSON (secret) // "true" only while Message Central is not configured
 }
 
 export class HttpError extends Error {

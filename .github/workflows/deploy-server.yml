@@ -66,3 +66,16 @@ jobs:
           else
             echo "::notice::MC_CUSTOMER_ID / MC_PASSWORD not set - server runs in TEST mode (OTP 123456)"
           fi
+      - name: Set push notification secret
+        if: steps.cf.outputs.ok == 'true'
+        env:
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$FCM_SERVICE_ACCOUNT" ]; then
+            node -e 'const v=process.env.FCM_SERVICE_ACCOUNT;const j=JSON.parse(v);if(!j.private_key||!j.client_email||!j.project_id)throw new Error("FCM_SERVICE_ACCOUNT is not a Firebase service-account JSON");console.log(JSON.stringify({FCM_SERVICE_ACCOUNT:v}))' > /tmp/f.json
+            npx wrangler secret bulk /tmp/f.json
+            rm /tmp/f.json
+            echo "Push notifications configured"
+          else
+            echo "::notice::FCM_SERVICE_ACCOUNT not set - push notifications off"
+          fi
