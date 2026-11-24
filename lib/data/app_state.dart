@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'messenger.dart';
 import 'models.dart';
 
 enum Wallpaper { mittiDots, desi, baatcheet, mausam, raat, plain }
@@ -51,6 +52,19 @@ class AppState extends ChangeNotifier {
   bool hasPasskey = false;
 
   final List<Chat> chats = [];
+  /// True once real (server) chats replaced the demo chats.
+  bool realChats = false;
+
+  void useRealChats(List<Chat> list) {
+    chats
+      ..clear()
+      ..addAll(list);
+    realChats = true;
+    notifyListeners();
+  }
+
+  /// Lets the messenger refresh the UI.
+  void changed() => notifyListeners();
   final List<CallLog> calls = [];
   final List<StatusItem> statuses = [];
   final List<StatusSlide> myStatuses = [];
@@ -102,6 +116,7 @@ class AppState extends ChangeNotifier {
 
   /// Demo helper: forget the profile and show onboarding again.
   Future<void> resetDemo() async {
+    await Messenger.instance.stop();
     final keepPhone = lastPhone.isNotEmpty ? lastPhone : phone;
     final keepPasskey = hasPasskey;
     await _prefs?.clear();
@@ -174,7 +189,7 @@ class AppState extends ChangeNotifier {
   /// Demo only: a contact starts typing a few seconds after the app opens,
   /// so the "typing…" state can be seen from the chat list too.
   void startDemoActivity() {
-    if (_demoStarted) return;
+    if (_demoStarted || realChats) return;
     _demoStarted = true;
     final riya = chats.firstWhere((c) => c.id == 'riya', orElse: () => chats.first);
     Timer(const Duration(seconds: 5), () {
@@ -187,6 +202,10 @@ class AppState extends ChangeNotifier {
   /// Sends a message locally and simulates delivery/read and a reply,
   /// so the UI flow can be felt before the real backend exists.
   void send(Chat chat, String text) {
+    if (chat.isReal) {
+      Messenger.instance.send(chat, text);
+      return;
+    }
     final m = Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       text: text,

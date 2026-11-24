@@ -21,6 +21,7 @@ import {
   readJson,
   sha256Hex,
 } from './util';
+import { chatRoute } from './chat';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
 type Ctx = { req: Request; env: Env; url: URL };
@@ -373,6 +374,8 @@ async function deleteAccount(c: Ctx) {
     c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM device_keys WHERE user_id = ?').bind(user.id),
+    c.env.DB.prepare('DELETE FROM user_keys WHERE user_id = ?').bind(user.id),
+    c.env.DB.prepare('DELETE FROM inbox WHERE to_user = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM challenges WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
   ]);
@@ -416,10 +419,20 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'POST' && p === '/v1/auth/device/verify') return deviceKeyVerify(c);
   const dk = p.match(/^\/v1\/me\/device-keys\/([\w-]+)$/);
   if (m === 'DELETE' && dk) return deviceKeyDelete(c, dk[1]);
+  if (m === 'GET' && p === '/get') {
+    return Response.redirect('https://github.com/aggarwal97kajal-lab/baatly/releases/latest/download/baatly.apk', 302);
+  }
+  if (/^\/v1\/(keys|contacts|users|messages|receipts|typing|inbox|ws)(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await chatRoute(c, user, m, p);
+    if (r) return r;
+  }
   const s = p.match(/^\/v1\/me\/sessions\/([\w-]+)$/);
   if (m === 'DELETE' && s) return revokeSession(c, s[1]);
   throw new HttpError(404, 'NOT_FOUND');
 }
+
+export { UserHub } from './hub';
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {

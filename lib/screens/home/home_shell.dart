@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../config.dart';
+import '../../data/api.dart';
 import '../../data/app_state.dart';
+import '../../data/messenger.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'calls_tab.dart';
@@ -15,13 +18,31 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _tab = 0;
 
   @override
   void initState() {
     super.initState();
-    AppState.instance.startDemoActivity();
+    WidgetsBinding.instance.addObserver(this);
+    if (kHasBackend && Api.instance.loggedIn) {
+      Messenger.instance.start();
+    } else {
+      AppState.instance.startDemoActivity();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!Messenger.instance.active) return;
+    if (state == AppLifecycleState.paused) Messenger.instance.pause();
+    if (state == AppLifecycleState.resumed) Messenger.instance.resume();
   }
 
   static const _items = [

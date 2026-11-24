@@ -55,6 +55,22 @@ class Api {
   static const _device = 'Android · BAATLY app';
 
   String? _token;
+  String? _userId;
+  static const _userIdKey = 'user_id';
+
+  /// BAATLY id of the logged-in user (null when logged out).
+  String? get userId => _token == null ? null : _userId;
+  String? get token => _token;
+
+  Future<void> rememberUserId(String id) async {
+    _userId = id;
+    try {
+      await _storage.write(key: _userIdKey, value: id);
+    } catch (_) {}
+  }
+
+  /// Authenticated JSON call, used by the messenger.
+  Future<Map<String, dynamic>> request(String method, String path, [Object? body]) => _call(method, path, body);
   final _auth = PasskeyAuthenticator();
 
   static const _dkIdKey = 'device_key_id';
@@ -65,6 +81,7 @@ class Api {
   Future<void> load() async {
     try {
       _token = await _storage.read(key: _tokenKey);
+      _userId = await _storage.read(key: _userIdKey);
       _deviceKeyId = await _storage.read(key: _dkIdKey);
     } catch (_) {
       _token = null;
@@ -142,7 +159,12 @@ class Api {
 
   Future<AuthResult> _session(Map<String, dynamic> d) async {
     await _setToken(d['token'] as String);
-    return AuthResult(ApiUser.fromJson(d['user'] as Map<String, dynamic>), d['isNew'] == true, d['hasPasskey'] == true);
+    final user = ApiUser.fromJson(d['user'] as Map<String, dynamic>);
+    _userId = user.id;
+    try {
+      await _storage.write(key: _userIdKey, value: user.id);
+    } catch (_) {}
+    return AuthResult(user, d['isNew'] == true, d['hasPasskey'] == true);
   }
 
   // ------------------------------------------------------------ profile

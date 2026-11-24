@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../data/app_state.dart';
+import '../../data/messenger.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
@@ -26,11 +27,15 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     AppState.instance.activeChatId = chat.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Messenger.instance.openChat(chat);
+    });
   }
 
   @override
   void dispose() {
     if (AppState.instance.activeChatId == chat.id) AppState.instance.activeChatId = null;
+    Messenger.instance.closeChat(chat);
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
@@ -125,7 +130,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   builder: (context, _) => AnimatedSwitcher(
                     duration: Mitti.fast,
                     child: Text(
-                      chat.typing ? 'typing…' : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen today')),
+                      chat.typing
+                          ? 'typing…'
+                          : chat.isReal
+                              ? ((chat.presence ?? '').isEmpty ? 'tap for contact info' : chat.presence!)
+                              : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen today')),
                       key: ValueKey(chat.typing),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -203,7 +212,10 @@ class _ChatScreenState extends State<ChatScreen> {
             replyTo: _replyTo,
             onCancelReply: () => setState(() => _replyTo = null),
             onSend: _send,
-            onChanged: () => setState(() {}),
+            onChanged: () {
+              setState(() {});
+              if (_ctrl.text.isNotEmpty) Messenger.instance.typing(chat);
+            },
           ),
         ]),
       ),

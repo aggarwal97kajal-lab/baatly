@@ -17,3 +17,11 @@ binding = "DB"
 database_name = "baatly-db"
 database_id = "00000000-0000-0000-0000-000000000000" # replaced by CI with the real id
 migrations_dir = "migrations"
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "UserHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UserHub"]

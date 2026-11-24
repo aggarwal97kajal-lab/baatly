@@ -1,5 +1,6 @@
 export interface Env {
   DB: D1Database;
+  HUB: DurableObjectNamespace;
   // vars (wrangler.toml)
   RP_NAME: string;
   ANDROID_PACKAGE: string;
