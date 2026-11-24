@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_state.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/chat_dialogs.dart';
 import '../../widgets/common.dart';
 import '../chat/chat_screen.dart';
 import '../chat/new_chat_screen.dart';
@@ -162,9 +163,10 @@ class _ChatRow extends StatelessWidget {
           ListTile(
             leading: Icon(chat.muted ? Icons.volume_up_rounded : Icons.volume_off_rounded),
             title: Text(chat.muted ? 'Unmute' : 'Mute'),
+            subtitle: chat.muted ? Text(muteLabel(chat)) : null,
             onTap: () {
-              s.toggle(() => chat.muted = !chat.muted);
               Navigator.pop(context);
+              showMuteDialog(context, chat);
             },
           ),
           ListTile(
@@ -212,7 +214,10 @@ class _ChatRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
         child: Row(children: [
-          Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, size: 52, online: chat.online)),
+          GestureDetector(
+            onTap: () => showProfilePeek(context, chat),
+            child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, size: 52, online: chat.online)),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

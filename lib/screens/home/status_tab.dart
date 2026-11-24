@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../data/app_state.dart';
 import '../../data/models.dart';
@@ -23,13 +26,24 @@ class StatusTab extends StatelessWidget {
         final myName = s.name.isEmpty ? 'You' : s.name;
         return Scaffold(
           backgroundColor: bc.bg,
-          floatingActionButton: FloatingActionButton(
-            backgroundColor: context.primary,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TextStatusScreen())),
-            child: const Icon(Icons.edit_rounded),
-          ),
+          floatingActionButton: Column(mainAxisSize: MainAxisSize.min, children: [
+            FloatingActionButton.small(
+              heroTag: 'st-text',
+              backgroundColor: bc.raised,
+              foregroundColor: bc.text,
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TextStatusScreen())),
+              child: const Icon(Icons.edit_rounded),
+            ),
+            const SizedBox(height: 12),
+            FloatingActionButton(
+              heroTag: 'st-photo',
+              backgroundColor: context.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              onPressed: () => pickPhotoStatus(context),
+              child: const Icon(Icons.photo_camera_rounded),
+            ),
+          ]),
           body: SafeArea(
             child: ListView(children: [
               Padding(
@@ -58,10 +72,10 @@ class StatusTab extends StatelessWidget {
                   subtitle: Text(s.myStatuses.isEmpty ? 'Tap to add a status' : '${s.myStatuses.length} update · just now'),
                   onTap: () {
                     if (s.myStatuses.isEmpty) {
-                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TextStatusScreen()));
+                      pickPhotoStatus(context);
                     } else {
                       Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => StatusViewer(item: StatusItem(myName, myName[0], 2, 'just now', s.myStatuses, [0xFFC8553D]))));
+                          builder: (_) => StatusViewer(item: StatusItem(myName, myName[0], 2, 'just now', s.myStatuses))));
                     }
                   },
                 ),
@@ -82,7 +96,7 @@ class StatusTab extends StatelessWidget {
                 for (final st in seen)
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                    leading: _Ring(segments: st.texts.length, active: false, child: Avatar(initials: st.initials, colorIndex: st.colorIndex, size: 44)),
+                    leading: _Ring(segments: st.slides.length, active: false, child: Avatar(initials: st.initials, colorIndex: st.colorIndex, size: 44)),
                     title: Text(st.name, style: const TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text(st.when),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StatusViewer(item: st))),
@@ -108,16 +122,23 @@ class _StoryCard extends StatelessWidget {
         width: 96,
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: Color(item.bg.first), borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Color(item.slides.first.bg),
+          borderRadius: BorderRadius.circular(16),
+          image: item.slides.first.isPhoto
+              ? DecorationImage(image: FileImage(File(item.slides.first.imagePath!)), fit: BoxFit.cover, opacity: 0.85)
+              : null,
+        ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _Ring(
-            segments: item.texts.length,
+            segments: item.slides.length,
             active: true,
             color: Colors.white,
             child: Avatar(initials: item.initials, colorIndex: item.colorIndex, size: 30),
           ),
           const Spacer(),
-          Text(item.texts.first, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white70)),
+          Text(item.slides.first.text ?? item.slides.first.caption ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white70)),
           const SizedBox(height: 4),
           Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: Colors.white, fontWeight: FontWeight.w700)),
         ]),
@@ -188,7 +209,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
   }
 
   void _next() {
-    if (_i < widget.item.texts.length - 1) {
+    if (_i < widget.item.slides.length - 1) {
       setState(() => _i++);
       _c.forward(from: 0);
     } else {
@@ -217,7 +238,8 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final it = widget.item;
-    final bg = Color(it.bg[_i % it.bg.length]);
+    final slide = it.slides[_i];
+    final bg = Color(slide.bg);
     return Scaffold(
       backgroundColor: bg,
       body: GestureDetector(
@@ -232,7 +254,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
               child: AnimatedBuilder(
                 animation: _c,
                 builder: (_, __) => Row(
-                  children: List.generate(it.texts.length, (k) {
+                  children: List.generate(it.slides.length, (k) {
                     final v = k < _i ? 1.0 : (k == _i ? _c.value : 0.0);
                     return Expanded(
                       child: Container(
@@ -257,17 +279,26 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
               trailing: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: Colors.white)),
             ),
             Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(28),
-                  child: AnimatedSwitcher(
-                    duration: Mitti.medium,
-                    child: Text(it.texts[_i],
-                        key: ValueKey(_i),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w700, height: 1.3)),
-                  ),
-                ),
+              child: AnimatedSwitcher(
+                duration: Mitti.medium,
+                child: slide.isPhoto
+                    ? Column(key: ValueKey('p$_i'), children: [
+                        Expanded(child: Image.file(File(slide.imagePath!), fit: BoxFit.contain, width: double.infinity)),
+                        if ((slide.caption ?? '').isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+                            child: Text(slide.caption!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16)),
+                          ),
+                      ])
+                    : Center(
+                        key: ValueKey('t$_i'),
+                        child: Padding(
+                          padding: const EdgeInsets.all(28),
+                          child: Text(slide.text ?? '',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w700, height: 1.3)),
+                        ),
+                      ),
               ),
             ),
             Padding(
@@ -393,7 +424,7 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
                   onPressed: _ctrl.text.trim().isEmpty
                       ? null
                       : () {
-                          AppState.instance.addMyStatus(_ctrl.text.trim());
+                          AppState.instance.addMyStatus(StatusSlide.text(_ctrl.text.trim(), _colors[_color]));
                           Navigator.pop(context);
                         },
                   child: const Icon(Icons.send_rounded),
@@ -407,3 +438,111 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
   }
 }
 
+
+
+/// Choose camera or gallery, then preview + caption + post.
+Future<void> pickPhotoStatus(BuildContext context) async {
+  final source = await showModalBottomSheet<ImageSource>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => SafeArea(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(
+          leading: Icon(Icons.photo_camera_outlined, color: ctx.primary),
+          title: const Text('Take photo'),
+          onTap: () => Navigator.pop(ctx, ImageSource.camera),
+        ),
+        ListTile(
+          leading: Icon(Icons.photo_library_outlined, color: ctx.primary),
+          title: const Text('Choose from gallery'),
+          onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+        ),
+        ListTile(
+          leading: Icon(Icons.text_fields_rounded, color: ctx.primary),
+          title: const Text('Text status'),
+          onTap: () {
+            Navigator.pop(ctx);
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TextStatusScreen()));
+          },
+        ),
+        const SizedBox(height: 8),
+      ]),
+    ),
+  );
+  if (source == null) return;
+  XFile? file;
+  try {
+    file = await ImagePicker().pickImage(source: source, maxWidth: 1600, imageQuality: 82);
+  } catch (_) {
+    if (context.mounted) showComingSoon(context, 'Camera permission needed');
+    return;
+  }
+  if (file == null || !context.mounted) return;
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => PhotoStatusScreen(path: file!.path)));
+}
+
+class PhotoStatusScreen extends StatefulWidget {
+  final String path;
+  const PhotoStatusScreen({super.key, required this.path});
+  @override
+  State<PhotoStatusScreen> createState() => _PhotoStatusScreenState();
+}
+
+class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
+  final _caption = TextEditingController();
+
+  @override
+  void dispose() {
+    _caption.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, title: const Text('Photo status')),
+      body: SafeArea(
+        child: Column(children: [
+          Expanded(child: Image.file(File(widget.path), fit: BoxFit.contain, width: double.infinity)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _caption,
+                  maxLength: 200,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: 'Add a caption…',
+                    hintStyle: const TextStyle(color: Colors.white54),
+                    filled: true,
+                    fillColor: const Color(0xFF222222),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              FloatingActionButton(
+                heroTag: 'st-send',
+                backgroundColor: Mitti.terracotta,
+                foregroundColor: Colors.white,
+                onPressed: () {
+                  AppState.instance.addMyStatus(StatusSlide.photo(widget.path, caption: _caption.text.trim()));
+                  Navigator.pop(context);
+                },
+                child: const Icon(Icons.send_rounded),
+              ),
+            ]),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('Visible to my contacts · 24 hours', style: TextStyle(color: Colors.white60, fontSize: 12)),
+          ),
+        ]),
+      ),
+    );
+  }
+}

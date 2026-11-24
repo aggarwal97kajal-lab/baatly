@@ -50,7 +50,7 @@ class AppState extends ChangeNotifier {
   final List<Chat> chats = [];
   final List<CallLog> calls = [];
   final List<StatusItem> statuses = [];
-  final List<String> myStatuses = [];
+  final List<StatusSlide> myStatuses = [];
 
   final _rnd = Random();
 
@@ -213,8 +213,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addMyStatus(String text) {
-    myStatuses.add(text);
+  void addMyStatus(StatusSlide s) {
+    myStatuses.add(s);
+    notifyListeners();
+  }
+
+  /// [until] null = unmute.
+  void muteChat(Chat c, DateTime? until) {
+    c.mutedUntil = until;
     notifyListeners();
   }
 
@@ -266,11 +272,11 @@ class AppState extends ChangeNotifier {
     ]);
 
     statuses.addAll([
-      StatusItem('Riya', 'RS', 0, '42 min ago', ['Aaj ki chai, purane dost ke saath ☕', 'Cafe Mocha vibes'], [0xFFC8553D, 0xFFB5651D]),
-      StatusItem('Ghar Wale', 'GW', 1, '1 hour ago', ['Sunday lunch 🍛'], [0xFF2E3A59]),
-      StatusItem('Aman', 'AV', 2, '3 hours ago', ['Goa cancel 😭', 'Next time pakka'], [0xFF7A5BA6, 0xFF3E7C5A]),
-      StatusItem('Kabir', 'K', 4, 'Yesterday', ['Match day 🏏'], [0xFF3E7C5A]),
-      StatusItem('Priya Nair', 'PN', 5, 'Today, 7:12 AM', ['Good morning ☀️'], [0xFFB5651D], seen: true),
+      StatusItem('Riya', 'RS', 0, '42 min ago', [StatusSlide.text('Aaj ki chai, purane dost ke saath ☕', 0xFFC8553D), StatusSlide.text('Cafe Mocha vibes', 0xFFB5651D)]),
+      StatusItem('Ghar Wale', 'GW', 1, '1 hour ago', [StatusSlide.text('Sunday lunch 🍛', 0xFF2E3A59)]),
+      StatusItem('Aman', 'AV', 2, '3 hours ago', [StatusSlide.text('Goa cancel 😭', 0xFF7A5BA6), StatusSlide.text('Next time pakka', 0xFF3E7C5A)]),
+      StatusItem('Kabir', 'K', 4, 'Yesterday', [StatusSlide.text('Match day 🏏', 0xFF3E7C5A)]),
+      StatusItem('Priya Nair', 'PN', 5, 'Today, 7:12 AM', [StatusSlide.text('Good morning ☀️', 0xFFB5651D)], seen: true),
     ]);
   }
 }

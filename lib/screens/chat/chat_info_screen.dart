@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_state.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/chat_dialogs.dart';
 import '../../widgets/common.dart';
 import '../settings/wallpaper_screen.dart';
 
@@ -51,11 +52,12 @@ class ChatInfoScreen extends StatelessWidget {
             ]),
             const SizedBox(height: 14),
             _Card(children: [
-              SwitchListTile(
-                secondary: Icon(Icons.notifications_off_outlined, color: context.primary),
-                title: const Text('Mute'),
-                value: chat.muted,
-                onChanged: (v) => s.toggle(() => chat.muted = v),
+              ListTile(
+                leading: Icon(Icons.notifications_off_outlined, color: context.primary),
+                title: const Text('Mute notifications'),
+                subtitle: Text(muteLabel(chat)),
+                trailing: Switch(value: chat.muted, onChanged: (_) => showMuteDialog(context, chat)),
+                onTap: () => showMuteDialog(context, chat),
               ),
               SwitchListTile(
                 secondary: Icon(Icons.push_pin_outlined, color: context.primary),

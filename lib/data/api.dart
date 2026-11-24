@@ -188,10 +188,17 @@ class Api {
     final msg = switch (e) {
       PasskeyAuthCancelledException() => 'Cancelled',
       NoCredentialsAvailableException() => 'No BAATLY passkey found on this phone. Log in with OTP.',
-      DeviceNotSupportedException() => 'This phone doesn\'t support passkeys. Log in with OTP.',
-      DomainNotAssociatedException() => 'Passkey setup is incomplete (domain link). Log in with OTP.',
-      _ => 'Passkey didn\'t work. Make sure a screen lock and Google account are set up.',
+      DeviceNotSupportedException() || PasskeyUnsupportedException() => "This phone doesn't support passkeys. Log in with OTP.",
+      DomainNotAssociatedException(:final message) => 'Passkey setup is incomplete (app not linked to domain). [domain] ${message ?? ''}',
+      NoCreateOptionException(:final message) =>
+        'No passkey provider is on. Open phone Settings → Passwords & accounts (or Autofill) and turn on Google Password Manager. [no-create-option] ${message ?? ''}',
+      MissingGoogleSignInException() => 'Sign in to a Google account on this phone to save passkeys. [missing-google-sign-in]',
+      SyncAccountNotAvailableException() => 'Your Google account needs to sync passwords. Check Google Password Manager settings. [sync-account]',
+      ExcludeCredentialsCanNotBeRegisteredException() => 'A BAATLY passkey already exists on this phone. Use "Log in with passkey".',
+      TimeoutException() => 'Passkey request timed out. Please try again. [timeout]',
+      UnhandledAuthenticatorException(:final code, :final message) => "Passkey didn't work. [$code] ${message ?? ''}",
+      _ => "Passkey didn't work. [${e.runtimeType}]",
     };
-    return ApiException(-1, e is PasskeyAuthCancelledException ? 'CANCELLED' : 'PASSKEY', msg);
+    return ApiException(-1, e is PasskeyAuthCancelledException ? 'CANCELLED' : 'PASSKEY', msg.trim());
   }
 }

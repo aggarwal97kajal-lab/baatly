@@ -33,7 +33,7 @@ class Chat {
   final String about;
   bool online;
   bool pinned;
-  bool muted;
+  DateTime? mutedUntil; // null = not muted; year 9999 = always
   bool archived;
   bool typing = false;
   int unread;
@@ -48,11 +48,15 @@ class Chat {
     this.about = '',
     this.online = false,
     this.pinned = false,
-    this.muted = false,
+    bool muted = false,
     this.archived = false,
     this.unread = 0,
     List<Message>? messages,
-  }) : messages = messages ?? [];
+  })  : messages = messages ?? [],
+        mutedUntil = muted ? DateTime(9999) : null;
+
+  bool get muted => mutedUntil != null && DateTime.now().isBefore(mutedUntil!);
+  bool get mutedForever => mutedUntil != null && mutedUntil!.year >= 9999;
 
   Message? get last => messages.isEmpty ? null : messages.last;
 }
@@ -69,13 +73,30 @@ class CallLog {
   CallLog(this.name, this.initials, this.colorIndex, this.kind, this.video, this.when);
 }
 
+/// One page of a status: either text on a colour, or a photo with caption.
+class StatusSlide {
+  final String? text;
+  final String? imagePath;
+  final String? caption;
+  final int bg;
+  final DateTime at;
+  StatusSlide.text(this.text, this.bg, {DateTime? at})
+      : imagePath = null,
+        caption = null,
+        at = at ?? DateTime.now();
+  StatusSlide.photo(this.imagePath, {this.caption, DateTime? at})
+      : text = null,
+        bg = 0xFF000000,
+        at = at ?? DateTime.now();
+  bool get isPhoto => imagePath != null;
+}
+
 class StatusItem {
   final String name;
   final String initials;
   final int colorIndex;
   final String when;
-  final List<String> texts;
-  final List<int> bg;
+  final List<StatusSlide> slides;
   bool seen;
-  StatusItem(this.name, this.initials, this.colorIndex, this.when, this.texts, this.bg, {this.seen = false});
+  StatusItem(this.name, this.initials, this.colorIndex, this.when, this.slides, {this.seen = false});
 }
