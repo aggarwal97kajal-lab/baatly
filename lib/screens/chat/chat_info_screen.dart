@@ -7,6 +7,7 @@ import '../../widgets/chat_dialogs.dart';
 import '../../widgets/common.dart';
 import '../../widgets/photo_viewer.dart';
 import 'starred_screen.dart';
+import 'chat_tools.dart';
 import '../settings/wallpaper_screen.dart';
 
 class ChatInfoScreen extends StatelessWidget {
@@ -55,10 +56,30 @@ class ChatInfoScreen extends StatelessWidget {
             Row(children: [
               action(Icons.call_outlined, 'Audio', 'Audio call'),
               action(Icons.videocam_outlined, 'Video', 'Video call'),
-              action(Icons.search_rounded, 'Search', 'Search in chat'),
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatSearchScreen(chat: chat))),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(color: bc.surface, borderRadius: BorderRadius.circular(18)),
+                    child: Column(children: [
+                      Icon(Icons.search_rounded, color: context.primary),
+                      const SizedBox(height: 4),
+                      Text('Search', style: TextStyle(fontSize: 12, color: bc.text)),
+                    ]),
+                  ),
+                ),
+              ),
             ]),
             const SizedBox(height: 14),
             _Card(children: [
+              ListTile(
+                leading: Icon(Icons.perm_media_outlined, color: context.primary),
+                title: const Text('Media, links and docs'),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatMediaScreen(chat: chat))),
+              ),
               ListTile(
                 leading: Icon(Icons.star_outline_rounded, color: context.primary),
                 title: const Text('Starred messages'),

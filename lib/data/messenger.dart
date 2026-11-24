@@ -711,7 +711,7 @@ class Messenger {
     unawaited(_deliver(chat, m));
   }
 
-  static const _fileKinds = {MsgKind.image, MsgKind.voice, MsgKind.doc};
+  static const _fileKinds = {MsgKind.image, MsgKind.voice, MsgKind.doc, MsgKind.video};
 
   Future<void> _deliver(Chat chat, Message m) async {
     try {
@@ -767,6 +767,7 @@ class Messenger {
         'location' => MsgKind.location,
         'contact' => MsgKind.contact,
         'event' => MsgKind.event,
+        'video' => MsgKind.video,
         _ => MsgKind.text,
       };
 
@@ -857,7 +858,8 @@ class Messenger {
   }
 
   /// Location / contact / event / poll: no file, just details.
-  void sendCard(Chat chat, MsgKind kind, Map<String, dynamic> md, {String text = ''}) {
+  void sendCard(Chat chat, MsgKind kind, Map<String, dynamic> md, {String text = '', bool forwarded = false}) {
+    if (forwarded) md['fw'] = true;
     final m = Message(
       id: _newId(),
       text: text,
@@ -1039,7 +1041,8 @@ class Messenger {
   // ------------------------------------------------------------------ media
   /// Sends a photo / voice note / document. The file is encrypted on this
   /// phone with a fresh key; the key goes inside the E2E message.
-  void sendMedia(Chat chat, {required String path, required MsgKind kind, String caption = '', String? name, int seconds = 0, bool once = false}) {
+  void sendMedia(Chat chat,
+      {required String path, required MsgKind kind, String caption = '', String? name, int seconds = 0, bool once = false, bool forwarded = false}) {
     final fileName = name ?? path.split('/').last;
     final m = Message(
       id: _newId(),
@@ -1051,11 +1054,12 @@ class Messenger {
       voiceSeconds: seconds,
       mediaPath: path,
       media: {
-        'type': switch (kind) { MsgKind.image => 'image', MsgKind.voice => 'voice', _ => 'doc' },
+        'type': switch (kind) { MsgKind.image => 'image', MsgKind.voice => 'voice', MsgKind.video => 'video', _ => 'doc' },
         'name': fileName,
         'mime': MediaFiles.mime(fileName),
         if (seconds > 0) 'dur': seconds,
         if (once) 'once': true,
+        if (forwarded) 'fw': true,
       },
       expiresAt: chat.disappear > 0 ? DateTime.now().add(Duration(seconds: chat.disappear)) : null,
     );
@@ -1112,6 +1116,26 @@ class Messenger {
       m.busy = false;
       _s.changed();
     }
+  }
+
+  /// Forward a text message (shows "Forwarded").
+  void forwardText(Chat chat, String text) {
+    if (!chat.isReal) {
+      AppState.instance.send(chat, text);
+      return;
+    }
+    final m = Message(
+      id: _newId(),
+      text: text,
+      fromMe: true,
+      time: DateTime.now(),
+      status: MsgStatus.sending,
+      media: {'type': 'text', 'fw': true},
+      expiresAt: chat.disappear > 0 ? DateTime.now().add(Duration(seconds: chat.disappear)) : null,
+    );
+    chat.messages.add(m);
+    _s.changed();
+    unawaited(_deliver(chat, m));
   }
 
   /// Called while the user types (throttled).

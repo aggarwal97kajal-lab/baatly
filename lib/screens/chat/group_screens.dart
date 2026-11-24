@@ -10,6 +10,7 @@ import '../../widgets/common.dart';
 import '../home/status_privacy_screen.dart';
 import 'chat_screen.dart';
 import 'starred_screen.dart';
+import 'chat_tools.dart';
 
 /// New group: pick members, then name it.
 Future<void> startNewGroup(BuildContext context) async {
@@ -148,6 +149,11 @@ class GroupInfoScreen extends StatelessWidget {
               title: const Text('Mute notifications'),
               subtitle: Text(muteLabel(chat)),
               onTap: () => showMuteDialog(context, chat),
+            ),
+            ListTile(
+              leading: Icon(Icons.perm_media_outlined, color: context.primary),
+              title: const Text('Media, links and docs'),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatMediaScreen(chat: chat))),
             ),
             ListTile(
               leading: Icon(Icons.star_outline_rounded, color: context.primary),

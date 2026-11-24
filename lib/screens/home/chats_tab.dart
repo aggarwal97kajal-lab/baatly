@@ -216,6 +216,9 @@ class _ChatRow extends StatelessWidget {
     } else if (m != null && m.kind == MsgKind.event) {
       pIcon = Icons.event_rounded;
       preview = (m.media?['title'] as String?) ?? 'Event';
+    } else if (m != null && m.kind == MsgKind.video) {
+      pIcon = Icons.videocam_rounded;
+      preview = m.text.trim().isEmpty ? 'Video' : m.text.replaceAll('\n', ' ');
     } else if (m != null && m.kind == MsgKind.image && m.media?['once'] == true) {
       pIcon = Icons.looks_one_outlined;
       preview = 'Photo';

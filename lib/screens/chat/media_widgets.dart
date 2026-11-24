@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../data/media.dart';
 import '../../data/messenger.dart';
@@ -301,6 +302,120 @@ class _SendPhotoScreenState extends State<SendPhotoScreen> {
           ),
         ]),
       ),
+    );
+  }
+}
+
+
+/// Video in a chat bubble: tap to download (if needed) and play.
+class VideoContent extends StatelessWidget {
+  final Message m;
+  final Color fg;
+  const VideoContent({super.key, required this.m, required this.fg});
+  @override
+  Widget build(BuildContext context) {
+    final md = m.media ?? {};
+    final size = (md['size'] as int?) ?? (m.mediaPath != null && File(m.mediaPath!).existsSync() ? File(m.mediaPath!).lengthSync() : 0);
+    final dur = (md['dur'] as int?) ?? 0;
+    final has = m.mediaPath != null && File(m.mediaPath!).existsSync();
+    final w = MediaQuery.of(context).size.width * 0.64;
+    return GestureDetector(
+      onTap: () async {
+        final p = has ? m.mediaPath : await Messenger.instance.downloadMedia(m);
+        if (p == null) {
+          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't download this video")));
+          return;
+        }
+        if (context.mounted) Navigator.of(context).push(MaterialPageRoute(builder: (_) => VideoPlayerScreen(path: p)));
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: w,
+          height: w * 9 / 16,
+          decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF2B2B2B), Color(0xFF111111)])),
+          child: Stack(children: [
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                child: m.busy
+                    ? const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                    : Icon(has ? Icons.play_arrow_rounded : Icons.download_rounded, color: Colors.white, size: 30),
+              ),
+            ),
+            Positioned(
+              left: 10,
+              bottom: 8,
+              child: Row(children: [
+                const Icon(Icons.videocam_rounded, color: Colors.white70, size: 16),
+                const SizedBox(width: 4),
+                Text('${dur > 0 ? MediaFiles.fmtDur(dur) : ''}${dur > 0 && size > 0 ? ' · ' : ''}${size > 0 ? MediaFiles.size(size) : ''}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11.5)),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class VideoPlayerScreen extends StatefulWidget {
+  final String path;
+  const VideoPlayerScreen({super.key, required this.path});
+  @override
+  State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  late final VideoPlayerController _c = VideoPlayerController.file(File(widget.path));
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _c.initialize().then((_) {
+      if (!mounted) return;
+      setState(() => _ready = true);
+      _c.play();
+    });
+    _c.addListener(() => mounted ? setState(() {}) : null);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, title: const Text('Video')),
+      body: !_ready
+          ? const Center(child: CircularProgressIndicator(color: Colors.white))
+          : GestureDetector(
+              onTap: () => _c.value.isPlaying ? _c.pause() : _c.play(),
+              child: Column(children: [
+                Expanded(child: Center(child: AspectRatio(aspectRatio: _c.value.aspectRatio, child: VideoPlayer(_c)))),
+                VideoProgressIndicator(_c, allowScrubbing: true, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    IconButton(
+                      iconSize: 44,
+                      color: Colors.white,
+                      icon: Icon(_c.value.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded),
+                      onPressed: () => _c.value.isPlaying ? _c.pause() : _c.play(),
+                    ),
+                    Text('${MediaFiles.fmtDur(_c.value.position.inSeconds)} / ${MediaFiles.fmtDur(_c.value.duration.inSeconds)}',
+                        style: const TextStyle(color: Colors.white70)),
+                  ]),
+                ),
+              ]),
+            ),
     );
   }
 }

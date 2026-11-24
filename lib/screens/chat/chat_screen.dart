@@ -8,6 +8,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../data/app_state.dart';
 import '../../data/messenger.dart';
@@ -19,6 +20,7 @@ import 'chat_info_screen.dart';
 import 'media_widgets.dart';
 import 'cards.dart';
 import 'group_screens.dart';
+import 'chat_tools.dart';
 import '../../data/media.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -87,6 +89,31 @@ class _ChatScreenState extends State<ChatScreen> {
     if (r == null) return;
     final kept = await _keep(f.path, f.name.isEmpty ? 'photo.jpg' : f.name);
     _sendMedia(kept, MsgKind.image, caption: r.$1, name: 'photo.jpg', once: r.$2);
+  }
+
+  Future<void> _pickVideo() async {
+    XFile? f;
+    try {
+      f = await ImagePicker().pickVideo(source: ImageSource.gallery);
+    } catch (_) {
+      _toast('Photos permission needed');
+      return;
+    }
+    if (f == null) return;
+    final size = await File(f.path).length();
+    if (size > 64 * 1024 * 1024) {
+      _toast('Videos up to 64 MB can be sent');
+      return;
+    }
+    int secs = 0;
+    try {
+      final c = VideoPlayerController.file(File(f.path));
+      await c.initialize();
+      secs = c.value.duration.inSeconds;
+      await c.dispose();
+    } catch (_) {}
+    final kept = await _keep(f.path, f.name.isEmpty ? 'video.mp4' : f.name);
+    _sendMedia(kept, MsgKind.video, name: f.name.isEmpty ? 'video.mp4' : f.name, seconds: secs);
   }
 
   Future<void> _pickDoc() async {
@@ -180,6 +207,7 @@ class _ChatScreenState extends State<ChatScreen> {
               item(Icons.insert_drive_file_rounded, 'Document', const Color(0xFF7A5BA6), _pickDoc),
               item(Icons.poll_rounded, 'Poll', const Color(0xFFE0A100), () => _card(const PollCreateScreen())),
               item(Icons.event_rounded, 'Event', const Color(0xFFD9467A), () => _card(const EventCreateScreen())),
+              item(Icons.videocam_rounded, 'Video', const Color(0xFF3A8F6B), _pickVideo),
               item(Icons.headphones_rounded, 'Audio', const Color(0xFFE07A30), _pickDoc),
             ],
           ),
@@ -299,6 +327,15 @@ class _ChatScreenState extends State<ChatScreen> {
               setState(() => _replyTo = m);
             },
           ),
+          if (!m.deleted)
+            ListTile(
+              leading: const Icon(Icons.shortcut_rounded),
+              title: const Text('Forward'),
+              onTap: () {
+                Navigator.pop(sheet);
+                forwardMessage(context, m);
+              },
+            ),
           ListTile(
             leading: Icon(m.starred ? Icons.star_rounded : Icons.star_outline_rounded),
             title: Text(m.starred ? 'Unstar' : 'Star'),
@@ -378,6 +415,20 @@ class _ChatScreenState extends State<ChatScreen> {
         actions: [
           IconButton(onPressed: () => showComingSoon(context, 'Video call'), icon: const Icon(Icons.videocam_outlined)),
           IconButton(onPressed: () => showComingSoon(context, 'Audio call'), icon: const Icon(Icons.call_outlined)),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'search') Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatSearchScreen(chat: chat)));
+              if (v == 'media') Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatMediaScreen(chat: chat)));
+              if (v == 'info') {
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => chat.isRealGroup ? GroupInfoScreen(chat: chat) : ChatInfoScreen(chat: chat)));
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'info', child: Text('View info')),
+              PopupMenuItem(value: 'search', child: Text('Search')),
+              PopupMenuItem(value: 'media', child: Text('Media, links and docs')),
+            ],
+          ),
         ],
       ),
       body: ChatBackground(
@@ -566,6 +617,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
       content = ContactContent(m: m, fg: fg);
     } else if (m.kind == MsgKind.event) {
       content = EventContent(m: m, fg: fg);
+    } else if (m.kind == MsgKind.video) {
+      content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [VideoContent(m: m, fg: fg), if (caption != null) caption]);
     } else if (m.kind == MsgKind.image) {
       content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [ImageContent(m: m, fg: fg), if (caption != null) caption]);
     } else if (m.kind == MsgKind.doc) {
@@ -621,6 +674,18 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
               padding: const EdgeInsets.only(bottom: 3),
               child: Text(Messenger.instance.nameFor(m.from!),
                   style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Mitti.avatarColors[m.from!.length % Mitti.avatarColors.length])),
+            ),
+          ),
+        if (m.media?['fw'] == true && !m.deleted)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.shortcut_rounded, size: 14, color: fg.withOpacity(0.6)),
+                const SizedBox(width: 3),
+                Text('Forwarded', style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: fg.withOpacity(0.6))),
+              ]),
             ),
           ),
         content,

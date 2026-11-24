@@ -1,7 +1,7 @@
 enum MsgStatus { sending, sent, delivered, read }
 
 /// Saved by index: only ever append new kinds.
-enum MsgKind { text, voice, image, doc, system, poll, location, contact, event }
+enum MsgKind { text, voice, image, doc, system, poll, location, contact, event, video }
 
 class Message {
   final String id;
