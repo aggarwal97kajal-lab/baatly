@@ -1,0 +1,25 @@
+name: Server diagnostics
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/diag/**", ".github/workflows/diag.yml"]
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Live server checks
+        env:
+          MC_CUSTOMER_ID: ${{ secrets.MC_CUSTOMER_ID }}
+          MC_PASSWORD: ${{ secrets.MC_PASSWORD }}
+        run: |
+          B=https://baatly-api.pitaragames.workers.dev
+          echo "== root"; curl -s $B/; echo
+          echo "== passkey login options"; curl -s -X POST $B/v1/auth/passkey/login/options | head -c 300; echo
+          echo "== otp send invalid number (no SMS)"; curl -s -X POST $B/v1/auth/otp/send -H 'content-type: application/json' -d '{"countryCode":"91","number":"12"}'; echo
+          echo "== Message Central token (direct)"
+          KEY=$(printf '%s' "$MC_PASSWORD" | base64 -w0)
+          echo "customerId length: ${#MC_CUSTOMER_ID}, starts: ${MC_CUSTOMER_ID:0:2}"
+          R=$(curl -s -w "\nHTTP %{http_code}" "https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=$MC_CUSTOMER_ID&key=$KEY&scope=NEW&country=91" -H 'accept: */*')
+          echo "$R" | sed -E 's/"token":"[^"]+"/"token":"<redacted>"/'
