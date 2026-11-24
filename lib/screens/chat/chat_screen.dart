@@ -125,7 +125,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   builder: (context, _) => AnimatedSwitcher(
                     duration: Mitti.fast,
                     child: Text(
-                      chat.typing ? 'typing…' : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen aaj')),
+                      chat.typing ? 'typing…' : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen today')),
                       key: ValueKey(chat.typing),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -178,7 +178,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(color: bc.surface.withOpacity(0.92), borderRadius: BorderRadius.circular(12)),
                           child: Text(
-                            'Demo build: messages abhi sirf is phone pe hain. Encryption aur asli delivery agle milestone mein.',
+                            'Demo build: messages stay on this phone only. Encryption and real delivery come in the next milestone.',
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 11.5, color: bc.muted),
                           ),
@@ -368,7 +368,7 @@ class _Composer extends StatelessWidget {
               child: Row(children: [
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(replyTo!.fromMe ? 'Aap' : 'Reply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.primary)),
+                    Text(replyTo!.fromMe ? 'You' : 'Reply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.primary)),
                     Text(replyTo!.kind == MsgKind.voice ? 'Voice note' : replyTo!.text.split('\n').last,
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: bc.muted)),
                   ]),
@@ -393,7 +393,7 @@ class _Composer extends StatelessWidget {
                         textCapitalization: TextCapitalization.sentences,
                         style: TextStyle(fontSize: 15, color: bc.text),
                         decoration: InputDecoration(
-                          hintText: 'Message likho…',
+                          hintText: 'Message…',
                           hintStyle: TextStyle(color: bc.muted),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(vertical: 13),

@@ -261,7 +261,7 @@ void showComingSoon(BuildContext context, String what) {
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(
       behavior: SnackBarBehavior.floating,
-      content: Text('$what — agle milestone mein aayega'),
+      content: Text('$what — coming in a future update'),
       duration: const Duration(seconds: 2),
     ));
 }

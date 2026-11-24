@@ -66,7 +66,7 @@ class CallsTab extends StatelessWidget {
             ),
           Padding(
             padding: const EdgeInsets.all(24),
-            child: Text('Demo build: call screen dikhti hai, asli awaaz/video Milestone 5 mein.',
+            child: Text('Demo build: call screen only. Real audio/video comes in Milestone 5.',
                 textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: bc.muted)),
           ),
         ]),
@@ -109,7 +109,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> with SingleTickerProvid
   }
 
   String get _label {
-    if (!_connected) return 'Bajj raha hai…';
+    if (!_connected) return 'Ringing…';
     final s = _secs - 3;
     return '${(s ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}';
   }

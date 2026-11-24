@@ -13,7 +13,7 @@ class NewChatScreen extends StatelessWidget {
     ('Ananya Gupta', 'AG', 1, 'Mumbai · Designer'),
     ('Neha (Office)', 'NO', 3, 'Finance team'),
     ('Somesh', 'S', 6, 'Building things'),
-    ('Deepak Bhaiya', 'DB', 0, 'Jo bhi ho, chill'),
+    ('Deepak Bhaiya', 'DB', 0, 'Chill, whatever happens'),
   ];
 
   @override
@@ -27,12 +27,12 @@ class NewChatScreen extends StatelessWidget {
           onTap: () => showComingSoon(context, t),
         );
     return Scaffold(
-      appBar: AppBar(title: const Text('Naya chat')),
+      appBar: AppBar(title: const Text('New chat')),
       body: ListView(children: [
-        action(Icons.group_add_rounded, 'Naya group'),
-        action(Icons.groups_rounded, 'Nayi community'),
-        action(Icons.person_add_alt_1_rounded, 'Naya contact'),
-        const SectionLabel('BAATLY pe contacts'),
+        action(Icons.group_add_rounded, 'New group'),
+        action(Icons.groups_rounded, 'New community'),
+        action(Icons.person_add_alt_1_rounded, 'New contact'),
+        const SectionLabel('Contacts on BAATLY'),
         for (final c in existing)
           ListTile(
             leading: Avatar(initials: c.initials, colorIndex: c.colorIndex, size: 44),
@@ -53,7 +53,7 @@ class NewChatScreen extends StatelessWidget {
           ),
         Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('Demo build: ye contacts sample hain. Asli contacts sync Milestone 2 mein.',
+          child: Text('Demo build: these are sample contacts. Real contact sync comes later.',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: bc.muted)),
         ),
       ]),

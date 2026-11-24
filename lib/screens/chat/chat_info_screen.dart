@@ -47,7 +47,7 @@ class ChatInfoScreen extends StatelessWidget {
             Row(children: [
               action(Icons.call_outlined, 'Audio', 'Audio call'),
               action(Icons.videocam_outlined, 'Video', 'Video call'),
-              action(Icons.search_rounded, 'Search', 'Chat mein search'),
+              action(Icons.search_rounded, 'Search', 'Search in chat'),
             ]),
             const SizedBox(height: 14),
             _Card(children: [
@@ -78,7 +78,7 @@ class ChatInfoScreen extends StatelessWidget {
               ListTile(
                 leading: Icon(Icons.lock_outline_rounded, color: context.primary),
                 title: const Text('Encryption'),
-                subtitle: const Text('Agle milestone mein judega'),
+                subtitle: const Text('Coming in the next milestone'),
                 onTap: () => showComingSoon(context, 'End-to-end encryption'),
               ),
             ]),
@@ -86,12 +86,12 @@ class ChatInfoScreen extends StatelessWidget {
             _Card(children: [
               ListTile(
                 leading: const Icon(Icons.block_rounded, color: Color(0xFFB3261E)),
-                title: Text('${chat.name} ko block karein', style: const TextStyle(color: Color(0xFFB3261E))),
+                title: Text('Block ${chat.name}', style: const TextStyle(color: Color(0xFFB3261E))),
                 onTap: () => showComingSoon(context, 'Block'),
               ),
               ListTile(
                 leading: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFB3261E)),
-                title: const Text('Chat clear karein', style: TextStyle(color: Color(0xFFB3261E))),
+                title: const Text('Clear chat', style: TextStyle(color: Color(0xFFB3261E))),
                 onTap: () {
                   s.toggle(() => chat.messages.clear());
                   Navigator.pop(context);

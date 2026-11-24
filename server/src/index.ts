@@ -68,12 +68,12 @@ async function otpSend(c: Ctx) {
   const perPhone = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM otp_requests WHERE phone = ? AND created_at > ?')
     .bind(phone, t - 10 * 60 * 1000)
     .first<{ n: number }>();
-  if ((perPhone?.n ?? 0) >= OTP_PER_PHONE_10MIN) throw new HttpError(429, 'TOO_MANY_OTP', 'Thodi der baad koshish karein');
+  if ((perPhone?.n ?? 0) >= OTP_PER_PHONE_10MIN) throw new HttpError(429, 'TOO_MANY_OTP', 'Too many codes requested. Please try again later.');
   if (ip) {
     const perIp = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM otp_requests WHERE ip = ? AND created_at > ?')
       .bind(ip, t - 60 * 60 * 1000)
       .first<{ n: number }>();
-    if ((perIp?.n ?? 0) >= OTP_PER_IP_HOUR) throw new HttpError(429, 'TOO_MANY_OTP', 'Thodi der baad koshish karein');
+    if ((perIp?.n ?? 0) >= OTP_PER_IP_HOUR) throw new HttpError(429, 'TOO_MANY_OTP', 'Too many codes requested. Please try again later.');
   }
   const ref = await sendOtp(c.env, phone);
   const requestId = randomId();
@@ -91,13 +91,13 @@ async function otpVerify(c: Ctx) {
     .bind(String(body.requestId ?? ''))
     .first<{ id: string; phone: string; provider_ref: string; attempts: number; verified: number; created_at: number }>();
   if (!r || r.verified) throw new HttpError(400, 'INVALID_REQUEST');
-  if (now() - r.created_at > OTP_TTL_MS) throw new HttpError(400, 'OTP_EXPIRED', 'Code expire ho gaya, naya mangaiye');
-  if (r.attempts >= OTP_MAX_ATTEMPTS) throw new HttpError(429, 'TOO_MANY_ATTEMPTS', 'Bahut galat koshish, naya code mangaiye');
+  if (now() - r.created_at > OTP_TTL_MS) throw new HttpError(400, 'OTP_EXPIRED', 'Code expired. Request a new one.');
+  if (r.attempts >= OTP_MAX_ATTEMPTS) throw new HttpError(429, 'TOO_MANY_ATTEMPTS', 'Too many wrong attempts. Request a new code.');
   await c.env.DB.prepare('UPDATE otp_requests SET attempts = attempts + 1 WHERE id = ?').bind(r.id).run();
 
   const result = await checkOtp(c.env, r.provider_ref, code);
-  if (result === 'expired') throw new HttpError(400, 'OTP_EXPIRED', 'Code expire ho gaya, naya mangaiye');
-  if (result !== 'ok') throw new HttpError(400, 'WRONG_OTP', 'Galat code');
+  if (result === 'expired') throw new HttpError(400, 'OTP_EXPIRED', 'Code expired. Request a new one.');
+  if (result !== 'ok') throw new HttpError(400, 'WRONG_OTP', 'Incorrect code');
   await c.env.DB.prepare('UPDATE otp_requests SET verified = 1 WHERE id = ?').bind(r.id).run();
 
   let user = await c.env.DB.prepare('SELECT * FROM users WHERE phone = ?').bind(r.phone).first<User>();
@@ -198,7 +198,7 @@ async function passkeyLoginVerify(c: Ctx) {
   const pk = await c.env.DB.prepare('SELECT * FROM passkeys WHERE id = ?')
     .bind(body.response?.id ?? '')
     .first<{ id: string; user_id: string; public_key: string; counter: number; transports: string }>();
-  if (!pk) throw new HttpError(404, 'PASSKEY_NOT_FOUND', 'Ye passkey ab register nahi hai. OTP se login karein.');
+  if (!pk) throw new HttpError(404, 'PASSKEY_NOT_FOUND', 'This passkey is no longer registered. Log in with OTP.');
   const { rpID, origins } = rp(c);
   let v;
   try {
@@ -244,7 +244,7 @@ async function updateMe(c: Ctx) {
   if (username && !/^[a-z0-9._]{3,20}$/.test(username)) throw new HttpError(400, 'INVALID_USERNAME');
   if (username && username !== user.username) {
     const taken = await c.env.DB.prepare('SELECT 1 FROM users WHERE username = ? AND id != ?').bind(username, user.id).first();
-    if (taken) throw new HttpError(409, 'USERNAME_TAKEN', 'Ye username le liya gaya hai');
+    if (taken) throw new HttpError(409, 'USERNAME_TAKEN', 'This username is already taken');
   }
   await c.env.DB.prepare('UPDATE users SET name = ?, username = ?, about = ?, updated_at = ? WHERE id = ?')
     .bind(name, username, about, now(), user.id)
@@ -333,7 +333,7 @@ export default {
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.code, message: e.message }, e.status);
       console.error(e);
-      return json({ error: 'SERVER_ERROR', message: 'Kuch gadbad hui, dobara koshish karein' }, 500);
+      return json({ error: 'SERVER_ERROR', message: 'Something went wrong. Please try again.' }, 500);
     }
   },
 };

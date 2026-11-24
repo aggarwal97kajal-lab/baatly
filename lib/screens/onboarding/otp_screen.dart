@@ -128,14 +128,14 @@ class _OtpScreenState extends State<OtpScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           children: [
             const SizedBox(height: 8),
-            Text('Code daalein', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
+            Text('Enter code', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
             const SizedBox(height: 8),
-            Text('${widget.phone} pe 6-digit code bheja gaya.', style: TextStyle(fontSize: 13.5, color: bc.muted)),
+            Text('We sent a 6-digit code to ${widget.phone}.', style: TextStyle(fontSize: 13.5, color: bc.muted)),
             GestureDetector(
               onTap: () => Navigator.pop(context),
               child: Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('Number badlein', style: TextStyle(fontSize: 13.5, color: context.primary, fontWeight: FontWeight.w700)),
+                child: Text('Change number', style: TextStyle(fontSize: 13.5, color: context.primary, fontWeight: FontWeight.w700)),
               ),
             ),
             const SizedBox(height: 26),
@@ -196,14 +196,14 @@ class _OtpScreenState extends State<OtpScreen> {
               Icon(Icons.timer_outlined, size: 18, color: context.primary),
               const SizedBox(width: 8),
               if (_left > 0)
-                Text.rich(TextSpan(text: 'Code dobara bhejein ', children: [
+                Text.rich(TextSpan(text: 'Resend code in ', children: [
                   TextSpan(text: '0:${_left.toString().padLeft(2, '0')}', style: TextStyle(color: bc.text, fontWeight: FontWeight.w700)),
-                  const TextSpan(text: ' mein'),
+                  const TextSpan(text: ''),
                 ]), style: TextStyle(fontSize: 13, color: bc.muted))
               else
                 GestureDetector(
                   onTap: _resend,
-                  child: Text('Code dobara bhejein', style: TextStyle(fontSize: 13, color: context.primary, fontWeight: FontWeight.w700)),
+                  child: Text('Resend code', style: TextStyle(fontSize: 13, color: context.primary, fontWeight: FontWeight.w700)),
                 ),
             ]),
             if (_demo) ...[
@@ -217,8 +217,8 @@ class _OtpScreenState extends State<OtpScreen> {
                   Expanded(
                     child: Text(
                       kHasBackend
-                          ? 'Test mode: SMS service abhi judi nahi hai. Code 123456 daalein.'
-                          : 'Demo build: abhi SMS nahi jaata. Koi bhi 6 digit daalein.',
+                          ? 'Test mode: SMS is not connected yet. Enter 123456.'
+                          : 'Demo build: no SMS is sent. Enter any 6 digits.',
                       style: TextStyle(fontSize: 12, color: bc.muted),
                     ),
                   ),
@@ -233,7 +233,7 @@ class _OtpScreenState extends State<OtpScreen> {
                 onPressed: code.length == 6 ? _verify : null,
                 child: _verifying
                     ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                    : const Text('Verify karein'),
+                    : const Text('Verify'),
               ),
             ),
           ],

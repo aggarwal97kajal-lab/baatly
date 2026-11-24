@@ -85,7 +85,7 @@ class Api {
       if (body != null) req.body = jsonEncode(body);
       r = await http.Response.fromStream(await req.send().timeout(const Duration(seconds: 20)));
     } catch (_) {
-      throw ApiException(0, 'NETWORK', 'Internet check karein aur dobara koshish karein');
+      throw ApiException(0, 'NETWORK', 'Can\'t reach the server. Check your internet and try again.');
     }
     Map<String, dynamic> data = {};
     try {
@@ -103,14 +103,14 @@ class Api {
     final msg = d['message'] as String? ?? '';
     if (msg.isNotEmpty && msg != code) return msg;
     return switch (code) {
-      'INVALID_PHONE' => 'Sahi mobile number daalein',
-      'TOO_MANY_OTP' || 'OTP_LIMIT_REACHED' => 'Bahut saare code bhej diye. Thodi der baad koshish karein',
-      'OTP_ALREADY_SENT' => 'Code pehle hi bhej diya hai, SMS check karein',
-      'WRONG_OTP' => 'Galat code',
-      'OTP_EXPIRED' => 'Code expire ho gaya, naya mangaiye',
-      'USERNAME_TAKEN' => 'Ye username le liya gaya hai',
-      'OTP_NOT_CONFIGURED' => 'OTP service abhi setup nahi hai',
-      _ => 'Kuch gadbad hui, dobara koshish karein',
+      'INVALID_PHONE' => 'Enter a valid mobile number',
+      'TOO_MANY_OTP' || 'OTP_LIMIT_REACHED' => 'Too many codes requested. Please try again later.',
+      'OTP_ALREADY_SENT' => 'A code was already sent. Please check your SMS.',
+      'WRONG_OTP' => 'Incorrect code',
+      'OTP_EXPIRED' => 'Code expired. Request a new one.',
+      'USERNAME_TAKEN' => 'This username is already taken',
+      'OTP_NOT_CONFIGURED' => 'OTP service is not set up yet',
+      _ => 'Something went wrong. Please try again.',
     };
   }
 
@@ -183,11 +183,11 @@ class Api {
 
   ApiException _passkeyError(AuthenticatorException e) {
     final msg = switch (e) {
-      PasskeyAuthCancelledException() => 'Cancel kar diya',
-      NoCredentialsAvailableException() => 'Is phone par BAATLY ka koi passkey nahi mila. OTP se login karein.',
-      DeviceNotSupportedException() => 'Ye phone passkey support nahi karta. OTP se login karein.',
-      DomainNotAssociatedException() => 'Passkey setup abhi poora nahi hua (domain link). OTP se login karein.',
-      _ => 'Passkey kaam nahi kiya. Phone mein screen lock aur Google account check karein.',
+      PasskeyAuthCancelledException() => 'Cancelled',
+      NoCredentialsAvailableException() => 'No BAATLY passkey found on this phone. Log in with OTP.',
+      DeviceNotSupportedException() => 'This phone doesn\'t support passkeys. Log in with OTP.',
+      DomainNotAssociatedException() => 'Passkey setup is incomplete (domain link). Log in with OTP.',
+      _ => 'Passkey didn\'t work. Make sure a screen lock and Google account are set up.',
     };
     return ApiException(-1, e is PasskeyAuthCancelledException ? 'CANCELLED' : 'PASSKEY', msg);
   }

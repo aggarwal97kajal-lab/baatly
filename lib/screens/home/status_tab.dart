@@ -20,7 +20,7 @@ class StatusTab extends StatelessWidget {
       builder: (context, _) {
         final fresh = s.statuses.where((x) => !x.seen).toList();
         final seen = s.statuses.where((x) => x.seen).toList();
-        final myName = s.name.isEmpty ? 'Aap' : s.name;
+        final myName = s.name.isEmpty ? 'You' : s.name;
         return Scaffold(
           backgroundColor: bc.bg,
           floatingActionButton: FloatingActionButton(
@@ -54,20 +54,20 @@ class StatusTab extends StatelessWidget {
                       ),
                     ),
                   ]),
-                  title: const Text('Mera status', style: TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text(s.myStatuses.isEmpty ? 'Status lagane ke liye tap karein' : '${s.myStatuses.length} update · abhi'),
+                  title: const Text('My status', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(s.myStatuses.isEmpty ? 'Tap to add a status' : '${s.myStatuses.length} update · just now'),
                   onTap: () {
                     if (s.myStatuses.isEmpty) {
                       Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TextStatusScreen()));
                     } else {
                       Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => StatusViewer(item: StatusItem(myName, myName[0], 2, 'abhi', s.myStatuses, [0xFFC8553D]))));
+                          builder: (_) => StatusViewer(item: StatusItem(myName, myName[0], 2, 'just now', s.myStatuses, [0xFFC8553D]))));
                     }
                   },
                 ),
               ),
               if (fresh.isNotEmpty) ...[
-                const SectionLabel('Naye updates'),
+                const SectionLabel('Recent updates'),
                 SizedBox(
                   height: 150,
                   child: ListView(
@@ -78,7 +78,7 @@ class StatusTab extends StatelessWidget {
                 ),
               ],
               if (seen.isNotEmpty) ...[
-                const SectionLabel('Dekhe hue'),
+                const SectionLabel('Viewed updates'),
                 for (final st in seen)
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 24),
@@ -279,7 +279,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                     onTap: () => _c.stop(),
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      hintText: 'Reply karein…',
+                      hintText: 'Reply…',
                       hintStyle: const TextStyle(color: Colors.white70),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 18),
                       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: Colors.white54)),
@@ -292,7 +292,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                   onPressed: () {
                     _reply.clear();
                     FocusScope.of(context).unfocus();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reply bhej diya (demo)')));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reply sent (demo)')));
                     _c.forward();
                   },
                   icon: const Icon(Icons.send_rounded, color: Colors.white),
@@ -352,7 +352,7 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
                     style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w700),
                     decoration: const InputDecoration(
                       border: InputBorder.none,
-                      hintText: 'Kuch likhein…',
+                      hintText: 'Type a status…',
                       hintStyle: TextStyle(color: Colors.white60),
                     ),
                   ),
@@ -385,7 +385,7 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
               child: Row(children: [
                 const Expanded(
-                  child: Text('Mere contacts dekh sakte hain · 24 ghante', style: TextStyle(color: Colors.white70, fontSize: 12.5)),
+                  child: Text('Visible to my contacts · 24 hours', style: TextStyle(color: Colors.white70, fontSize: 12.5)),
                 ),
                 FloatingActionButton(
                   backgroundColor: Colors.white,

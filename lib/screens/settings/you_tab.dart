@@ -20,7 +20,7 @@ class YouTab extends StatelessWidget {
     return ListenableBuilder(
       listenable: s,
       builder: (context, _) {
-        final name = s.name.isEmpty ? 'Aap' : s.name;
+        final name = s.name.isEmpty ? 'You' : s.name;
         final parts = name.split(' ').where((p) => p.isNotEmpty).toList();
         final ini = (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
         return Scaffold(
@@ -45,14 +45,14 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone),
                 _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => _privacy(context)),
-                _row(context, Icons.fingerprint_rounded, 'Passkey', trailing: kHasBackend ? 'Banayein' : 'Demo mein nahi',
+                _row(context, Icons.fingerprint_rounded, 'Passkey', trailing: kHasBackend ? 'Create' : 'Not in demo',
                     onTap: kHasBackend
                         ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PasskeySetupScreen(next: const _PopBack())))
                         : null),
                 _row(context, Icons.shield_outlined, 'Security'),
                 _row(context, Icons.chat_bubble_outline_rounded, 'Chats'),
                 _row(context, Icons.notifications_none_rounded, 'Notifications'),
-                _row(context, Icons.data_usage_rounded, 'Storage aur data'),
+                _row(context, Icons.data_usage_rounded, 'Storage and data'),
                 _row(context, Icons.devices_rounded, 'Linked devices'),
                 _row(context, Icons.palette_outlined, 'Appearance',
                     trailing: switch (s.themeMode) { ThemeMode.light => 'Light', ThemeMode.dark => 'Dark', _ => 'System' },
@@ -65,7 +65,7 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 _row(context, Icons.help_outline_rounded, 'Help'),
                 _row(context, Icons.info_outline_rounded, 'About BAATLY', onTap: () => _about(context)),
-                _row(context, Icons.logout_rounded, 'Logout', onTap: () async {
+                _row(context, Icons.logout_rounded, 'Log out', onTap: () async {
                   await Api.instance.logout();
                   await AppState.instance.resetDemo();
                   if (!context.mounted) return;
@@ -111,9 +111,9 @@ class YouTab extends StatelessWidget {
       builder: (sheet) => Padding(
         padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(sheet).viewInsets.bottom + 20),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Profile edit', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const Text('Edit profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 14),
-          TextField(controller: name, decoration: const InputDecoration(labelText: 'Naam')),
+          TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
           const SizedBox(height: 10),
           TextField(controller: about, maxLength: 140, decoration: const InputDecoration(labelText: 'About')),
           const SizedBox(height: 10),
@@ -143,13 +143,13 @@ class YouTab extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             SwitchListTile(
               title: const Text('Read receipts'),
-              subtitle: const Text('Off karne pe aapko bhi nahi dikhenge'),
+              subtitle: const Text('If off, you won\'t see others\' receipts either'),
               value: s.readReceipts,
               onChanged: (v) => s.toggle(() => s.readReceipts = v),
             ),
             SwitchListTile(
               title: const Text('App lock (fingerprint)'),
-              subtitle: const Text('Asli lock Milestone 9 mein'),
+              subtitle: const Text('Real lock arrives in Milestone 9'),
               value: s.appLock,
               onChanged: (v) => s.toggle(() => s.appLock = v),
             ),
@@ -167,8 +167,8 @@ class YouTab extends StatelessWidget {
       applicationVersion: '0.1.0 (Milestone 1 demo)',
       applicationIcon: const BaatlyMark(size: 48),
       children: const [
-        Text('Every Conversation Matters.\n\nYe demo build hai: design, screens aur navigation. '
-            'Login, asli messaging, encryption aur calls agle milestones mein judenge.'),
+        Text('Every Conversation Matters.\n\nThis is an early build: design, screens, login and passkeys. '
+            'Real messaging, encryption and calls arrive in upcoming milestones.'),
       ],
     );
   }

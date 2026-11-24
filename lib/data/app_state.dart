@@ -15,7 +15,7 @@ extension WallpaperInfo on Wallpaper {
         Wallpaper.baatcheet => 'Baatcheet',
         Wallpaper.mausam => 'Mausam',
         Wallpaper.raat => 'Raat',
-        Wallpaper.plain => 'Saada',
+        Wallpaper.plain => 'Plain',
       };
 
   String? get asset => switch (this) {
@@ -42,7 +42,7 @@ class AppState extends ChangeNotifier {
   bool appLock = false;
 
   String name = '';
-  String about = 'Baat karte hain!';
+  String about = 'Let\'s talk!';
   String username = '';
   String phone = '';
   bool onboarded = false;
@@ -121,9 +121,9 @@ class AppState extends ChangeNotifier {
   }
 
   void finishOnboarding({required String name, required String username, required String about}) {
-    this.name = name.trim().isEmpty ? 'Aap' : name.trim();
+    this.name = name.trim().isEmpty ? 'You' : name.trim();
     this.username = username.trim();
-    this.about = about.trim().isEmpty ? 'Baat karte hain!' : about.trim();
+    this.about = about.trim().isEmpty ? 'Let\'s talk!' : about.trim();
     onboarded = true;
     _save();
     notifyListeners();
@@ -248,7 +248,7 @@ class AppState extends ChangeNotifier {
         Message(id: 'k1', text: 'Kal milte hain?', fromMe: false, time: ago(60 * 22)),
         Message(id: 'k2', text: 'Haha theek hai bhai, kal milte', fromMe: true, time: ago(60 * 21)),
       ]),
-      Chat(id: 'priya', name: 'Priya Nair', initials: 'PN', colorIndex: 5, about: 'Baat karte hain!', messages: [
+      Chat(id: 'priya', name: 'Priya Nair', initials: 'PN', colorIndex: 5, about: 'Let\'s talk!', messages: [
         Message(id: 'p1', text: '📷 Photo', fromMe: false, time: ago(60 * 48)),
       ]),
       Chat(id: 'old', name: 'Loan Offers', initials: 'LO', colorIndex: 6, archived: true, messages: [
@@ -257,20 +257,20 @@ class AppState extends ChangeNotifier {
     ]);
 
     calls.addAll([
-      CallLog('Riya Sharma', 'RS', 0, CallKind.incoming, true, 'Aaj, 9:20 · 12 min'),
-      CallLog('Ghar Wale', 'GW', 1, CallKind.incoming, true, 'Aaj, 8:02 · Group'),
-      CallLog('Aman Verma', 'AV', 2, CallKind.missed, false, 'Missed · Aaj, 7:41 (2)'),
-      CallLog('Kabir', 'K', 4, CallKind.outgoing, false, 'Kal, 10:15 PM · 3 min'),
-      CallLog('Office — Finance', 'OF', 3, CallKind.outgoing, true, 'Kal, 4:30 PM · 41 min'),
+      CallLog('Riya Sharma', 'RS', 0, CallKind.incoming, true, 'Today, 9:20 · 12 min'),
+      CallLog('Ghar Wale', 'GW', 1, CallKind.incoming, true, 'Today, 8:02 · Group'),
+      CallLog('Aman Verma', 'AV', 2, CallKind.missed, false, 'Missed · Today, 7:41 (2)'),
+      CallLog('Kabir', 'K', 4, CallKind.outgoing, false, 'Yesterday, 10:15 PM · 3 min'),
+      CallLog('Office — Finance', 'OF', 3, CallKind.outgoing, true, 'Yesterday, 4:30 PM · 41 min'),
       CallLog('Priya Nair', 'PN', 5, CallKind.missed, false, 'Missed · Mon, 6:12 PM'),
     ]);
 
     statuses.addAll([
-      StatusItem('Riya', 'RS', 0, '42 min pehle', ['Aaj ki chai, purane dost ke saath ☕', 'Cafe Mocha vibes'], [0xFFC8553D, 0xFFB5651D]),
-      StatusItem('Ghar Wale', 'GW', 1, '1 ghanta pehle', ['Sunday lunch 🍛'], [0xFF2E3A59]),
-      StatusItem('Aman', 'AV', 2, '3 ghante pehle', ['Goa cancel 😭', 'Next time pakka'], [0xFF7A5BA6, 0xFF3E7C5A]),
-      StatusItem('Kabir', 'K', 4, 'Kal', ['Match day 🏏'], [0xFF3E7C5A]),
-      StatusItem('Priya Nair', 'PN', 5, 'Aaj, 7:12 AM', ['Good morning ☀️'], [0xFFB5651D], seen: true),
+      StatusItem('Riya', 'RS', 0, '42 min ago', ['Aaj ki chai, purane dost ke saath ☕', 'Cafe Mocha vibes'], [0xFFC8553D, 0xFFB5651D]),
+      StatusItem('Ghar Wale', 'GW', 1, '1 hour ago', ['Sunday lunch 🍛'], [0xFF2E3A59]),
+      StatusItem('Aman', 'AV', 2, '3 hours ago', ['Goa cancel 😭', 'Next time pakka'], [0xFF7A5BA6, 0xFF3E7C5A]),
+      StatusItem('Kabir', 'K', 4, 'Yesterday', ['Match day 🏏'], [0xFF3E7C5A]),
+      StatusItem('Priya Nair', 'PN', 5, 'Today, 7:12 AM', ['Good morning ☀️'], [0xFFB5651D], seen: true),
     ]);
   }
 }
@@ -285,7 +285,7 @@ String chatTime(DateTime t) {
   final now = DateTime.now();
   final diff = now.difference(t);
   if (diff.inHours < 24 && now.day == t.day) return hhmm(t);
-  if (diff.inDays < 2) return 'Kal';
+  if (diff.inDays < 2) return 'Yesterday';
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   return days[t.weekday - 1];
 }

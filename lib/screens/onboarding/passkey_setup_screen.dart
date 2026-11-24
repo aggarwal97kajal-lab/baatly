@@ -67,15 +67,15 @@ class _PasskeySetupScreenState extends State<PasskeySetupScreen> {
             ),
           ),
           const SizedBox(height: 30),
-          Text(_done ? 'Passkey ban gaya!' : 'Agli baar bina OTP ke login',
+          Text(_done ? 'Passkey created!' : 'Skip the OTP next time',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: bc.text)),
           const SizedBox(height: 10),
-          Text('Passkey banayein — phir fingerprint ya screen lock se seedha login.',
+          Text('Create a passkey and log in with your fingerprint or screen lock.',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: bc.muted, height: 1.5)),
           const SizedBox(height: 28),
-          point(Icons.bolt_rounded, 'SMS ka intezaar nahi — 1 second mein login'),
-          point(Icons.shield_outlined, 'Phishing se safe: passkey sirf BAATLY ke liye kaam karta hai'),
-          point(Icons.cloud_done_outlined, 'Google Password Manager mein save — naye phone par bhi milega'),
+          point(Icons.bolt_rounded, 'No waiting for SMS — log in in a second'),
+          point(Icons.shield_outlined, 'Phishing-resistant: works only for BAATLY'),
+          point(Icons.cloud_done_outlined, 'Saved in Google Password Manager — available on your new phone too'),
           if (_error != null)
             Container(
               margin: const EdgeInsets.only(top: 6),
@@ -89,11 +89,11 @@ class _PasskeySetupScreenState extends State<PasskeySetupScreen> {
             icon: _busy
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
                 : const Icon(Icons.fingerprint_rounded),
-            label: const Text('Passkey banayein'),
+            label: const Text('Create passkey'),
           ),
           TextButton(
             onPressed: _busy ? null : _next,
-            child: Text('Abhi nahi', style: TextStyle(color: bc.muted, fontWeight: FontWeight.w700)),
+            child: Text('Not now', style: TextStyle(color: bc.muted, fontWeight: FontWeight.w700)),
           ),
           const SizedBox(height: 20),
         ]),

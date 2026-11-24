@@ -122,7 +122,7 @@ class _ChatsTabState extends State<ChatsTab> {
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.forum_outlined, size: 56, color: bc.muted.withOpacity(0.5)),
                       const SizedBox(height: 10),
-                      Text(_q.isEmpty ? 'Yahan abhi koi chat nahi' : '"$_q" se kuch nahi mila', style: TextStyle(color: bc.muted)),
+                      Text(_q.isEmpty ? 'No chats here yet' : 'No results for "$_q"', style: TextStyle(color: bc.muted)),
                     ]),
                   ),
                 )
@@ -153,7 +153,7 @@ class _ChatRow extends StatelessWidget {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
             leading: Icon(chat.pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
-            title: Text(chat.pinned ? 'Unpin karein' : 'Pin karein'),
+            title: Text(chat.pinned ? 'Unpin' : 'Pin'),
             onTap: () {
               s.toggle(() => chat.pinned = !chat.pinned);
               Navigator.pop(context);
@@ -161,7 +161,7 @@ class _ChatRow extends StatelessWidget {
           ),
           ListTile(
             leading: Icon(chat.muted ? Icons.volume_up_rounded : Icons.volume_off_rounded),
-            title: Text(chat.muted ? 'Unmute karein' : 'Mute karein'),
+            title: Text(chat.muted ? 'Unmute' : 'Mute'),
             onTap: () {
               s.toggle(() => chat.muted = !chat.muted);
               Navigator.pop(context);
@@ -169,7 +169,7 @@ class _ChatRow extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.archive_outlined),
-            title: Text(chat.archived ? 'Unarchive karein' : 'Archive karein'),
+            title: Text(chat.archived ? 'Unarchive' : 'Archive'),
             onTap: () {
               s.toggle(() => chat.archived = !chat.archived);
               Navigator.pop(context);
@@ -177,7 +177,7 @@ class _ChatRow extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.mark_chat_unread_outlined),
-            title: const Text('Unread mark karein'),
+            title: const Text('Mark as unread'),
             onTap: () {
               s.toggle(() => chat.unread = chat.unread == 0 ? 1 : chat.unread);
               Navigator.pop(context);

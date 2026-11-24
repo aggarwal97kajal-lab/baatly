@@ -19,7 +19,7 @@ class ProfileSetupScreen extends StatefulWidget {
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _name = TextEditingController();
   final _user = TextEditingController();
-  final _about = TextEditingController(text: 'Baat karte hain!');
+  final _about = TextEditingController(text: 'Let\'s talk!');
   bool _saving = false;
   String? _serverError;
 
@@ -65,7 +65,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     final ready = _name.text.trim().isNotEmpty && _userOk;
     return Scaffold(
       backgroundColor: bc.bg,
-      appBar: AppBar(backgroundColor: bc.bg, title: const Text('Profile banayein'), centerTitle: true, automaticallyImplyLeading: false),
+      appBar: AppBar(backgroundColor: bc.bg, title: const Text('Set up profile'), centerTitle: true, automaticallyImplyLeading: false),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -101,7 +101,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               ),
             ),
             const SizedBox(height: 28),
-            _Field(label: 'Naam', ctrl: _name, hint: 'Aapka naam', onChanged: () => setState(() {}), helper: 'Ye naam aapke contacts ko dikhega.'),
+            _Field(label: 'Name', ctrl: _name, hint: 'Aapka naam', onChanged: () => setState(() {}), helper: 'Your contacts will see this name.'),
             _Field(
               label: 'Username',
               ctrl: _user,
@@ -109,8 +109,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               prefix: '@',
               onChanged: () => setState(() => _serverError = null),
               helper: _user.text.isEmpty
-                  ? '3-20 akshar: a-z, 0-9, . aur _'
-                  : (_userOk ? '@${_user.text} available hai' : 'Sirf a-z, 0-9, . aur _ (3-20 akshar)'),
+                  ? '3–20 characters: a–z, 0–9, . and _'
+                  : (_userOk ? '@${_user.text} is available' : 'Only a–z, 0–9, . and _ (3–20 characters)'),
               helperColor: _user.text.isEmpty ? null : (_userOk ? Mitti.success : Mitti.error),
               trailing: _userOk ? const Icon(Icons.check_circle_rounded, color: Mitti.success) : null,
             ),
@@ -119,7 +119,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Text(_serverError!, style: const TextStyle(color: Mitti.error, fontWeight: FontWeight.w500)),
               ),
-            _Field(label: 'About', ctrl: _about, hint: 'Kuch apne baare mein', onChanged: () => setState(() {}), maxLength: 140),
+            _Field(label: 'About', ctrl: _about, hint: 'A little about you', onChanged: () => setState(() {}), maxLength: 140),
             const SizedBox(height: 20),
             AnimatedOpacity(
               opacity: ready ? 1 : 0.45,
@@ -128,7 +128,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 onPressed: ready && !_saving ? _submit : null,
                 child: _saving
                     ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                    : const Text('Ho gaya'),
+                    : const Text('Done'),
               ),
             ),
             const SizedBox(height: 24),

@@ -34,6 +34,10 @@ jobs:
           flutter create --org app.baatly --project-name baatly --platforms=android .
           # Brand: app name, launcher icon, launch screen
           sed -i 's/android:label="[^"]*"/android:label="BAATLY"/' android/app/src/main/AndroidManifest.xml
+          # Release builds need INTERNET explicitly (Flutter only adds it to debug/profile).
+          grep -q "android.permission.INTERNET" android/app/src/main/AndroidManifest.xml || \
+            sed -i '0,/<application/s|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' android/app/src/main/AndroidManifest.xml
+          grep -n "INTERNET" android/app/src/main/AndroidManifest.xml
           cp -r android_overrides/res/. android/app/src/main/res/
           # Passkeys (Credential Manager) need Android 9+.
           GRADLE=android/app/build.gradle.kts

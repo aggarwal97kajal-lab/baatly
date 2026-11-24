@@ -115,9 +115,9 @@ class _PhoneScreenState extends State<PhoneScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           children: [
             const SizedBox(height: 8),
-            Text('Apna phone number\ndaalein', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text, height: 1.25)),
+            Text('Enter your\nphone number', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text, height: 1.25)),
             const SizedBox(height: 10),
-            Text('Verify karne ke liye hum 6-digit code SMS karenge.', style: TextStyle(fontSize: 13, color: bc.muted)),
+            Text('We\'ll text you a 6-digit code to verify it.', style: TextStyle(fontSize: 13, color: bc.muted)),
             const SizedBox(height: 28),
             Row(children: [
               InkWell(
@@ -163,7 +163,7 @@ class _PhoneScreenState extends State<PhoneScreen> {
             Row(children: [
               Icon(Icons.info_outline_rounded, size: 16, color: bc.muted),
               const SizedBox(width: 6),
-              Expanded(child: Text('Carrier ke SMS rates lag sakte hain.', style: TextStyle(fontSize: 12, color: bc.muted))),
+              Expanded(child: Text('Carrier SMS rates may apply.', style: TextStyle(fontSize: 12, color: bc.muted))),
             ]),
             const SizedBox(height: 40),
             AnimatedOpacity(
@@ -173,14 +173,14 @@ class _PhoneScreenState extends State<PhoneScreen> {
                 onPressed: _valid && !_busy ? _continue : null,
                 child: _busy
                     ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                    : const Text('Aage badhein'),
+                    : const Text('Continue'),
               ),
             ),
             if (kHasBackend) ...[
               const SizedBox(height: 22),
               Row(children: [
                 Expanded(child: Divider(color: bc.line)),
-                Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Text('pehle se account hai?', style: TextStyle(fontSize: 12, color: bc.muted))),
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Text('already have an account?', style: TextStyle(fontSize: 12, color: bc.muted))),
                 Expanded(child: Divider(color: bc.line)),
               ]),
               const SizedBox(height: 14),
@@ -195,7 +195,7 @@ class _PhoneScreenState extends State<PhoneScreen> {
                 icon: _passkeyBusy
                     ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.primary))
                     : const Icon(Icons.fingerprint_rounded),
-                label: const Text('Passkey se login karein', style: TextStyle(fontWeight: FontWeight.w700)),
+                label: const Text('Log in with passkey', style: TextStyle(fontWeight: FontWeight.w700)),
               ),
             ],
           ],

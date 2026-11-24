@@ -62,8 +62,8 @@ class AppearanceScreen extends StatelessWidget {
             Container(
               decoration: BoxDecoration(color: bc.surface, borderRadius: BorderRadius.circular(18)),
               child: SwitchListTile(
-                title: const Text('Animations kam karein'),
-                subtitle: const Text('Kam motion, kam battery'),
+                title: const Text('Reduce animations'),
+                subtitle: const Text('Less motion, less battery'),
                 value: s.reduceMotion,
                 onChanged: (v) => s.toggle(() => s.reduceMotion = v),
               ),

@@ -15,9 +15,9 @@ class _IntroScreenState extends State<IntroScreen> {
   int _page = 0;
 
   static const _pages = [
-    (Icons.forum_rounded, 'Har baat, turant.', 'Messages, photos aur voice notes —\nnetwork kamzor ho tab bhi.'),
-    (Icons.lock_rounded, 'Aapki baat, sirf aapki.', 'Personal chats end-to-end encrypted\nhongi. (Encryption agle milestone\nmein judega.)'),
-    (Icons.videocam_rounded, 'Aamne-saamne baat.', 'Audio aur video calls — akele ya\npoore parivaar ke saath.'),
+    (Icons.forum_rounded, 'Har baat, turant.', 'Messages, photos and voice notes —\neven on a weak network.'),
+    (Icons.lock_rounded, 'Your conversations stay yours.', 'Personal chats will be end-to-end\nencrypted. (Encryption arrives in an\nupcoming milestone.)'),
+    (Icons.videocam_rounded, 'Aamne-saamne baat.', 'Audio and video calls — one-to-one\nor with the whole family.'),
   ];
 
   void _next() {
@@ -81,7 +81,7 @@ class _IntroScreenState extends State<IntroScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-            child: FilledButton(onPressed: _next, child: Text(_page == _pages.length - 1 ? 'Shuru karein' : 'Aage')),
+            child: FilledButton(onPressed: _next, child: Text(_page == _pages.length - 1 ? 'Get started' : 'Next')),
           ),
         ]),
       ),
