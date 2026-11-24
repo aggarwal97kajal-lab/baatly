@@ -11,6 +11,7 @@ import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
+import 'status_privacy_screen.dart';
 
 class StatusTab extends StatelessWidget {
   const StatusTab({super.key});
@@ -48,8 +49,19 @@ class StatusTab extends StatelessWidget {
           body: SafeArea(
             child: ListView(children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-                child: Text('Status', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
+                padding: const EdgeInsets.fromLTRB(24, 10, 8, 4),
+                child: Row(children: [
+                  Expanded(child: Text('Status', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text))),
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert_rounded, color: bc.text),
+                    onSelected: (v) {
+                      if (v == 'privacy') {
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StatusPrivacyScreen()));
+                      }
+                    },
+                    itemBuilder: (_) => const [PopupMenuItem(value: 'privacy', child: Text('Status privacy'))],
+                  ),
+                ]),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),

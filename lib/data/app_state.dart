@@ -51,6 +51,13 @@ class AppState extends ChangeNotifier {
   String lastPhone = '';
   bool hasPasskey = false;
 
+  // Status privacy (who can see my status).
+  int statusAudience = 0; // 0 my contacts, 1 except…, 2 only share with…, 3 close friends
+  Set<String> statusExcept = {};
+  Set<String> statusOnly = {};
+  Set<String> closeFriends = {};
+  bool statusAllowSharing = true;
+
   final List<Chat> chats = [];
   /// True once real (server) chats replaced the demo chats.
   bool realChats = false;
@@ -91,6 +98,11 @@ class AppState extends ChangeNotifier {
       reduceMotion = p.getBool('reduceMotion') ?? false;
       readReceipts = p.getBool('readReceipts') ?? true;
       appLock = p.getBool('appLock') ?? false;
+      statusAudience = (p.getInt('statusAudience') ?? 0).clamp(0, 3);
+      statusExcept = (p.getStringList('statusExcept') ?? []).toSet();
+      statusOnly = (p.getStringList('statusOnly') ?? []).toSet();
+      closeFriends = (p.getStringList('closeFriends') ?? []).toSet();
+      statusAllowSharing = p.getBool('statusAllowSharing') ?? true;
     } catch (_) {
       // Storage unavailable (e.g. tests): fall back to defaults.
     }
@@ -112,6 +124,11 @@ class AppState extends ChangeNotifier {
     p.setBool('reduceMotion', reduceMotion);
     p.setBool('readReceipts', readReceipts);
     p.setBool('appLock', appLock);
+    p.setInt('statusAudience', statusAudience);
+    p.setStringList('statusExcept', statusExcept.toList());
+    p.setStringList('statusOnly', statusOnly.toList());
+    p.setStringList('closeFriends', closeFriends.toList());
+    p.setBool('statusAllowSharing', statusAllowSharing);
   }
 
   /// Demo helper: forget the profile and show onboarding again.
