@@ -4,6 +4,6 @@
 const String kApiBase = String.fromEnvironment('API_BASE', defaultValue: kDefaultApiBase);
 
 /// Filled in after the first server deploy.
-const String kDefaultApiBase = '';
+const String kDefaultApiBase = 'https://baatly-api.pitaragames.workers.dev';
 
 bool get kHasBackend => kApiBase.isNotEmpty;
