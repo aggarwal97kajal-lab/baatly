@@ -1,0 +1,19 @@
+name = "baatly-api"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+RP_NAME = "BAATLY"
+ANDROID_PACKAGE = "app.baatly.baatly"
+# SHA-256 of the release signing certificate (public value). Comma-separate if several.
+ANDROID_CERT_SHA256 = "78:58:9C:EA:18:FE:F9:5B:CE:36:4B:7C:B2:A8:F5:D5:3F:9A:D6:54:2D:A0:88:78:91:86:EF:C7:E0:07:A3:AC"
+# Demo OTP (123456) works ONLY while Message Central secrets are missing.
+DEMO_OTP = "true"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "baatly-db"
+database_id = "00000000-0000-0000-0000-000000000000" # replaced by CI with the real id
+migrations_dir = "migrations"

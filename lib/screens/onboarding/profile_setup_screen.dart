@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../config.dart';
+import '../../data/api.dart';
 import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
+import 'passkey_setup_screen.dart';
 import 'permissions_screen.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
-  const ProfileSetupScreen({super.key});
+  final bool offerPasskey;
+  const ProfileSetupScreen({super.key, this.offerPasskey = false});
   @override
   State<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
 }
@@ -16,6 +20,28 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _name = TextEditingController();
   final _user = TextEditingController();
   final _about = TextEditingController(text: 'Baat karte hain!');
+  bool _saving = false;
+  String? _serverError;
+
+  Future<void> _submit() async {
+    setState(() {
+      _saving = true;
+      _serverError = null;
+    });
+    try {
+      if (kHasBackend) {
+        await Api.instance.updateProfile(name: _name.text.trim(), username: _user.text.trim(), about: _about.text.trim());
+      }
+      AppState.instance.finishOnboarding(name: _name.text, username: _user.text, about: _about.text);
+      if (!mounted) return;
+      final next = widget.offerPasskey && kHasBackend ? const PasskeySetupScreen() : const PermissionsScreen();
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => next));
+    } on ApiException catch (e) {
+      setState(() => _serverError = e.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   bool get _userOk => RegExp(r'^[a-z0-9._]{3,20}$').hasMatch(_user.text);
 
@@ -81,26 +107,28 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               ctrl: _user,
               hint: 'aarav.mehta',
               prefix: '@',
-              onChanged: () => setState(() {}),
+              onChanged: () => setState(() => _serverError = null),
               helper: _user.text.isEmpty
                   ? '3-20 akshar: a-z, 0-9, . aur _'
                   : (_userOk ? '@${_user.text} available hai' : 'Sirf a-z, 0-9, . aur _ (3-20 akshar)'),
               helperColor: _user.text.isEmpty ? null : (_userOk ? Mitti.success : Mitti.error),
               trailing: _userOk ? const Icon(Icons.check_circle_rounded, color: Mitti.success) : null,
             ),
+            if (_serverError != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(_serverError!, style: const TextStyle(color: Mitti.error, fontWeight: FontWeight.w500)),
+              ),
             _Field(label: 'About', ctrl: _about, hint: 'Kuch apne baare mein', onChanged: () => setState(() {}), maxLength: 140),
             const SizedBox(height: 20),
             AnimatedOpacity(
               opacity: ready ? 1 : 0.45,
               duration: Mitti.fast,
               child: FilledButton(
-                onPressed: ready
-                    ? () {
-                        AppState.instance.finishOnboarding(name: _name.text, username: _user.text, about: _about.text);
-                        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const PermissionsScreen()));
-                      }
-                    : null,
-                child: const Text('Ho gaya'),
+                onPressed: ready && !_saving ? _submit : null,
+                child: _saving
+                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                    : const Text('Ho gaya'),
               ),
             ),
             const SizedBox(height: 24),

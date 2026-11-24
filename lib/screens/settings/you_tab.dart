@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../config.dart';
+import '../../data/api.dart';
 import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../onboarding/passkey_setup_screen.dart';
 import '../onboarding/splash_screen.dart';
 import 'appearance_screen.dart';
 import 'wallpaper_screen.dart';
@@ -42,6 +45,10 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone),
                 _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => _privacy(context)),
+                _row(context, Icons.fingerprint_rounded, 'Passkey', trailing: kHasBackend ? 'Banayein' : 'Demo mein nahi',
+                    onTap: kHasBackend
+                        ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PasskeySetupScreen(next: const _PopBack())))
+                        : null),
                 _row(context, Icons.shield_outlined, 'Security'),
                 _row(context, Icons.chat_bubble_outline_rounded, 'Chats'),
                 _row(context, Icons.notifications_none_rounded, 'Notifications'),
@@ -58,7 +65,8 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 _row(context, Icons.help_outline_rounded, 'Help'),
                 _row(context, Icons.info_outline_rounded, 'About BAATLY', onTap: () => _about(context)),
-                _row(context, Icons.logout_rounded, 'Logout (demo reset)', onTap: () async {
+                _row(context, Icons.logout_rounded, 'Logout', onTap: () async {
+                  await Api.instance.logout();
                   await AppState.instance.resetDemo();
                   if (!context.mounted) return;
                   Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SplashScreen()), (_) => false);
@@ -175,4 +183,16 @@ class _Group extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: Column(children: children),
       );
+}
+
+/// After creating a passkey from Settings, just go back.
+class _PopBack extends StatelessWidget {
+  const _PopBack();
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+    });
+    return const Scaffold(body: SizedBox.shrink());
+  }
 }

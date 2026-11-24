@@ -3,16 +3,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../config.dart';
+import '../../data/api.dart';
 import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
+import '../home/home_shell.dart';
+import 'passkey_setup_screen.dart';
 import 'profile_setup_screen.dart';
 
-/// DEMO: no SMS is sent yet. Any 6 digits are accepted.
-/// Real OTP (Firebase Auth) comes in Milestone 2.
+/// Verifies the SMS code via the BAATLY server (Message Central does the actual
+/// sending and checking). Without a backend configured it runs the offline demo.
 class OtpScreen extends StatefulWidget {
   final String phone;
-  const OtpScreen({super.key, required this.phone});
+  final String countryCode;
+  final String number;
+  final OtpRequest? request;
+  const OtpScreen({super.key, required this.phone, required this.countryCode, required this.number, this.request});
   @override
   State<OtpScreen> createState() => _OtpScreenState();
 }
@@ -23,10 +30,15 @@ class _OtpScreenState extends State<OtpScreen> {
   int _left = 30;
   Timer? _timer;
   bool _verifying = false;
+  String? _error;
+  OtpRequest? _req;
+
+  bool get _demo => !kHasBackend || (_req?.demo ?? false);
 
   @override
   void initState() {
     super.initState();
+    _req = widget.request;
     _startTimer();
   }
 
@@ -48,13 +60,60 @@ class _OtpScreenState extends State<OtpScreen> {
     super.dispose();
   }
 
+  Future<void> _resend() async {
+    if (!kHasBackend) return _startTimer();
+    try {
+      final r = await Api.instance.sendOtp(widget.countryCode, widget.number);
+      setState(() {
+        _req = r;
+        _error = null;
+        _ctrl.clear();
+      });
+      _startTimer();
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    }
+  }
+
   Future<void> _verify() async {
     if (_ctrl.text.length != 6 || _verifying) return;
-    setState(() => _verifying = true);
-    await Future<void>.delayed(const Duration(milliseconds: 700));
+    setState(() {
+      _verifying = true;
+      _error = null;
+    });
+    final s = AppState.instance;
+    try {
+      if (!kHasBackend) {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        s.phone = widget.phone;
+        _go(const ProfileSetupScreen());
+        return;
+      }
+      final r = await Api.instance.verifyOtp(_req!.requestId, _ctrl.text);
+      s.phone = r.user.phone;
+      if (r.user.name.isEmpty || r.user.username == null) {
+        _go(ProfileSetupScreen(offerPasskey: !r.hasPasskey));
+      } else if (!r.hasPasskey) {
+        s.finishOnboarding(name: r.user.name, username: r.user.username!, about: r.user.about);
+        _go(const PasskeySetupScreen());
+      } else {
+        s.finishOnboarding(name: r.user.name, username: r.user.username!, about: r.user.about);
+        Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeShell()), (_) => false);
+      }
+    } on ApiException catch (e) {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _error = e.message;
+        _ctrl.clear();
+      });
+    } finally {
+      if (mounted) setState(() => _verifying = false);
+    }
+  }
+
+  void _go(Widget w) {
     if (!mounted) return;
-    AppState.instance.phone = widget.phone;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const ProfileSetupScreen()));
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => w));
   }
 
   @override
@@ -71,7 +130,7 @@ class _OtpScreenState extends State<OtpScreen> {
             const SizedBox(height: 8),
             Text('Code daalein', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
             const SizedBox(height: 8),
-            Text('${widget.phone} pe bheja gaya.', style: TextStyle(fontSize: 13.5, color: bc.muted)),
+            Text('${widget.phone} pe 6-digit code bheja gaya.', style: TextStyle(fontSize: 13.5, color: bc.muted)),
             GestureDetector(
               onTap: () => Navigator.pop(context),
               child: Padding(
@@ -88,6 +147,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   children: List.generate(6, (i) {
                     final filled = i < code.length;
                     final active = i == code.length;
+                    final err = _error != null;
                     return AnimatedContainer(
                       duration: Mitti.fast,
                       width: 48,
@@ -97,15 +157,14 @@ class _OtpScreenState extends State<OtpScreen> {
                         color: bc.surface,
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: active ? context.primary : (filled ? bc.text.withOpacity(0.25) : bc.line),
-                          width: active ? 2 : 1.5,
+                          color: err ? Mitti.error : (active ? context.primary : (filled ? bc.text.withOpacity(0.25) : bc.line)),
+                          width: active || err ? 2 : 1.5,
                         ),
                       ),
                       child: Text(filled ? code[i] : '', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: bc.text)),
                     );
                   }),
                 ),
-                // Invisible field that actually receives input.
                 Opacity(
                   opacity: 0,
                   child: TextField(
@@ -113,15 +172,25 @@ class _OtpScreenState extends State<OtpScreen> {
                     focusNode: _focus,
                     autofocus: true,
                     keyboardType: TextInputType.number,
+                    autofillHints: const [AutofillHints.oneTimeCode],
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
                     onChanged: (v) {
-                      setState(() {});
+                      setState(() => _error = null);
                       if (v.length == 6) _verify();
                     },
                   ),
                 ),
               ]),
             ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(children: [
+                  const Icon(Icons.error_outline_rounded, size: 18, color: Mitti.error),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(_error!, style: const TextStyle(fontSize: 13, color: Mitti.error, fontWeight: FontWeight.w500))),
+                ]),
+              ),
             const SizedBox(height: 22),
             Row(children: [
               Icon(Icons.timer_outlined, size: 18, color: context.primary),
@@ -133,23 +202,29 @@ class _OtpScreenState extends State<OtpScreen> {
                 ]), style: TextStyle(fontSize: 13, color: bc.muted))
               else
                 GestureDetector(
-                  onTap: _startTimer,
+                  onTap: _resend,
                   child: Text('Code dobara bhejein', style: TextStyle(fontSize: 13, color: context.primary, fontWeight: FontWeight.w700)),
                 ),
             ]),
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(14)),
-              child: Row(children: [
-                Icon(Icons.science_outlined, size: 18, color: bc.muted),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text('Demo build: abhi SMS nahi jaata. Koi bhi 6 digit daalein.',
-                      style: TextStyle(fontSize: 12, color: bc.muted)),
-                ),
-              ]),
-            ),
+            if (_demo) ...[
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(14)),
+                child: Row(children: [
+                  Icon(Icons.science_outlined, size: 18, color: bc.muted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      kHasBackend
+                          ? 'Test mode: SMS service abhi judi nahi hai. Code 123456 daalein.'
+                          : 'Demo build: abhi SMS nahi jaata. Koi bhi 6 digit daalein.',
+                      style: TextStyle(fontSize: 12, color: bc.muted),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
             const SizedBox(height: 30),
             AnimatedOpacity(
               opacity: code.length == 6 ? 1 : 0.45,

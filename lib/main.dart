@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'data/api.dart';
 import 'data/app_state.dart';
 import 'screens/home/home_shell.dart';
 import 'screens/onboarding/splash_screen.dart';
@@ -10,6 +11,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarColor: Colors.transparent));
   await AppState.instance.load();
+  await Api.instance.load();
   runApp(BaatlyApp(skipOnboarding: AppState.instance.onboarded));
 }
 

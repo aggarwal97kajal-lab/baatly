@@ -35,6 +35,11 @@ jobs:
           # Brand: app name, launcher icon, launch screen
           sed -i 's/android:label="[^"]*"/android:label="BAATLY"/' android/app/src/main/AndroidManifest.xml
           cp -r android_overrides/res/. android/app/src/main/res/
+          # Passkeys (Credential Manager) need Android 9+.
+          GRADLE=android/app/build.gradle.kts
+          grep -q "minSdk = flutter.minSdkVersion" $GRADLE
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 28/' $GRADLE
+          grep -n "minSdk" $GRADLE
 
       - name: Get packages
         run: flutter pub get
@@ -46,9 +51,23 @@ jobs:
         run: flutter test
 
       - name: Build release APK
+        run: flutter build apk --release --build-number=${{ github.run_number }}
+
+      - name: Sign with BAATLY release key
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          flutter build apk --release --build-number=${{ github.run_number }}
-          cp build/app/outputs/flutter-apk/app-release.apk baatly.apk
+          IN=build/app/outputs/flutter-apk/app-release.apk
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::warning::ANDROID_KEYSTORE_PASSWORD secret missing - APK stays debug-signed (updates and passkeys won't work)"
+            cp $IN baatly.apk
+          else
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in android_overrides/baatly-release.jks.enc -out /tmp/release.jks -pass env:KEYSTORE_PASSWORD
+            BT=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
+            $BT/apksigner sign --ks /tmp/release.jks --ks-key-alias baatly --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out baatly.apk $IN
+            $BT/apksigner verify --print-certs baatly.apk | grep -i "SHA-256"
+            rm -f /tmp/release.jks
+          fi
           ls -lh baatly.apk
 
       - name: Publish release

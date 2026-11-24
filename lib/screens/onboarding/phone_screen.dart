@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../config.dart';
+import '../../data/api.dart';
+import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
+import '../home/home_shell.dart';
 import 'otp_screen.dart';
+import 'profile_setup_screen.dart';
 
 class PhoneScreen extends StatefulWidget {
   const PhoneScreen({super.key});
@@ -13,6 +18,8 @@ class PhoneScreen extends StatefulWidget {
 class _PhoneScreenState extends State<PhoneScreen> {
   final _ctrl = TextEditingController();
   String _code = '+91';
+  bool _busy = false;
+  bool _passkeyBusy = false;
 
   bool get _valid => _ctrl.text.replaceAll(' ', '').length == 10;
 
@@ -51,6 +58,49 @@ class _PhoneScreenState extends State<PhoneScreen> {
       ),
     );
     if (picked != null) setState(() => _code = picked);
+  }
+
+  void _toast(String m) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(behavior: SnackBarBehavior.floating, content: Text(m)));
+
+  Future<void> _continue() async {
+    final number = _ctrl.text;
+    if (!kHasBackend) {
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => OtpScreen(phone: '$_code $number', countryCode: _code, number: number)));
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final r = await Api.instance.sendOtp(_code, number);
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => OtpScreen(phone: '$_code $number', countryCode: _code, number: number, request: r)));
+    } on ApiException catch (e) {
+      _toast(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _passkey() async {
+    setState(() => _passkeyBusy = true);
+    try {
+      final r = await Api.instance.loginWithPasskey();
+      if (!mounted) return;
+      final s = AppState.instance;
+      s.phone = r.user.phone;
+      if (r.user.name.isEmpty || r.user.username == null) {
+        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const ProfileSetupScreen()));
+        return;
+      }
+      s.finishOnboarding(name: r.user.name, username: r.user.username ?? '', about: r.user.about);
+      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeShell()), (_) => false);
+    } on ApiException catch (e) {
+      if (e.code != 'CANCELLED') _toast(e.message);
+    } finally {
+      if (mounted) setState(() => _passkeyBusy = false);
+    }
   }
 
   @override
@@ -120,12 +170,34 @@ class _PhoneScreenState extends State<PhoneScreen> {
               opacity: _valid ? 1 : 0.45,
               duration: const Duration(milliseconds: 200),
               child: FilledButton(
-                onPressed: _valid
-                    ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OtpScreen(phone: '$_code ${_ctrl.text}')))
-                    : null,
-                child: const Text('Aage badhein'),
+                onPressed: _valid && !_busy ? _continue : null,
+                child: _busy
+                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                    : const Text('Aage badhein'),
               ),
             ),
+            if (kHasBackend) ...[
+              const SizedBox(height: 22),
+              Row(children: [
+                Expanded(child: Divider(color: bc.line)),
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Text('pehle se account hai?', style: TextStyle(fontSize: 12, color: bc.muted))),
+                Expanded(child: Divider(color: bc.line)),
+              ]),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: _passkeyBusy ? null : _passkey,
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(54),
+                  shape: const StadiumBorder(),
+                  side: BorderSide(color: context.primary, width: 1.5),
+                  foregroundColor: context.primary,
+                ),
+                icon: _passkeyBusy
+                    ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.primary))
+                    : const Icon(Icons.fingerprint_rounded),
+                label: const Text('Passkey se login karein', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
           ],
         ),
       ),
