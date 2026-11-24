@@ -14,6 +14,7 @@ import 'contacts.dart';
 import 'e2e.dart';
 import 'models.dart';
 import 'push.dart';
+import 'status_service.dart';
 
 /// Someone we chat with: their public key is cached so we can encrypt.
 class Peer {
@@ -71,10 +72,12 @@ class Messenger {
       await _loadLocal(uid);
       _s.removeListener(_scheduleSave);
       _s.addListener(_scheduleSave);
+      _s.useRealStatuses([], []);
     }
     _paused = false;
     unawaited(_connect());
     unawaited(Push.instance.start());
+    unawaited(StatusService.instance.refresh());
   }
 
   Future<void> _publishKey(String uid) async {
@@ -299,6 +302,21 @@ class Messenger {
     _s.chats.add(c);
     return c;
   }
+
+  /// Best display name for a BAATLY user.
+  String nameFor(String id, {String? phone, String? profileName}) {
+    final ph = phone ?? _peers[id]?.phone;
+    final book = ph == null ? null : ContactBook.instance.names[ph];
+    if (book != null) return book;
+    final p = _peers[id];
+    if (p != null && p.name.isNotEmpty) return p.name;
+    if ((profileName ?? '').isNotEmpty) return profileName!;
+    return ph == null ? 'BAATLY user' : ContactBook.pretty(ph);
+  }
+
+  /// Opens (or creates) the chat with any BAATLY user.
+  Chat chatWithUser(String id, String name, String phone, String? key) =>
+      chatWith(BaatlyContact(id, name, phone, _peers[id]?.about ?? '', key ?? _peers[id]?.key));
 
   /// Opens (or creates) the chat with a contact picked from the phone book.
   Chat chatWith(BaatlyContact c) {

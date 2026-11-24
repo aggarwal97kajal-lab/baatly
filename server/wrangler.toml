@@ -4,6 +4,10 @@ compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+[triggers]
+# Hourly: delete status updates older than 24 hours.
+crons = ["17 * * * *"]
+
 [vars]
 RP_NAME = "BAATLY"
 ANDROID_PACKAGE = "app.baatly.baatly"

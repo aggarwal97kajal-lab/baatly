@@ -23,6 +23,7 @@ import {
 } from './util';
 import { chatRoute } from './chat';
 import { pushConfigured } from './fcm';
+import { deleteUserStatuses, expireStatuses, statusRoute } from './status';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
 type Ctx = { req: Request; env: Env; url: URL };
@@ -372,6 +373,7 @@ async function resetPasskeys(c: Ctx) {
 
 async function deleteAccount(c: Ctx) {
   const { user } = await requireUser(c);
+  await deleteUserStatuses(c.env, user.id);
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?').bind(user.id),
@@ -425,6 +427,11 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'GET' && p === '/get') {
     return Response.redirect('https://github.com/aggarwal97kajal-lab/baatly/releases/latest/download/baatly.apk', 302);
   }
+  if (/^\/v1\/status(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await statusRoute(c, user, m, p);
+    if (r) return r;
+  }
   if (/^\/v1\/(keys|contacts|users|messages|receipts|typing|inbox|ws|push)(\/|$)/.test(p)) {
     const { user, sessionId } = await requireUser(c);
     const r = await chatRoute(c, user, m, p, sessionId);
@@ -438,6 +445,10 @@ async function route(c: Ctx): Promise<Response> {
 export { UserHub } from './hub';
 
 export default {
+  async scheduled(_ev: ScheduledController, env: Env): Promise<void> {
+    await expireStatuses(env);
+  },
+
   async fetch(req: Request, env: Env): Promise<Response> {
     try {
       return await route({ req, env, url: new URL(req.url) });

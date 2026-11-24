@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'messenger.dart';
+import 'status_service.dart';
 import 'models.dart';
 
 enum Wallpaper { mittiDots, desi, baatcheet, mausam, raat, plain }
@@ -67,6 +68,19 @@ class AppState extends ChangeNotifier {
       ..clear()
       ..addAll(list);
     realChats = true;
+    notifyListeners();
+  }
+
+  bool realStatuses = false;
+
+  void useRealStatuses(List<StatusItem> others, List<StatusSlide> mine) {
+    statuses
+      ..clear()
+      ..addAll(others);
+    myStatuses
+      ..clear()
+      ..addAll(mine);
+    realStatuses = true;
     notifyListeners();
   }
 
@@ -272,11 +286,13 @@ class AppState extends ChangeNotifier {
   void addMyStatus(StatusSlide s) {
     myStatuses.add(s);
     notifyListeners();
+    if (Messenger.instance.active) StatusService.instance.post(s);
   }
 
   void deleteMyStatus(StatusSlide s) {
     myStatuses.remove(s);
     notifyListeners();
+    if (s.remoteId != null) StatusService.instance.delete(s);
   }
 
   /// [until] null = unmute.

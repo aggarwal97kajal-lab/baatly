@@ -12,6 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
 import 'status_privacy_screen.dart';
+import '../../data/status_service.dart';
 
 class StatusTab extends StatelessWidget {
   const StatusTab({super.key});
@@ -47,7 +48,9 @@ class StatusTab extends StatelessWidget {
             ),
           ]),
           body: SafeArea(
-            child: ListView(children: [
+            child: RefreshIndicator(
+              onRefresh: () => StatusService.instance.refresh(),
+              child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 10, 8, 4),
                 child: Row(children: [
@@ -94,7 +97,11 @@ class StatusTab extends StatelessWidget {
                     title: const Text('My status', style: TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text(s.myStatuses.isEmpty
                         ? 'Tap to add a status'
-                        : '${s.myStatuses.length} ${s.myStatuses.length == 1 ? 'update' : 'updates'} · ${statusAgo(s.myStatuses.last.at)}'),
+                        : s.myStatuses.any((x) => x.uploading)
+                            ? 'Sending…'
+                            : s.myStatuses.any((x) => x.failed)
+                                ? "Couldn't send · tap ⋮ to retry"
+                                : '${s.myStatuses.length} ${s.myStatuses.length == 1 ? 'update' : 'updates'} · ${statusAgo(s.myStatuses.last.at)}'),
                     trailing: s.myStatuses.isEmpty
                         ? null
                         : IconButton(icon: const Icon(Icons.more_vert_rounded), tooltip: 'My updates', onPressed: () => showMyUpdates(context)),
@@ -133,6 +140,7 @@ class StatusTab extends StatelessWidget {
               ],
               const SizedBox(height: 90),
             ]),
+            ),
           ),
         );
       },
@@ -237,12 +245,64 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
       if (s == AnimationStatus.completed) _next();
     });
     _c.forward();
+    _markSeen();
+  }
+
+  void _markSeen() {
+    if (widget.mine || _i >= widget.item.slides.length) return;
+    StatusService.instance.viewed(widget.item, widget.item.slides[_i]);
+  }
+
+  Future<void> _showViews() async {
+    final slide = widget.item.slides[_i];
+    _c.stop();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => FutureBuilder<List<(String, DateTime)>>(
+        future: StatusService.instance.viewers(slide),
+        builder: (sheet, snap) {
+          final list = snap.data;
+          return SafeArea(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(list == null ? 'Viewed by' : 'Viewed by ${list.length}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              if (snap.connectionState != ConnectionState.done)
+                const Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())
+              else if (snap.hasError)
+                const Padding(padding: EdgeInsets.all(24), child: Text("Couldn't load views"))
+              else if (list!.isEmpty)
+                const Padding(padding: EdgeInsets.all(24), child: Text('No views yet'))
+              else
+                Flexible(
+                  child: ListView(shrinkWrap: true, children: [
+                    for (final v in list)
+                      ListTile(
+                        leading: Avatar(initials: v.$1.isEmpty ? '#' : v.$1[0].toUpperCase(), colorIndex: v.$1.length % 7, size: 40),
+                        title: Text(v.$1, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(statusAgo(v.$2)),
+                      ),
+                  ]),
+                ),
+              const SizedBox(height: 8),
+            ]),
+          );
+        },
+      ),
+    );
+    if (mounted) _c.forward();
   }
 
   void _next() {
     if (_i < widget.item.slides.length - 1) {
       setState(() => _i++);
       _c.forward(from: 0);
+      _markSeen();
     } else {
       if (!widget.mine) {
         widget.item.seen = true;
@@ -366,6 +426,19 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                       ),
               ),
             ),
+            if (widget.mine)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+                child: slide.uploading
+                    ? const Text('Sending…', style: TextStyle(color: Colors.white70))
+                    : slide.failed
+                        ? const Text("Couldn't send this update", style: TextStyle(color: Colors.white70))
+                        : TextButton.icon(
+                            onPressed: slide.remoteId == null ? null : _showViews,
+                            icon: const Icon(Icons.visibility_outlined, color: Colors.white),
+                            label: Text('${slide.views} ${slide.views == 1 ? 'view' : 'views'}', style: const TextStyle(color: Colors.white)),
+                          ),
+              ),
             if (!widget.mine)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -387,9 +460,16 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                 const SizedBox(width: 8),
                 IconButton(
                   onPressed: () {
+                    final text = _reply.text.trim();
+                    if (text.isEmpty) return;
                     _reply.clear();
                     FocusScope.of(context).unfocus();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reply sent (demo)')));
+                    if (widget.item.ownerId != null) {
+                      StatusService.instance.reply(widget.item, slide, text);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reply sent')));
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reply sent (demo)')));
+                    }
                     _c.forward();
                   },
                   icon: const Icon(Icons.send_rounded, color: Colors.white),
@@ -569,6 +649,9 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
     try {
       final f = await ImageCropper().cropImage(
         sourcePath: _path,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        compressQuality: 80,
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: 'Crop & rotate',
@@ -714,12 +797,21 @@ void showMyUpdates(BuildContext context) {
               ListTile(
                 leading: StatusThumb(slide: st, size: 44),
                 title: Text(st.isPhoto ? ((st.caption ?? '').isEmpty ? 'Photo' : st.caption!) : (st.text ?? ''), maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(statusAgo(st.at)),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFB3261E)),
-                  tooltip: 'Delete',
-                  onPressed: () => s.deleteMyStatus(st),
-                ),
+                subtitle: Text(st.uploading
+                    ? 'Sending…'
+                    : st.failed
+                        ? (StatusService.instance.lastError ?? "Couldn't send")
+                        : '${statusAgo(st.at)} · ${st.views} ${st.views == 1 ? 'view' : 'views'}'),
+                onTap: st.failed ? () => StatusService.instance.post(st) : null,
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (st.failed)
+                    IconButton(icon: const Icon(Icons.refresh_rounded), tooltip: 'Retry', onPressed: () => StatusService.instance.post(st)),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFB3261E)),
+                    tooltip: 'Delete',
+                    onPressed: () => s.deleteMyStatus(st),
+                  ),
+                ]),
               ),
             ListTile(
               leading: CircleAvatar(backgroundColor: sheet.primary, child: const Icon(Icons.add_rounded, color: Colors.white)),

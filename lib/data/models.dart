@@ -146,11 +146,19 @@ class StatusSlide {
   final String? caption;
   final int bg;
   final DateTime at;
-  StatusSlide.text(this.text, this.bg, {DateTime? at})
+
+  /// Server id once uploaded (real statuses).
+  String? remoteId;
+  bool uploading = false;
+  bool failed = false;
+  int views = 0;
+  bool seen = false;
+
+  StatusSlide.text(this.text, this.bg, {DateTime? at, this.remoteId})
       : imagePath = null,
         caption = null,
         at = at ?? DateTime.now();
-  StatusSlide.photo(this.imagePath, {this.caption, DateTime? at})
+  StatusSlide.photo(this.imagePath, {this.caption, DateTime? at, this.remoteId})
       : text = null,
         bg = 0xFF000000,
         at = at ?? DateTime.now();
@@ -164,5 +172,7 @@ class StatusItem {
   final String when;
   final List<StatusSlide> slides;
   bool seen;
-  StatusItem(this.name, this.initials, this.colorIndex, this.when, this.slides, {this.seen = false});
+  /// Real statuses: the owner's BAATLY id.
+  final String? ownerId;
+  StatusItem(this.name, this.initials, this.colorIndex, this.when, this.slides, {this.seen = false, this.ownerId});
 }

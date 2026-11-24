@@ -4,6 +4,7 @@ import '../../config.dart';
 import '../../data/api.dart';
 import '../../data/app_state.dart';
 import '../../data/messenger.dart';
+import '../../data/status_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'calls_tab.dart';
@@ -57,7 +58,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final bc = context.bc;
     const pages = [ChatsTab(), StatusTab(), CallsTab(), CommunityTab(), YouTab()];
-    return Scaffold(
+    // Back button on any other tab goes to Chats first; on Chats it leaves the app.
+    return PopScope(
+      canPop: _tab == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _tab != 0) setState(() => _tab = 0);
+      },
+      child: Scaffold(
       body: AnimatedSwitcher(
         duration: Mitti.fast,
         child: KeyedSubtree(key: ValueKey(_tab), child: pages[_tab]),
@@ -75,7 +82,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 final col = on ? context.primary : bc.muted;
                 return Expanded(
                   child: InkWell(
-                    onTap: () => setState(() => _tab = i),
+                    onTap: () {
+                      setState(() => _tab = i);
+                      if (i == 1) StatusService.instance.refresh();
+                    },
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                       AnimatedContainer(
                         duration: Mitti.fast,
@@ -98,6 +108,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           ),
         ),
       ),
+    ),
     );
   }
 }

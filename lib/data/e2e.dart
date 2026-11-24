@@ -98,6 +98,20 @@ class E2E {
     return jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
   }
 
+  /// Encrypts [data] with a fresh random key. Returns (key, nonce+cipher+mac).
+  Future<(List<int>, List<int>)> lock(List<int> data) async {
+    final key = await _aead.newSecretKey();
+    final box = await _aead.encrypt(data, secretKey: key);
+    return (await key.extractBytes(), [...box.nonce, ...box.cipherText, ...box.mac.bytes]);
+  }
+
+  Future<List<int>> unlock(List<int> blob, List<int> key) {
+    final nonce = blob.sublist(0, 12);
+    final mac = Mac(blob.sublist(blob.length - 16));
+    final cipher = blob.sublist(12, blob.length - 16);
+    return _aead.decrypt(SecretBox(cipher, nonce: nonce, mac: mac), secretKey: SecretKey(key));
+  }
+
   static String _b64(List<int> b) => base64Url.encode(b).replaceAll('=', '');
   static List<int> _unb64(String s) => base64Url.decode(s.padRight((s.length + 3) ~/ 4 * 4, '='));
 }

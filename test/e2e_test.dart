@@ -29,4 +29,16 @@ void main() {
     j['c'] = base64Url.encode(c).replaceAll('=', '');
     await expectLater(b.open(jsonEncode(j), a.publicKey), throwsA(anything));
   });
+
+  test('status key sealed per viewer opens the shared box', () async {
+    final owner = await party(), viewer = await party();
+    final (key, blob) = await owner.lock(utf8.encode('photo-bytes'));
+    final sealed = await owner.seal({'k': base64Encode(key)}, viewer.publicKey);
+    final k = await viewer.open(sealed, owner.publicKey);
+    final clear = await viewer.unlock(blob, base64Decode(k['k'] as String));
+    expect(utf8.decode(clear), 'photo-bytes');
+    // Owner can open their own copy too.
+    final mine = await owner.seal({'k': base64Encode(key)}, owner.publicKey);
+    expect((await owner.open(mine, owner.publicKey))['k'], base64Encode(key));
+  });
 }
