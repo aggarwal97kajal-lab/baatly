@@ -35,6 +35,7 @@ class Chat {
   bool pinned;
   bool muted;
   bool archived;
+  bool typing = false;
   int unread;
   final List<Message> messages;
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'calls_tab.dart';
@@ -16,6 +17,12 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    AppState.instance.startDemoActivity();
+  }
 
   static const _items = [
     (Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, 'Chats'),

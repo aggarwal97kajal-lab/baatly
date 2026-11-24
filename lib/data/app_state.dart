@@ -129,14 +129,44 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Chat currently on screen, so incoming messages there don't count as unread.
+  String? activeChatId;
+
   void openChat(Chat c) {
     c.unread = 0;
     notifyListeners();
   }
 
+  void _receive(Chat chat, String text) {
+    chat.typing = false;
+    chat.messages.add(Message(
+      id: '${DateTime.now().microsecondsSinceEpoch}r',
+      text: text,
+      fromMe: false,
+      time: DateTime.now(),
+    ));
+    if (activeChatId != chat.id) chat.unread++;
+    notifyListeners();
+  }
+
+  bool _demoStarted = false;
+
+  /// Demo only: a contact starts typing a few seconds after the app opens,
+  /// so the "typing…" state can be seen from the chat list too.
+  void startDemoActivity() {
+    if (_demoStarted) return;
+    _demoStarted = true;
+    final riya = chats.firstWhere((c) => c.id == 'riya', orElse: () => chats.first);
+    Timer(const Duration(seconds: 5), () {
+      riya.typing = true;
+      notifyListeners();
+    });
+    Timer(const Duration(seconds: 9), () => _receive(riya, 'Aur haan, cake bhi le aana 🎂'));
+  }
+
   /// Sends a message locally and simulates delivery/read and a reply,
   /// so the UI flow can be felt before the real backend exists.
-  void send(Chat chat, String text, {void Function()? onTyping, void Function()? onReply}) {
+  void send(Chat chat, String text) {
     final m = Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       text: text,
@@ -157,10 +187,10 @@ class AppState extends ChangeNotifier {
     if (chat.isGroup) return;
     Timer(const Duration(milliseconds: 1600), () {
       m.status = MsgStatus.read;
-      onTyping?.call();
+      chat.typing = true;
       notifyListeners();
     });
-    Timer(const Duration(milliseconds: 3200), () {
+    Timer(const Duration(milliseconds: 3600), () {
       const replies = [
         'Haan bilkul 😊',
         'Theek hai, milte hain!',
@@ -169,14 +199,7 @@ class AppState extends ChangeNotifier {
         'Done 👍',
         'Achha idea hai!',
       ];
-      chat.messages.add(Message(
-        id: '${DateTime.now().microsecondsSinceEpoch}r',
-        text: replies[_rnd.nextInt(replies.length)],
-        fromMe: false,
-        time: DateTime.now(),
-      ));
-      onReply?.call();
-      notifyListeners();
+      _receive(chat, replies[_rnd.nextInt(replies.length)]);
     });
   }
 

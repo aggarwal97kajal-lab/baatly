@@ -225,6 +225,9 @@ class _ChatRow extends StatelessWidget {
                     style: TextStyle(fontSize: 12, color: unread ? context.primary : bc.muted, fontWeight: unread ? FontWeight.w700 : FontWeight.w400)),
               ]),
               const SizedBox(height: 3),
+              if (chat.typing)
+                Text('typing…', style: TextStyle(fontSize: 13, color: context.primary, fontWeight: FontWeight.w700))
+              else
               Row(children: [
                 if (m != null && m.fromMe) ...[Ticks(status: m.status, color: bc.muted), const SizedBox(width: 3)],
                 if (pIcon != null) ...[Icon(pIcon, size: 15, color: context.primary), const SizedBox(width: 3)],

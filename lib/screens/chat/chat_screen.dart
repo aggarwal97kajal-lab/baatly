@@ -18,13 +18,19 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
-  bool _typing = false;
   Message? _replyTo;
 
   Chat get chat => widget.chat;
 
   @override
+  void initState() {
+    super.initState();
+    AppState.instance.activeChatId = chat.id;
+  }
+
+  @override
   void dispose() {
+    if (AppState.instance.activeChatId == chat.id) AppState.instance.activeChatId = null;
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
@@ -37,16 +43,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final full = _replyTo == null ? text : '↪ ${_replyTo!.text.split('\n').first}\n$text';
     _ctrl.clear();
     setState(() => _replyTo = null);
-    AppState.instance.send(
-      chat,
-      full,
-      onTyping: () {
-        if (mounted) setState(() => _typing = true);
-      },
-      onReply: () {
-        if (mounted) setState(() => _typing = false);
-      },
-    );
+    AppState.instance.send(chat, full);
   }
 
   void _msgMenu(Message m) {
@@ -123,14 +120,17 @@ class _ChatScreenState extends State<ChatScreen> {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(chat.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: bc.text)),
-                AnimatedSwitcher(
-                  duration: Mitti.fast,
-                  child: Text(
-                    _typing ? 'typing…' : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen aaj')),
-                    key: ValueKey(_typing),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: _typing ? context.primary : bc.muted),
+                ListenableBuilder(
+                  listenable: AppState.instance,
+                  builder: (context, _) => AnimatedSwitcher(
+                    duration: Mitti.fast,
+                    child: Text(
+                      chat.typing ? 'typing…' : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen aaj')),
+                      key: ValueKey(chat.typing),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: chat.typing ? context.primary : bc.muted),
+                    ),
                   ),
                 ),
               ]),
@@ -158,7 +158,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     if (i == 0) {
                       return AnimatedSize(
                         duration: Mitti.fast,
-                        child: _typing
+                        child: chat.typing
                             ? Align(
                                 alignment: Alignment.centerLeft,
                                 child: Container(
