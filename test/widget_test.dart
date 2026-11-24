@@ -8,7 +8,7 @@ void main() {
     expect(find.text('BAATLY'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 2500));
     await tester.pumpAndSettle();
-    expect(find.text('Shuru karein'), findsOneWidget);
+    expect(find.text('Get started'), findsOneWidget);
   });
 
   test('Sending a message adds it to the chat', () {
