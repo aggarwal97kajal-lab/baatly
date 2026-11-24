@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/api.dart';
+import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'permissions_screen.dart';
@@ -28,12 +29,14 @@ class _PasskeySetupScreenState extends State<PasskeySetupScreen> {
     });
     try {
       await Api.instance.createPasskey();
+      AppState.instance.setPasskey(true);
       setState(() => _done = true);
       await Future<void>.delayed(const Duration(milliseconds: 900));
       if (mounted) _next();
     } on ApiException catch (e) {
       if (e.code == 'ALREADY_EXISTS') {
         // Already set up on this phone — that's a success, just move on.
+        AppState.instance.setPasskey(true);
         setState(() => _done = true);
         await Future<void>.delayed(const Duration(milliseconds: 900));
         if (mounted) _next();

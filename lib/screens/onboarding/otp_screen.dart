@@ -91,6 +91,7 @@ class _OtpScreenState extends State<OtpScreen> {
       }
       final r = await Api.instance.verifyOtp(_req!.requestId, _ctrl.text);
       s.phone = r.user.phone;
+      s.setPasskey(r.hasPasskey);
       if (r.user.name.isEmpty || r.user.username == null) {
         _go(ProfileSetupScreen(offerPasskey: !r.hasPasskey));
       } else if (!r.hasPasskey) {

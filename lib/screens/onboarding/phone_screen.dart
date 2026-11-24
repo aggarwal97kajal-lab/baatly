@@ -33,6 +33,13 @@ class _PhoneScreenState extends State<PhoneScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    final last = AppState.instance.lastPhone;
+    if (last.startsWith('+91') && last.length == 13) _ctrl.text = last.substring(3);
+  }
+
+  @override
   void dispose() {
     _ctrl.dispose();
     super.dispose();
@@ -90,6 +97,7 @@ class _PhoneScreenState extends State<PhoneScreen> {
       if (!mounted) return;
       final s = AppState.instance;
       s.phone = r.user.phone;
+      s.setPasskey(true);
       if (r.user.name.isEmpty || r.user.username == null) {
         Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const ProfileSetupScreen()));
         return;

@@ -46,6 +46,9 @@ class AppState extends ChangeNotifier {
   String username = '';
   String phone = '';
   bool onboarded = false;
+  /// Last number that logged in on this phone (kept after logout, for passkey login).
+  String lastPhone = '';
+  bool hasPasskey = false;
 
   final List<Chat> chats = [];
   final List<CallLog> calls = [];
@@ -67,6 +70,8 @@ class AppState extends ChangeNotifier {
       username = p.getString('username') ?? '';
       about = p.getString('about') ?? about;
       phone = p.getString('phone') ?? '';
+      lastPhone = p.getString('lastPhone') ?? '';
+      hasPasskey = p.getBool('hasPasskey') ?? false;
       themeMode = ThemeMode.values[(p.getInt('theme') ?? ThemeMode.system.index).clamp(0, ThemeMode.values.length - 1)];
       wallpaper = Wallpaper.values[(p.getInt('wallpaper') ?? Wallpaper.desi.index).clamp(0, Wallpaper.values.length - 1)];
       reduceMotion = p.getBool('reduceMotion') ?? false;
@@ -85,6 +90,9 @@ class AppState extends ChangeNotifier {
     p.setString('username', username);
     p.setString('about', about);
     p.setString('phone', phone);
+    if (phone.isNotEmpty) lastPhone = phone;
+    p.setString('lastPhone', lastPhone);
+    p.setBool('hasPasskey', hasPasskey);
     p.setInt('theme', themeMode.index);
     p.setInt('wallpaper', wallpaper.index);
     p.setBool('reduceMotion', reduceMotion);
@@ -94,11 +102,23 @@ class AppState extends ChangeNotifier {
 
   /// Demo helper: forget the profile and show onboarding again.
   Future<void> resetDemo() async {
+    final keepPhone = lastPhone.isNotEmpty ? lastPhone : phone;
+    final keepPasskey = hasPasskey;
     await _prefs?.clear();
+    lastPhone = keepPhone;
+    hasPasskey = keepPasskey;
+    await _prefs?.setString('lastPhone', lastPhone);
+    await _prefs?.setBool('hasPasskey', hasPasskey);
     onboarded = false;
     name = '';
     username = '';
     phone = '';
+    notifyListeners();
+  }
+
+  void setPasskey(bool v) {
+    hasPasskey = v;
+    _save();
     notifyListeners();
   }
 

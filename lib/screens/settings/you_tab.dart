@@ -45,10 +45,13 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone),
                 _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => _privacy(context)),
-                _row(context, Icons.fingerprint_rounded, 'Passkey', trailing: kHasBackend ? 'Create' : 'Not in demo',
-                    onTap: kHasBackend
-                        ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PasskeySetupScreen(next: const _PopBack())))
-                        : null),
+                _row(context, Icons.fingerprint_rounded, 'Passkey',
+                    trailing: !kHasBackend ? 'Not in demo' : (s.hasPasskey ? 'Created ✓' : 'Create'),
+                    onTap: !kHasBackend
+                        ? null
+                        : s.hasPasskey
+                            ? () => _passkeyInfo(context)
+                            : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PasskeySetupScreen(next: const _PopBack())))),
                 _row(context, Icons.shield_outlined, 'Security'),
                 _row(context, Icons.chat_bubble_outline_rounded, 'Chats'),
                 _row(context, Icons.notifications_none_rounded, 'Notifications'),
@@ -154,6 +157,31 @@ class YouTab extends StatelessWidget {
               onChanged: (v) => s.toggle(() => s.appLock = v),
             ),
             const SizedBox(height: 12),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _passkeyInfo(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.verified_user_rounded, size: 56, color: Color(0xFF3E7C5A)),
+            const SizedBox(height: 12),
+            const Text('Passkey created', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text(
+              'Your BAATLY passkey is saved on this phone. Next time, enter your number and tap "Log in with passkey" — no OTP needed.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: sheet.bc.muted, height: 1.4),
+            ),
+            const SizedBox(height: 18),
+            FilledButton(onPressed: () => Navigator.pop(sheet), child: const Text('OK')),
           ]),
         ),
       ),
