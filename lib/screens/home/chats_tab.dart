@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
 import '../../data/media.dart';
+import '../../data/messenger.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/chat_dialogs.dart';
@@ -198,7 +199,27 @@ class _ChatRow extends StatelessWidget {
     final unread = chat.unread > 0;
     String preview = '';
     IconData? pIcon;
-    if (m != null) {
+    if (m != null && m.deleted) {
+      pIcon = Icons.block_rounded;
+      preview = m.fromMe ? 'You deleted this message' : 'This message was deleted';
+    } else if (m != null && m.kind == MsgKind.system) {
+      preview = m.text;
+    } else if (m != null && m.kind == MsgKind.poll) {
+      pIcon = Icons.poll_rounded;
+      preview = (m.media?['q'] as String?) ?? 'Poll';
+    } else if (m != null && m.kind == MsgKind.location) {
+      pIcon = Icons.location_on_rounded;
+      preview = 'Location';
+    } else if (m != null && m.kind == MsgKind.contact) {
+      pIcon = Icons.person_rounded;
+      preview = (m.media?['name'] as String?) ?? 'Contact';
+    } else if (m != null && m.kind == MsgKind.event) {
+      pIcon = Icons.event_rounded;
+      preview = (m.media?['title'] as String?) ?? 'Event';
+    } else if (m != null && m.kind == MsgKind.image && m.media?['once'] == true) {
+      pIcon = Icons.looks_one_outlined;
+      preview = 'Photo';
+    } else if (m != null) {
       if (m.kind == MsgKind.image) {
         pIcon = Icons.photo_camera_rounded;
         preview = m.text.trim().isEmpty ? 'Photo' : m.text.replaceAll('\n', ' ');
@@ -211,6 +232,9 @@ class _ChatRow extends StatelessWidget {
       } else {
         preview = m.text.replaceAll('\n', ' ');
       }
+    }
+    if (m != null && chat.isGroup && m.from != null && !m.fromMe && m.kind != MsgKind.system && !m.deleted) {
+      preview = '${Messenger.instance.nameFor(m.from!)}: $preview';
     }
     return InkWell(
       onTap: () {
@@ -239,7 +263,7 @@ class _ChatRow extends StatelessWidget {
               ]),
               const SizedBox(height: 3),
               if (chat.typing)
-                Text('typing…', style: TextStyle(fontSize: 13, color: context.primary, fontWeight: FontWeight.w700))
+                Text(chat.typingName != null ? '${chat.typingName} is typing…' : 'typing…', style: TextStyle(fontSize: 13, color: context.primary, fontWeight: FontWeight.w700))
               else
               Row(children: [
                 if (m != null && m.fromMe) ...[Ticks(status: m.status, color: bc.muted), const SizedBox(width: 3)],

@@ -25,6 +25,7 @@ import { chatRoute, profileChanged } from './chat';
 import { pushConfigured } from './fcm';
 import { deleteUserStatuses, expireStatuses, statusRoute } from './status';
 import { expireMedia, mediaConfigured, mediaRoute } from './media';
+import { groupRoute } from './groups';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
 type Ctx = { req: Request; env: Env; url: URL };
@@ -384,6 +385,7 @@ async function deleteAccount(c: Ctx) {
     c.env.DB.prepare('DELETE FROM inbox WHERE to_user = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM push_tokens WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM user_contacts WHERE user_id = ? OR contact_id = ?').bind(user.id, user.id),
+    c.env.DB.prepare('DELETE FROM group_members WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM challenges WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
   ]);
@@ -429,6 +431,11 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'DELETE' && dk) return deviceKeyDelete(c, dk[1]);
   if (m === 'GET' && p === '/get') {
     return Response.redirect('https://github.com/aggarwal97kajal-lab/baatly/releases/latest/download/baatly.apk', 302);
+  }
+  if (/^\/v1\/groups(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await groupRoute(c, user, m, p);
+    if (r) return r;
   }
   if (/^\/v1\/media(\/|$)/.test(p)) {
     const { user } = await requireUser(c);

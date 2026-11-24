@@ -21,6 +21,13 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _tab = 0;
+  final _pages = PageController();
+
+  void _go(int i) {
+    setState(() => _tab = i);
+    _pages.animateToPage(i, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+    if (i == 1) StatusService.instance.refresh();
+  }
 
   @override
   void initState() {
@@ -36,6 +43,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _pages.dispose();
     super.dispose();
   }
 
@@ -62,12 +70,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     return PopScope(
       canPop: _tab == 0,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _tab != 0) setState(() => _tab = 0);
+        if (!didPop && _tab != 0) _go(0);
       },
       child: Scaffold(
-      body: AnimatedSwitcher(
-        duration: Mitti.fast,
-        child: KeyedSubtree(key: ValueKey(_tab), child: pages[_tab]),
+      body: PageView(
+        controller: _pages,
+        onPageChanged: (i) {
+          setState(() => _tab = i);
+          if (i == 1) StatusService.instance.refresh();
+        },
+        children: pages,
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(color: bc.surface, border: Border(top: BorderSide(color: bc.line))),
@@ -82,10 +94,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 final col = on ? context.primary : bc.muted;
                 return Expanded(
                   child: InkWell(
-                    onTap: () {
-                      setState(() => _tab = i);
-                      if (i == 1) StatusService.instance.refresh();
-                    },
+                    onTap: () => _go(i),
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                       AnimatedContainer(
                         duration: Mitti.fast,

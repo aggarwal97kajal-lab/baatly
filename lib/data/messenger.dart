@@ -87,6 +87,7 @@ class Messenger {
     // Keeps "My contacts" privacy and contact names up to date.
     unawaited(ContactBook.instance.load().then((_) {}, onError: (_) {}));
     unawaited(_refreshPeers());
+    unawaited(loadGroups());
     _purge();
     _purgeTimer?.cancel();
     _purgeTimer = Timer.periodic(const Duration(seconds: 20), (_) => _purge());
@@ -122,7 +123,7 @@ class Messenger {
   }
 
   Future<void> _refreshPeers() async {
-    for (final c in _s.chats.where((c) => c.isReal).toList()) {
+    for (final c in _s.chats.where((c) => c.peerId != null).toList()) {
       try {
         await _peer(c.peerId!, refresh: true);
       } catch (_) {}
@@ -326,6 +327,8 @@ class Messenger {
       case 'presence':
         _onPresence(ev);
         ok = false;
+      case 'group':
+        ok = await _onGroupEvent(ev);
       case 'profile':
         unawaited(_onProfile(ev['user'] as String));
         ok = false;
@@ -464,6 +467,7 @@ class Messenger {
     String text;
     int ttl = 0;
     Map<String, dynamic>? md;
+    Map<String, dynamic>? control;
     DateTime at = DateTime.fromMillisecondsSinceEpoch(ev['at'] as int? ?? DateTime.now().millisecondsSinceEpoch);
     try {
       final plain = await _open(body, peer);
@@ -472,19 +476,31 @@ class Messenger {
       if (ts is int) at = DateTime.fromMillisecondsSinceEpoch(ts);
       ttl = (plain['ttl'] as int?) ?? 0;
       md = (plain['md'] as Map?)?.cast<String, dynamic>();
+      for (final k in const ['del', 'opened', 'vote']) {
+        if (plain.containsKey(k)) control = {k: plain[k]};
+      }
     } catch (_) {
       text = "🔒 This message couldn't be decrypted. Ask them to send it again.";
     }
-    final chat = _chatFor(peer);
+    // Control messages (delete for everyone, view-once opened, poll votes).
+    if (control != null) {
+      _onControl(from, control);
+      return true;
+    }
+    final gid = ev['group'] as String?;
+    final Chat chat;
+    if (gid != null) {
+      final g = await _groupChat(gid);
+      if (g == null) return false;
+      chat = g;
+      chat.typingName = null;
+    } else {
+      chat = _chatFor(peer);
+      chat.disappear = ttl; // follow the sender's disappearing-messages setting
+    }
     chat.typing = false;
-    chat.disappear = ttl; // follow the sender's disappearing-messages setting
     if (!chat.messages.any((m) => m.id == msgId)) {
-      final kind = switch (md?['type']) {
-        'image' => MsgKind.image,
-        'voice' => MsgKind.voice,
-        'doc' => MsgKind.doc,
-        _ => MsgKind.text,
-      };
+      final kind = kindOf(md?['type'] as String?);
       final m = Message(
         id: msgId,
         text: text,
@@ -494,9 +510,9 @@ class Messenger {
         voiceSeconds: (md?['dur'] as int?) ?? 0,
         media: md,
         expiresAt: ttl > 0 ? DateTime.now().add(Duration(seconds: ttl)) : null,
-      );
+      )..from = from;
       // Photos and voice notes download automatically (small); documents on tap.
-      if ((kind == MsgKind.image || kind == MsgKind.voice) && ((md?['size'] as int?) ?? 0) < 16 * 1024 * 1024) {
+      if ((kind == MsgKind.image || kind == MsgKind.voice) && md?['once'] != true && ((md?['size'] as int?) ?? 0) < 16 * 1024 * 1024) {
         unawaited(downloadMedia(m));
       }
       chat.messages.add(m);
@@ -508,9 +524,9 @@ class Messenger {
       await _saveNow();
       if (open && _s.readReceipts) {
         m.readSent = true;
-        unawaited(_receipt(from, [msgId], 'read'));
+        unawaited(_receipt(from, [msgId], 'read', group: gid));
       } else {
-        unawaited(_receipt(from, [msgId], 'delivered'));
+        unawaited(_receipt(from, [msgId], 'delivered', group: gid));
       }
     }
     return true;
@@ -529,6 +545,27 @@ class Messenger {
 
   void _onReceipt(Map<String, dynamic> ev) {
     final from = ev['from'] as String;
+    final gid = ev['group'] as String?;
+    if (gid != null) {
+      final read = ev['status'] == 'read';
+      final ids = (ev['msgIds'] as List? ?? []).cast<String>().toSet();
+      for (final c in _s.chats) {
+        if (c.groupId != gid) continue;
+        final others = c.members.where((u) => u != _uid).toSet();
+        for (final m in c.messages) {
+          if (!m.fromMe || !ids.contains(m.id)) continue;
+          m.deliveredBy.add(from);
+          if (read) m.readBy.add(from);
+          if (others.isNotEmpty && others.every(m.readBy.contains) && _s.readReceipts) {
+            m.status = MsgStatus.read;
+          } else if (others.isNotEmpty && others.every(m.deliveredBy.contains) && m.status.index < MsgStatus.delivered.index) {
+            m.status = MsgStatus.delivered;
+          }
+        }
+      }
+      _s.changed();
+      return;
+    }
     // With read receipts off you don't see others' blue ticks either.
     final status = ev['status'] == 'read' && _s.readReceipts ? MsgStatus.read : MsgStatus.delivered;
     final ids = (ev['msgIds'] as List? ?? []).cast<String>().toSet();
@@ -560,7 +597,7 @@ class Messenger {
   void syncMute(Chat c) {
     final until = c.mutedUntil;
     unawaited(Api.instance
-        .request('PUT', '/v1/mutes', {'peer': c.peerId, 'until': until == null ? null : (until.year >= 9999 ? DateTime(9999).millisecondsSinceEpoch : until.millisecondsSinceEpoch)})
+        .request('PUT', '/v1/mutes', {'peer': c.peerId ?? c.groupId, 'until': until == null ? null : (until.year >= 9999 ? DateTime(9999).millisecondsSinceEpoch : until.millisecondsSinceEpoch)})
         .then((_) {}, onError: (_) {}));
   }
 
@@ -581,6 +618,22 @@ class Messenger {
 
   void _onTyping(Map<String, dynamic> ev) {
     final from = ev['from'] as String;
+    final gid = ev['group'] as String?;
+    if (gid != null) {
+      for (final c in _s.chats) {
+        if (c.groupId != gid) continue;
+        c.typing = true;
+        c.typingName = nameFor(from);
+        _typingTimers['g:$gid']?.cancel();
+        _typingTimers['g:$gid'] = Timer(const Duration(seconds: 6), () {
+          c.typing = false;
+          c.typingName = null;
+          _s.changed();
+        });
+      }
+      _s.changed();
+      return;
+    }
     for (final c in _s.chats) {
       if (c.peerId != from) continue;
       c.typing = ev['typing'] == true;
@@ -595,9 +648,9 @@ class Messenger {
     }
   }
 
-  Future<void> _receipt(String to, List<String> ids, String status) async {
+  Future<void> _receipt(String to, List<String> ids, String status, {String? group}) async {
     try {
-      await Api.instance.request('POST', '/v1/receipts', {'to': to, 'msgIds': ids, 'status': status});
+      await Api.instance.request('POST', '/v1/receipts', {'to': to, 'msgIds': ids, 'status': status, if (group != null) 'group': group});
     } catch (_) {}
   }
 
@@ -619,22 +672,21 @@ class Messenger {
     unawaited(_deliver(chat, m));
   }
 
+  static const _fileKinds = {MsgKind.image, MsgKind.voice, MsgKind.doc};
+
   Future<void> _deliver(Chat chat, Message m) async {
     try {
-      var peer = await _peer(chat.peerId!);
-      if (peer.key == null) peer = await _peer(chat.peerId!, refresh: true);
-      if (peer.key == null) return; // they haven't opened the new app yet; retried on next sync
-      if (m.kind != MsgKind.text && m.media?['id'] == null) {
+      if (_fileKinds.contains(m.kind) && m.media?['id'] == null) {
         await _uploadMedia(m);
       }
       final ttl = m.expiresAt == null ? 0 : m.expiresAt!.difference(m.time).inSeconds;
-      final body = await E2E.instance.seal({
+      final ok = await _sendPayload(chat, m.id, {
         't': m.text,
         'ts': m.time.millisecondsSinceEpoch,
         if (ttl > 0) 'ttl': ttl,
         if (m.media != null) 'md': m.media,
-      }, peer.key!);
-      await Api.instance.request('POST', '/v1/messages', {'to': chat.peerId, 'msgId': m.id, 'body': body});
+      });
+      if (!ok) return;
       if (m.status == MsgStatus.sending) m.status = MsgStatus.sent;
       _s.changed();
     } catch (_) {
@@ -642,10 +694,313 @@ class Messenger {
     }
   }
 
+  /// Encrypts [payload] for the chat (each group member separately) and sends it.
+  Future<bool> _sendPayload(Chat chat, String msgId, Map<String, dynamic> payload, {bool silent = false, String? onlyTo}) async {
+    if (chat.groupId != null && onlyTo == null) {
+      if (chat.left) return false;
+      final bodies = <String, String>{};
+      for (final u in chat.members) {
+        if (u == _uid) continue;
+        try {
+          var p = await _peer(u);
+          if (p.key == null) p = await _peer(u, refresh: true);
+          if (p.key != null) bodies[u] = await E2E.instance.seal(payload, p.key!);
+        } catch (_) {}
+      }
+      await Api.instance.request('POST', '/v1/groups/${chat.groupId}/messages', {'msgId': msgId, 'bodies': bodies, if (silent) 'silent': true});
+      return true;
+    }
+    final to = onlyTo ?? chat.peerId!;
+    var peer = await _peer(to);
+    if (peer.key == null) peer = await _peer(to, refresh: true);
+    if (peer.key == null) return false; // they haven't opened the new app yet; retried on next sync
+    final body = await E2E.instance.seal(payload, peer.key!);
+    await Api.instance.request('POST', '/v1/messages', {'to': to, 'msgId': msgId, 'body': body, if (silent) 'silent': true});
+    return true;
+  }
+
+  // ------------------------------------------------------------------ control messages
+  static MsgKind kindOf(String? type) => switch (type) {
+        'image' => MsgKind.image,
+        'voice' => MsgKind.voice,
+        'doc' => MsgKind.doc,
+        'poll' => MsgKind.poll,
+        'location' => MsgKind.location,
+        'contact' => MsgKind.contact,
+        'event' => MsgKind.event,
+        _ => MsgKind.text,
+      };
+
+  Message? _find(String msgId) {
+    for (final c in _s.chats) {
+      for (final m in c.messages) {
+        if (m.id == msgId) return m;
+      }
+    }
+    return null;
+  }
+
+  void _onControl(String from, Map<String, dynamic> c) {
+    if (c['del'] is String) {
+      final m = _find(c['del'] as String);
+      // Only the sender can delete it, and only for a short while.
+      if (m != null && !m.fromMe && (m.from == null || m.from == from) && DateTime.now().difference(m.time).inMinutes < 10) {
+        _wipe(m);
+      }
+    } else if (c['opened'] is String) {
+      final m = _find(c['opened'] as String);
+      if (m != null && m.fromMe) m.opened = true;
+    } else if (c['vote'] is Map) {
+      final v = (c['vote'] as Map).cast<String, dynamic>();
+      final m = _find(v['m'] as String? ?? '');
+      if (m != null && m.kind == MsgKind.poll) {
+        final votes = ((m.media!['votes'] as Map?) ?? {}).cast<String, dynamic>();
+        votes[from] = [for (final x in (v['c'] as List? ?? [])) (x as num).toInt()];
+        m.media!['votes'] = votes;
+      }
+    }
+    _s.changed();
+  }
+
+  void _wipe(Message m) {
+    m.deleted = true;
+    m.text = '';
+    m.kind = MsgKind.text;
+    m.media = null;
+    final p = m.mediaPath;
+    m.mediaPath = null;
+    if (p != null) {
+      try {
+        File(p).deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  /// Delete for everyone (my messages, recent ones).
+  Future<void> deleteForEveryone(Chat chat, Message m) async {
+    _wipe(m);
+    _s.changed();
+    if (!chat.isReal) return;
+    try {
+      await _sendPayload(chat, _newId(), {'del': m.id, 'ts': DateTime.now().millisecondsSinceEpoch}, silent: true);
+    } catch (_) {}
+  }
+
+  /// View once: after I've seen it, remove the file and tell the sender.
+  Future<void> markOpened(Chat chat, Message m) async {
+    m.opened = true;
+    final p = m.mediaPath;
+    m.mediaPath = null;
+    if (p != null) {
+      try {
+        await File(p).delete();
+      } catch (_) {}
+    }
+    m.media?.remove('thumb');
+    _s.changed();
+    final sender = m.from ?? chat.peerId;
+    if (sender == null) return;
+    try {
+      await _sendPayload(chat, _newId(), {'opened': m.id}, silent: true, onlyTo: sender);
+    } catch (_) {}
+  }
+
+  /// Vote in a poll (replaces my previous vote).
+  Future<void> vote(Chat chat, Message m, List<int> choices) async {
+    final votes = ((m.media!['votes'] as Map?) ?? {}).cast<String, dynamic>();
+    votes[_uid ?? 'me'] = choices;
+    m.media!['votes'] = votes;
+    _s.changed();
+    if (!chat.isReal) return;
+    try {
+      await _sendPayload(chat, _newId(), {'vote': {'m': m.id, 'c': choices}}, silent: true);
+    } catch (_) {}
+  }
+
+  /// Location / contact / event / poll: no file, just details.
+  void sendCard(Chat chat, MsgKind kind, Map<String, dynamic> md, {String text = ''}) {
+    final m = Message(
+      id: _newId(),
+      text: text,
+      fromMe: true,
+      time: DateTime.now(),
+      status: chat.isReal ? MsgStatus.sending : MsgStatus.read,
+      kind: kind,
+      media: md,
+      expiresAt: chat.disappear > 0 ? DateTime.now().add(Duration(seconds: chat.disappear)) : null,
+    );
+    chat.messages.add(m);
+    if (chat.archived) chat.archived = false;
+    _s.changed();
+    if (chat.isReal) unawaited(_deliver(chat, m));
+  }
+
+  String? get myId => _uid;
+
+  // ------------------------------------------------------------------ groups
+  Chat _upsertGroup(Map<String, dynamic> g) {
+    final gid = g['id'] as String;
+    Chat? chat;
+    for (final c in _s.chats) {
+      if (c.groupId == gid) chat = c;
+    }
+    final name = g['name'] as String? ?? 'Group';
+    chat ??= () {
+      final c = Chat(
+        id: 'g_$gid',
+        name: name,
+        initials: initialsOf(name),
+        colorIndex: gid.codeUnits.fold<int>(0, (a, b) => a + b) % 7,
+        isGroup: true,
+        groupId: gid,
+      );
+      c.disappear = _s.defaultTimer;
+      _s.chats.add(c);
+      return c;
+    }();
+    chat.name = name;
+    chat.initials = initialsOf(name);
+    final members = <String>[];
+    final admins = <String>{};
+    for (final x in (g['members'] as List? ?? [])) {
+      final m = (x as Map).cast<String, dynamic>();
+      final id = m['id'] as String;
+      members.add(id);
+      if (m['role'] == 'admin') admins.add(id);
+      if (id == _uid) continue;
+      final phone = m['phone'] as String? ?? '';
+      final p = _peers[id] ?? Peer(id, nameFor(id, phone: phone, profileName: m['name'] as String?), phone, '', null);
+      if (m['x25519'] != null) p.key = m['x25519'] as String;
+      if (p.phone.isEmpty) p.phone = phone;
+      _peers[id] = p;
+    }
+    chat.members = members;
+    chat.admins = admins;
+    chat.left = _uid != null && !members.contains(_uid);
+    chat.about = memberLine(chat);
+    return chat;
+  }
+
+  /// "You, Riya, Aman" for the header.
+  String memberLine(Chat c) {
+    final names = <String>[];
+    for (final u in c.members) {
+      names.add(u == _uid ? 'You' : nameFor(u));
+    }
+    names.sort((a, b) => a == 'You' ? 1 : b == 'You' ? -1 : a.compareTo(b));
+    return names.join(', ');
+  }
+
+  Future<Chat?> _groupChat(String gid, {bool refresh = false}) async {
+    for (final c in _s.chats) {
+      if (c.groupId == gid && !refresh && c.members.isNotEmpty) return c;
+    }
+    try {
+      final d = await Api.instance.request('GET', '/v1/groups/$gid');
+      return _upsertGroup((d['group'] as Map).cast<String, dynamic>());
+    } on ApiException catch (e) {
+      if (e.code == 'NOT_IN_GROUP') {
+        for (final c in _s.chats) {
+          if (c.groupId == gid) {
+            c.left = true;
+            return c;
+          }
+        }
+      }
+      return null;
+    }
+  }
+
+  /// All my groups (e.g. after logging in on a new phone).
+  Future<void> loadGroups() async {
+    try {
+      final d = await Api.instance.request('GET', '/v1/groups');
+      for (final g in (d['groups'] as List? ?? [])) {
+        _upsertGroup((g as Map).cast<String, dynamic>());
+      }
+      _s.changed();
+    } catch (_) {}
+  }
+
+  String _who(String id) => id == _uid ? 'You' : nameFor(id);
+
+  Future<bool> _onGroupEvent(Map<String, dynamic> ev) async {
+    final gid = ev['group'] as String;
+    final actor = ev['actor'] as String? ?? '';
+    final targets = [for (final x in (ev['targets'] as List? ?? [])) x.toString()];
+    Chat? chat = await _groupChat(gid, refresh: true);
+    if (chat == null) {
+      // Removed before we ever saw it.
+      return true;
+    }
+    final names = targets.map(_who).join(', ');
+    final text = switch (ev['action']) {
+      'created' => '${_who(actor)} created group "${ev['name'] ?? chat.name}"',
+      'added' => '${_who(actor)} added $names',
+      'removed' => '${_who(actor)} removed $names',
+      'left' => '$names left',
+      'renamed' => '${_who(actor)} changed the group name to "${ev['name']}"',
+      'about' => '${_who(actor)} changed the group description',
+      'photo' => "${_who(actor)} changed this group's icon",
+      'admin' => '$names ${targets.contains(_uid) ? 'are' : 'is'} now an admin',
+      'unadmin' => '$names ${targets.contains(_uid) ? 'are' : 'is'} no longer an admin',
+      _ => null,
+    };
+    if (text != null) {
+      chat.messages.add(Message(
+        id: 'sys_${ev['id'] ?? _newId()}',
+        text: text,
+        fromMe: false,
+        time: DateTime.fromMillisecondsSinceEpoch(ev['at'] as int? ?? DateTime.now().millisecondsSinceEpoch),
+        kind: MsgKind.system,
+      ));
+    }
+    _s.changed();
+    await _saveNow();
+    return true;
+  }
+
+  Future<Chat> createGroup(String name, List<String> memberIds) async {
+    final d = await Api.instance.request('POST', '/v1/groups', {'name': name, 'members': memberIds});
+    final chat = _upsertGroup((d['group'] as Map).cast<String, dynamic>());
+    _s.changed();
+    return chat;
+  }
+
+  Future<void> addMembers(Chat chat, List<String> ids) async {
+    final d = await Api.instance.request('POST', '/v1/groups/${chat.groupId}/members', {'add': ids});
+    _upsertGroup((d['group'] as Map).cast<String, dynamic>());
+    _s.changed();
+  }
+
+  Future<void> removeMember(Chat chat, String id) async {
+    await Api.instance.request('DELETE', '/v1/groups/${chat.groupId}/members/$id');
+    await _groupChat(chat.groupId!, refresh: true);
+    _s.changed();
+  }
+
+  Future<void> setAdmin(Chat chat, String id, bool admin) async {
+    await Api.instance.request(admin ? 'POST' : 'DELETE', '/v1/groups/${chat.groupId}/admins/$id');
+    await _groupChat(chat.groupId!, refresh: true);
+    _s.changed();
+  }
+
+  Future<void> renameGroup(Chat chat, String name) async {
+    final d = await Api.instance.request('PATCH', '/v1/groups/${chat.groupId}', {'name': name});
+    _upsertGroup((d['group'] as Map).cast<String, dynamic>());
+    _s.changed();
+  }
+
+  Future<void> leaveGroup(Chat chat) async {
+    await Api.instance.request('DELETE', '/v1/groups/${chat.groupId}/members/$_uid');
+    chat.left = true;
+    _s.changed();
+  }
+
   // ------------------------------------------------------------------ media
   /// Sends a photo / voice note / document. The file is encrypted on this
   /// phone with a fresh key; the key goes inside the E2E message.
-  void sendMedia(Chat chat, {required String path, required MsgKind kind, String caption = '', String? name, int seconds = 0}) {
+  void sendMedia(Chat chat, {required String path, required MsgKind kind, String caption = '', String? name, int seconds = 0, bool once = false}) {
     final fileName = name ?? path.split('/').last;
     final m = Message(
       id: _newId(),
@@ -661,6 +1016,7 @@ class Messenger {
         'name': fileName,
         'mime': MediaFiles.mime(fileName),
         if (seconds > 0) 'dur': seconds,
+        if (once) 'once': true,
       },
       expiresAt: chat.disappear > 0 ? DateTime.now().add(Duration(seconds: chat.disappear)) : null,
     );
@@ -676,7 +1032,7 @@ class Messenger {
     try {
       final file = File(m.mediaPath!);
       final bytes = await file.readAsBytes();
-      if (m.kind == MsgKind.image) {
+      if (m.kind == MsgKind.image && m.media!['once'] != true) {
         final t = await MediaFiles.thumb(file.path);
         if (t != null) {
           m.media!['thumb'] = t.$1;
@@ -721,10 +1077,14 @@ class Messenger {
 
   /// Called while the user types (throttled).
   void typing(Chat chat) {
-    if (!chat.isReal) return;
+    if (!chat.isReal || chat.left) return;
     final now = DateTime.now();
     if (now.difference(_lastTypingSent).inSeconds < 4) return;
     _lastTypingSent = now;
+    if (chat.groupId != null) {
+      unawaited(Api.instance.request('POST', '/v1/groups/${chat.groupId}/typing').then((_) {}, onError: (_) {}));
+      return;
+    }
     unawaited(Api.instance.request('POST', '/v1/typing', {'to': chat.peerId, 'typing': true}).catchError((_) => <String, dynamic>{}));
   }
 
@@ -733,6 +1093,10 @@ class Messenger {
     if (!chat.isReal) return;
     chat.unread = 0;
     markRead(chat);
+    if (chat.groupId != null) {
+      unawaited(_groupChat(chat.groupId!, refresh: true).then((_) => _s.changed()));
+      return;
+    }
     unawaited(_refresh(chat));
     _presenceTimer?.cancel();
     // Re-subscribe every minute; changes themselves arrive instantly over the socket.
@@ -745,13 +1109,21 @@ class Messenger {
 
   void markRead(Chat chat) {
     if (!_s.readReceipts) return;
-    final ids = [for (final m in chat.messages) if (!m.fromMe && !m.readSent) m.id];
-    if (ids.isEmpty) return;
+    final unread = [for (final m in chat.messages) if (!m.fromMe && !m.readSent && m.kind != MsgKind.system) m];
+    if (unread.isEmpty) return;
     for (final m in chat.messages) {
       if (!m.fromMe) m.readSent = true;
     }
     _s.changed();
-    unawaited(_receipt(chat.peerId!, ids, 'read'));
+    if (chat.groupId != null) {
+      final bySender = <String, List<String>>{};
+      for (final m in unread) {
+        if (m.from != null) bySender.putIfAbsent(m.from!, () => []).add(m.id);
+      }
+      bySender.forEach((to, ids) => unawaited(_receipt(to, ids, 'read', group: chat.groupId)));
+    } else {
+      unawaited(_receipt(chat.peerId!, [for (final m in unread) m.id], 'read'));
+    }
   }
 
   Future<void> _refresh(Chat chat) async {

@@ -32,7 +32,7 @@ export async function profileChanged(env: Env, userId: string) {
 }
 
 /** Store an event for `to` and push it live if they are connected. */
-async function deliver(env: Env, to: string, event: Record<string, unknown>) {
+export async function deliver(env: Env, to: string, event: Record<string, unknown>) {
   const id = randomId();
   const ev = { ...event, id, at: now() };
   await env.DB.prepare('INSERT INTO inbox (id, to_user, event, created_at) VALUES (?,?,?,?)')
@@ -179,7 +179,7 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
   }
 
   if (m === 'POST' && p === '/v1/messages') {
-    const b = await readJson<{ to: string; msgId: string; body: string }>(c.req);
+    const b = await readJson<{ to: string; msgId: string; body: string; silent?: boolean }>(c.req);
     const to = String(b.to ?? '');
     const body = String(b.body ?? '');
     const msgId = String(b.msgId ?? '').slice(0, 64);
@@ -187,7 +187,7 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     if (body.length > MAX_BODY) throw new HttpError(413, 'MESSAGE_TOO_LARGE');
     if (to === me.id || !(await userExists(env, to))) throw new HttpError(404, 'USER_NOT_FOUND');
     const ev = await deliver(env, to, { type: 'msg', from: me.id, msgId, body });
-    if (ev.live === 0 && pushConfigured(env)) {
+    if (!b.silent && ev.live === 0 && pushConfigured(env)) {
       try {
         await notify(env, to, me.name || me.phone, 'New message', { type: 'msg', chat: me.id });
       } catch (e) {
@@ -198,11 +198,11 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
   }
 
   if (m === 'POST' && p === '/v1/receipts') {
-    const b = await readJson<{ to: string; msgIds: string[]; status: string }>(c.req);
+    const b = await readJson<{ to: string; msgIds: string[]; status: string; group?: string }>(c.req);
     const status = b.status === 'read' ? 'read' : 'delivered';
     const ids = (Array.isArray(b.msgIds) ? b.msgIds : []).map(String).slice(0, 500);
     if (!ids.length || !(await userExists(env, String(b.to ?? '')))) return json({ ok: true });
-    await deliver(env, b.to, { type: 'receipt', from: me.id, msgIds: ids, status });
+    await deliver(env, b.to, { type: 'receipt', from: me.id, msgIds: ids, status, ...(b.group ? { group: String(b.group) } : {}) });
     return json({ ok: true });
   }
 

@@ -1,14 +1,24 @@
 enum MsgStatus { sending, sent, delivered, read }
 
-enum MsgKind { text, voice, image, doc }
+/// Saved by index: only ever append new kinds.
+enum MsgKind { text, voice, image, doc, system, poll, location, contact, event }
 
 class Message {
   final String id;
-  final String text;
+  String text;
   final bool fromMe;
   final DateTime time;
   MsgStatus status;
-  final MsgKind kind;
+  MsgKind kind;
+  /// Groups: who sent it (BAATLY user id).
+  String? from;
+  /// Deleted for everyone.
+  bool deleted = false;
+  /// View once: already opened.
+  bool opened = false;
+  /// Groups: members who received / read my message.
+  final Set<String> deliveredBy = {};
+  final Set<String> readBy = {};
   final int voiceSeconds;
   String? reaction;
   /// Real chats: we already told the sender this message was read.
@@ -53,9 +63,21 @@ class Message {
         if (voiceSeconds > 0) 'vs': voiceSeconds,
         if (mediaPath != null) 'mp': mediaPath,
         if (media != null) 'md': media,
+        if (from != null) 'f': from,
+        if (deleted) 'dl': true,
+        if (opened) 'op': true,
+        if (deliveredBy.isNotEmpty) 'db': deliveredBy.toList(),
+        if (readBy.isNotEmpty) 'rb': readBy.toList(),
       };
 
-  factory Message.fromJson(Map<String, dynamic> j) => Message(
+  factory Message.fromJson(Map<String, dynamic> j) => _fromJson(j)
+    ..from = j['f'] as String?
+    ..deleted = j['dl'] == true
+    ..opened = j['op'] == true
+    ..deliveredBy.addAll([for (final x in (j['db'] as List? ?? [])) x.toString()])
+    ..readBy.addAll([for (final x in (j['rb'] as List? ?? [])) x.toString()]);
+
+  static Message _fromJson(Map<String, dynamic> j) => Message(
         id: j['id'] as String,
         text: j['t'] as String? ?? '',
         fromMe: j['me'] == true,
@@ -81,6 +103,14 @@ class Chat {
   String about;
   /// Real chats only: the other person's BAATLY user id and phone.
   final String? peerId;
+  /// Real group chats: server group id, members and admins.
+  final String? groupId;
+  List<String> members = [];
+  Set<String> admins = {};
+  /// I'm no longer in this group.
+  bool left = false;
+  /// Groups: who is typing right now.
+  String? typingName;
   String? phone;
   /// Real chats only: "online" / "last seen …" from the server.
   String? presence;
@@ -110,6 +140,7 @@ class Chat {
     this.unread = 0,
     this.peerId,
     this.phone,
+    this.groupId,
     List<Message>? messages,
   })  : messages = messages ?? [],
         mutedUntil = muted ? DateTime(9999) : null;
@@ -119,7 +150,8 @@ class Chat {
 
   Message? get last => messages.isEmpty ? null : messages.last;
 
-  bool get isReal => peerId != null;
+  bool get isReal => peerId != null || groupId != null;
+  bool get isRealGroup => groupId != null;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -129,6 +161,11 @@ class Chat {
         'about': about,
         'peer': peerId,
         'phone': phone,
+        if (groupId != null) 'gid': groupId,
+        if (isGroup) 'group': true,
+        if (members.isNotEmpty) 'mem': members,
+        if (admins.isNotEmpty) 'adm': admins.toList(),
+        if (left) 'left': true,
         'pinned': pinned,
         'archived': archived,
         'unread': unread,
@@ -147,12 +184,17 @@ class Chat {
       about: j['about'] as String? ?? '',
       peerId: j['peer'] as String?,
       phone: j['phone'] as String?,
+      groupId: j['gid'] as String?,
+      isGroup: j['group'] == true,
       pinned: j['pinned'] == true,
       archived: j['archived'] == true,
       unread: j['unread'] as int? ?? 0,
       messages: [for (final m in (j['msgs'] as List? ?? [])) Message.fromJson(m as Map<String, dynamic>)],
     );
     c.photo = j['photo'] as String?;
+    c.members = [for (final x in (j['mem'] as List? ?? [])) x.toString()];
+    c.admins = {for (final x in (j['adm'] as List? ?? [])) x.toString()};
+    c.left = j['left'] == true;
     c.disappear = (j['dis'] as int?) ?? 0;
     final mute = j['mute'] as int?;
     if (mute != null) c.mutedUntil = DateTime.fromMillisecondsSinceEpoch(mute);

@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 
@@ -15,6 +17,8 @@ import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
 import 'chat_info_screen.dart';
 import 'media_widgets.dart';
+import 'cards.dart';
+import 'group_screens.dart';
 import '../../data/media.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -33,6 +37,8 @@ class _ChatScreenState extends State<ChatScreen> {
   DateTime? _recStart;
   Timer? _recTimer;
   String? _recPath;
+  bool _emoji = false;
+  final _focus = FocusNode();
 
   Chat get chat => widget.chat;
 
@@ -40,9 +46,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
   }
 
-  void _sendMedia(String path, MsgKind kind, {String caption = '', String? name, int seconds = 0}) {
+  void _sendMedia(String path, MsgKind kind, {String caption = '', String? name, int seconds = 0, bool once = false}) {
     if (chat.isReal) {
-      Messenger.instance.sendMedia(chat, path: path, kind: kind, caption: caption, name: name, seconds: seconds);
+      Messenger.instance.sendMedia(chat, path: path, kind: kind, caption: caption, name: name, seconds: seconds, once: once);
     } else {
       final s = AppState.instance;
       chat.messages.add(Message(
@@ -77,10 +83,10 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     if (f == null || !mounted) return;
-    final caption = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => SendPhotoScreen(path: f!.path, to: chat.name)));
-    if (caption == null) return;
+    final r = await Navigator.of(context).push<(String, bool)>(MaterialPageRoute(builder: (_) => SendPhotoScreen(path: f!.path, to: chat.name)));
+    if (r == null) return;
     final kept = await _keep(f.path, f.name.isEmpty ? 'photo.jpg' : f.name);
-    _sendMedia(kept, MsgKind.image, caption: caption, name: 'photo.jpg');
+    _sendMedia(kept, MsgKind.image, caption: r.$1, name: 'photo.jpg', once: r.$2);
   }
 
   Future<void> _pickDoc() async {
@@ -101,23 +107,59 @@ class _ChatScreenState extends State<ChatScreen> {
     _sendMedia(kept, MsgKind.doc, name: f.name);
   }
 
+  Future<void> _card(Widget screen) async {
+    final md = await Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(builder: (_) => screen));
+    if (md == null) return;
+    Messenger.instance.sendCard(chat, Messenger.kindOf(md['type'] as String?), md);
+  }
+
+  Future<void> _sendLocation() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _toast('Turn on location (GPS) first');
+        return;
+      }
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        _toast('Allow location to share it');
+        return;
+      }
+      _toast('Getting your location…');
+      final pos = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: const Text('Send your current location?'),
+          content: Text('Accurate to about ${pos.accuracy.round()} m'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Send')),
+          ],
+        ),
+      );
+      if (ok == true) Messenger.instance.sendCard(chat, MsgKind.location, {'type': 'location', 'lat': pos.latitude, 'lng': pos.longitude});
+    } catch (e) {
+      _toast("Couldn't get location ($e)");
+    }
+  }
+
   void _attach() {
     final bc = context.bc;
-    Widget item(IconData i, String label, Color c, VoidCallback onTap) => Expanded(
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () {
-              Navigator.pop(context);
-              onTap();
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Column(children: [
-                CircleAvatar(radius: 28, backgroundColor: c, child: Icon(i, color: Colors.white)),
-                const SizedBox(height: 8),
-                Text(label, style: TextStyle(fontSize: 12.5, color: bc.text)),
-              ]),
-            ),
+    Widget item(IconData i, String label, Color c, VoidCallback onTap) => InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.pop(context);
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              CircleAvatar(radius: 27, backgroundColor: c, child: Icon(i, color: Colors.white)),
+              const SizedBox(height: 8),
+              Text(label, style: TextStyle(fontSize: 12.5, color: bc.text)),
+            ]),
           ),
         );
     showModalBottomSheet<void>(
@@ -125,12 +167,22 @@ class _ChatScreenState extends State<ChatScreen> {
       showDragHandle: true,
       builder: (sheet) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-          child: Row(children: [
-            item(Icons.insert_drive_file_rounded, 'Document', const Color(0xFF7A5BA6), _pickDoc),
-            item(Icons.photo_camera_rounded, 'Camera', const Color(0xFFC8553D), () => _pickImage(ImageSource.camera)),
-            item(Icons.photo_library_rounded, 'Gallery', const Color(0xFF2E7D8C), () => _pickImage(ImageSource.gallery)),
-          ]),
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+          child: GridView.count(
+            crossAxisCount: 4,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              item(Icons.photo_library_rounded, 'Gallery', const Color(0xFF2E7D8C), () => _pickImage(ImageSource.gallery)),
+              item(Icons.photo_camera_rounded, 'Camera', const Color(0xFFC8553D), () => _pickImage(ImageSource.camera)),
+              item(Icons.location_on_rounded, 'Location', const Color(0xFF2E7D5B), _sendLocation),
+              item(Icons.person_rounded, 'Contact', const Color(0xFF3D7DC8), () => _card(const ShareContactScreen())),
+              item(Icons.insert_drive_file_rounded, 'Document', const Color(0xFF7A5BA6), _pickDoc),
+              item(Icons.poll_rounded, 'Poll', const Color(0xFFE0A100), () => _card(const PollCreateScreen())),
+              item(Icons.event_rounded, 'Event', const Color(0xFFD9467A), () => _card(const EventCreateScreen())),
+              item(Icons.headphones_rounded, 'Audio', const Color(0xFFE07A30), _pickDoc),
+            ],
+          ),
         ),
       ),
     );
@@ -191,6 +243,7 @@ class _ChatScreenState extends State<ChatScreen> {
     Messenger.instance.closeChat(chat);
     _recTimer?.cancel();
     _rec.dispose();
+    _focus.dispose();
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
@@ -207,6 +260,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _msgMenu(Message m) {
+    if (m.kind == MsgKind.system) return;
     HapticFeedback.selectionClick();
     final bc = context.bc;
     showModalBottomSheet<void>(
@@ -269,6 +323,15 @@ class _ChatScreenState extends State<ChatScreen> {
               Navigator.pop(sheet);
             },
           ),
+          if (m.fromMe && !m.deleted && DateTime.now().difference(m.time).inMinutes < 5)
+            ListTile(
+              leading: Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
+              title: Text('Delete for everyone', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: () {
+                Navigator.pop(sheet);
+                Messenger.instance.deleteForEveryone(chat, m);
+              },
+            ),
         ]),
       ),
     );
@@ -281,7 +344,8 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         titleSpacing: 0,
         title: InkWell(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatInfoScreen(chat: chat))),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => chat.isRealGroup ? GroupInfoScreen(chat: chat) : ChatInfoScreen(chat: chat))),
           child: Row(children: [
             Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 38)),
             const SizedBox(width: 10),
@@ -294,8 +358,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     duration: Mitti.fast,
                     child: Text(
                       chat.typing
-                          ? 'typing…'
-                          : chat.isReal
+                          ? (chat.typingName != null ? '${chat.typingName} is typing…' : 'typing…')
+                          : chat.isRealGroup
+                              ? (chat.left ? "You're no longer a member" : Messenger.instance.memberLine(chat))
+                              : chat.isReal
                               ? ((chat.presence ?? '').isEmpty ? 'tap for contact info' : chat.presence!)
                               : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen today')),
                       key: ValueKey(chat.typing),
@@ -350,7 +416,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(color: bc.surface.withOpacity(0.92), borderRadius: BorderRadius.circular(12)),
                           child: Text(
-                            'Demo build: messages stay on this phone only. Encryption and real delivery come in the next milestone.',
+                            chat.isReal
+                                ? '🔒 Messages and calls are end-to-end encrypted. Only people in this chat can read them.'
+                                : 'Demo chat: these sample messages stay on this phone only.',
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 11.5, color: bc.muted),
                           ),
@@ -364,7 +432,15 @@ class _ChatScreenState extends State<ChatScreen> {
                       ]);
                     }
                     final m = msgs[i - 1];
-                    return _Bubble(key: ValueKey(m.id), m: m, onLongPress: () => _msgMenu(m));
+                    if (m.kind == MsgKind.system) return _SystemPill(text: m.text);
+                    return _SwipeToReply(
+                      key: ValueKey('sw_${m.id}'),
+                      onReply: () {
+                        setState(() => _replyTo = m);
+                        _focus.requestFocus();
+                      },
+                      child: _Bubble(key: ValueKey(m.id), m: m, chat: chat, onLongPress: () => _msgMenu(m)),
+                    );
                   },
                 );
               },
@@ -376,10 +452,33 @@ class _ChatScreenState extends State<ChatScreen> {
               onCancel: () => _stopRecording(send: false),
               onSend: () => _stopRecording(send: true),
             )
+          else if (chat.left)
+            Container(
+              width: double.infinity,
+              color: bc.surface,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Text("You can't send messages to this group because you're no longer a member.",
+                  textAlign: TextAlign.center, style: TextStyle(color: bc.muted)),
+            )
           else
           _Composer(
             onAttach: _attach,
             onMic: _startRecording,
+            onCamera: () => _pickImage(ImageSource.camera),
+            focus: _focus,
+            emojiOpen: _emoji,
+            onEmoji: () {
+              if (_emoji) {
+                setState(() => _emoji = false);
+                _focus.requestFocus();
+              } else {
+                FocusScope.of(context).unfocus();
+                setState(() => _emoji = true);
+              }
+            },
+            onFieldTap: () {
+              if (_emoji) setState(() => _emoji = false);
+            },
             ctrl: _ctrl,
             replyTo: _replyTo,
             onCancelReply: () => setState(() => _replyTo = null),
@@ -389,6 +488,12 @@ class _ChatScreenState extends State<ChatScreen> {
               if (_ctrl.text.isNotEmpty) Messenger.instance.typing(chat);
             },
           ),
+          if (_emoji && !_recording && !chat.left)
+            EmojiPicker(
+              textEditingController: _ctrl,
+              onEmojiSelected: (_, __) => setState(() {}),
+              config: const Config(height: 280),
+            ),
         ]),
       ),
     );
@@ -397,8 +502,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
 class _Bubble extends StatefulWidget {
   final Message m;
+  final Chat chat;
   final VoidCallback onLongPress;
-  const _Bubble({super.key, required this.m, required this.onLongPress});
+  const _Bubble({super.key, required this.m, required this.chat, required this.onLongPress});
   @override
   State<_Bubble> createState() => _BubbleState();
 }
@@ -442,7 +548,25 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final caption = m.text.trim().isEmpty
         ? null
         : Padding(padding: const EdgeInsets.only(top: 6), child: Text(m.text, style: TextStyle(fontSize: 15, color: fg, height: 1.35)));
-    if (m.kind == MsgKind.image) {
+    final accent = me ? Colors.white : context.primary;
+    if (m.deleted) {
+      content = Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.block_rounded, size: 16, color: fg.withOpacity(0.7)),
+        const SizedBox(width: 6),
+        Text(me ? 'You deleted this message' : 'This message was deleted',
+            style: TextStyle(fontSize: 14.5, fontStyle: FontStyle.italic, color: fg.withOpacity(0.75))),
+      ]);
+    } else if (m.kind == MsgKind.image && m.media?['once'] == true) {
+      content = ViewOnceContent(chat: widget.chat, m: m, fg: fg);
+    } else if (m.kind == MsgKind.poll) {
+      content = PollContent(chat: widget.chat, m: m, fg: fg, accent: accent);
+    } else if (m.kind == MsgKind.location) {
+      content = LocationContent(m: m, fg: fg);
+    } else if (m.kind == MsgKind.contact) {
+      content = ContactContent(m: m, fg: fg);
+    } else if (m.kind == MsgKind.event) {
+      content = EventContent(m: m, fg: fg);
+    } else if (m.kind == MsgKind.image) {
       content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [ImageContent(m: m, fg: fg), if (caption != null) caption]);
     } else if (m.kind == MsgKind.doc) {
       content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [DocContent(m: m, fg: fg), if (caption != null) caption]);
@@ -490,6 +614,15 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         boxShadow: me ? null : const [BoxShadow(color: Color(0x0F000000), blurRadius: 4, offset: Offset(0, 1))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+        if (!me && widget.chat.isGroup && m.from != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(Messenger.instance.nameFor(m.from!),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Mitti.avatarColors[m.from!.length % Mitti.avatarColors.length])),
+            ),
+          ),
         content,
         const SizedBox(height: 3),
         Row(mainAxisSize: MainAxisSize.min, children: [
@@ -542,7 +675,17 @@ class _Composer extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onAttach;
   final VoidCallback onMic;
+  final VoidCallback onCamera;
+  final VoidCallback onEmoji;
+  final VoidCallback onFieldTap;
+  final FocusNode focus;
+  final bool emojiOpen;
   const _Composer({
+    required this.onCamera,
+    required this.onEmoji,
+    required this.onFieldTap,
+    required this.focus,
+    required this.emojiOpen,
     required this.ctrl,
     required this.replyTo,
     required this.onCancelReply,
@@ -588,10 +731,12 @@ class _Composer extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(24)),
                   child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    IconButton(onPressed: () => showComingSoon(context, 'Emoji / stickers'), icon: Icon(Icons.emoji_emotions_outlined, color: bc.muted)),
+                    IconButton(onPressed: onEmoji, icon: Icon(emojiOpen ? Icons.keyboard_rounded : Icons.emoji_emotions_outlined, color: bc.muted)),
                     Expanded(
                       child: TextField(
                         controller: ctrl,
+                        focusNode: focus,
+                        onTap: onFieldTap,
                         minLines: 1,
                         maxLines: 5,
                         onChanged: (_) => onChanged(),
@@ -606,6 +751,7 @@ class _Composer extends StatelessWidget {
                       ),
                     ),
                     IconButton(onPressed: onAttach, icon: Icon(Icons.attach_file_rounded, color: bc.muted)),
+                    if (!hasText) IconButton(onPressed: onCamera, icon: Icon(Icons.photo_camera_outlined, color: bc.muted)),
                   ]),
                 ),
               ),
@@ -668,6 +814,81 @@ class _RecordingBar extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+
+/// Centered note in group chats ("Riya added Aman").
+class _SystemPill extends StatelessWidget {
+  final String text;
+  const _SystemPill({required this.text});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(color: bc.surface.withOpacity(0.92), borderRadius: BorderRadius.circular(10)),
+        child: Text(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: bc.muted)),
+      ),
+    );
+  }
+}
+
+/// Swipe a message to the right to reply to it.
+class _SwipeToReply extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onReply;
+  const _SwipeToReply({super.key, required this.child, required this.onReply});
+  @override
+  State<_SwipeToReply> createState() => _SwipeToReplyState();
+}
+
+class _SwipeToReplyState extends State<_SwipeToReply> with SingleTickerProviderStateMixin {
+  double _dx = 0;
+  bool _fired = false;
+  late final AnimationController _back = AnimationController(vsync: this, duration: const Duration(milliseconds: 180))
+    ..addListener(() => setState(() => _dx = _from * (1 - _back.value)));
+  double _from = 0;
+  static const _trigger = 64.0;
+
+  @override
+  void dispose() {
+    _back.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragUpdate: (d) {
+        _back.stop();
+        setState(() => _dx = (_dx + d.delta.dx).clamp(0.0, 96.0));
+        if (!_fired && _dx >= _trigger) {
+          _fired = true;
+          HapticFeedback.lightImpact();
+        }
+      },
+      onHorizontalDragEnd: (_) {
+        if (_fired) widget.onReply();
+        _fired = false;
+        _from = _dx;
+        _back.forward(from: 0);
+      },
+      child: Stack(alignment: Alignment.centerLeft, children: [
+        if (_dx > 8)
+          Opacity(
+            opacity: (_dx / _trigger).clamp(0.0, 1.0),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: CircleAvatar(radius: 15, backgroundColor: Colors.black26, child: const Icon(Icons.reply_rounded, size: 18, color: Colors.white)),
+            ),
+          ),
+        Transform.translate(offset: Offset(_dx, 0), child: widget.child),
+      ]),
     );
   }
 }

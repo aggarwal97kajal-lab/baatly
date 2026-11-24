@@ -232,6 +232,7 @@ class SendPhotoScreen extends StatefulWidget {
 
 class _SendPhotoScreenState extends State<SendPhotoScreen> {
   final _c = TextEditingController();
+  bool _once = false;
   @override
   void dispose() {
     _c.dispose();
@@ -265,12 +266,35 @@ class _SendPhotoScreenState extends State<SendPhotoScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: 'View once',
+                onPressed: () {
+                  setState(() => _once = !_once);
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    duration: const Duration(seconds: 2),
+                    content: Text(_once ? 'Photo set to view once' : 'View once turned off'),
+                  ));
+                },
+                icon: Container(
+                  width: 30,
+                  height: 30,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _once ? Theme.of(context).colorScheme.primary : Colors.transparent,
+                    border: Border.all(color: Colors.white, width: 1.6),
+                  ),
+                  child: const Text('1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                ),
+              ),
+              const SizedBox(width: 4),
               FloatingActionButton(
                 heroTag: 'send-photo',
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 foregroundColor: Colors.white,
-                onPressed: () => Navigator.pop(context, _c.text.trim()),
+                onPressed: () => Navigator.pop(context, (_c.text.trim(), _once)),
                 child: const Icon(Icons.send_rounded),
               ),
             ]),
