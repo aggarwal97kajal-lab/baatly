@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -116,14 +117,24 @@ class Notifier {
     importance: Importance.max,
   );
 
-  Future<void> _showCall(Map<String, dynamic> data) async {
+  /// Rings (looping) for an incoming call while the app is open.
+  Future<void> ring(String callId, String name, bool video) =>
+      _showCall({'callId': callId, 'title': name, 'video': video ? '1' : '0'}, knownName: true);
+
+  Future<void> stopRing() async {
+    try {
+      await _plugin.cancel(_idFor('call'));
+    } catch (_) {}
+  }
+
+  Future<void> _showCall(Map<String, dynamic> data, {bool knownName = false}) async {
     await init();
     await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(_callChannel);
     var name = data['title'] as String? ?? 'BAATLY';
     try {
       await Api.instance.load();
       final uid = Api.instance.userId;
-      if (uid != null) {
+      if (uid != null && !knownName) {
         final peers = ((await _localData(uid))['peers'] as Map?)?.cast<String, dynamic>() ?? {};
         final n = (peers[data['from']] as Map?)?['name'] as String?;
         if (n != null && n.isNotEmpty) name = n;
@@ -146,6 +157,8 @@ class Notifier {
           ongoing: true,
           autoCancel: true,
           timeoutAfter: 45000,
+          // FLAG_INSISTENT: keep ringing until answered/declined.
+          additionalFlags: Int32List.fromList(const [4]),
           actions: const [
             AndroidNotificationAction('decline_call', 'Decline', showsUserInterface: false),
             AndroidNotificationAction('answer_call', 'Answer', showsUserInterface: true),

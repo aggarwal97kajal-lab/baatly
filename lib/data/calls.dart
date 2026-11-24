@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,6 +12,7 @@ import 'api.dart';
 import 'app_state.dart';
 import 'messenger.dart';
 import 'models.dart';
+import 'notifier.dart';
 
 enum CallState { calling, ringing, incoming, connecting, connected, ended }
 
@@ -200,9 +200,7 @@ class CallService {
     final s = CallSession(id: id, peerId: from, peerName: name, outgoing: false, video: video, state: CallState.incoming)..remoteOffer = offer;
     current = s;
     unawaited(_signal(s, 'ringing'));
-    try {
-      FlutterRingtonePlayer().playRingtone(looping: true, asAlarm: false);
-    } catch (_) {}
+    unawaited(Notifier.instance.ring(id, name, video));
     s._ringTimer = Timer(const Duration(seconds: 45), () {
       if (s.state == CallState.incoming) unawaited(hangUp(reason: 'Missed call', silent: true));
     });
@@ -273,9 +271,7 @@ class CallService {
   }
 
   void _stopRing() {
-    try {
-      FlutterRingtonePlayer().stop();
-    } catch (_) {}
+    unawaited(Notifier.instance.stopRing());
   }
 
   /// Ends the call (tells the other side unless they ended it).
