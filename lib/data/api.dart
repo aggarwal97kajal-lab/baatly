@@ -151,6 +151,11 @@ class Api {
     await _setToken(null);
   }
 
+  /// Removes this account's passkeys from the server so a fresh one can be created.
+  Future<void> resetPasskeys() async {
+    await _call('DELETE', '/v1/me/passkeys');
+  }
+
   Future<void> deleteAccount() async {
     await _call('DELETE', '/v1/me');
     await _setToken(null);

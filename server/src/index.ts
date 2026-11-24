@@ -294,6 +294,12 @@ async function revokeSession(c: Ctx, id: string) {
   return json({ ok: true });
 }
 
+async function resetPasskeys(c: Ctx) {
+  const { user } = await requireUser(c);
+  await c.env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?').bind(user.id).run();
+  return json({ ok: true });
+}
+
 async function deleteAccount(c: Ctx) {
   const { user } = await requireUser(c);
   await c.env.DB.batch([
@@ -336,6 +342,7 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'DELETE' && p === '/v1/me') return deleteAccount(c);
   if (m === 'GET' && p === '/v1/username/available') return usernameAvailable(c);
   if (m === 'GET' && p === '/v1/me/sessions') return listSessions(c);
+  if (m === 'DELETE' && p === '/v1/me/passkeys') return resetPasskeys(c);
   const s = p.match(/^\/v1\/me\/sessions\/([\w-]+)$/);
   if (m === 'DELETE' && s) return revokeSession(c, s[1]);
   throw new HttpError(404, 'NOT_FOUND');

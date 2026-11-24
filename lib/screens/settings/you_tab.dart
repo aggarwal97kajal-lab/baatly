@@ -182,6 +182,23 @@ class YouTab extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             FilledButton(onPressed: () => Navigator.pop(sheet), child: const Text('OK')),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(sheet);
+                try {
+                  await Api.instance.resetPasskeys();
+                  AppState.instance.setPasskey(false);
+                  if (!context.mounted) return;
+                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PasskeySetupScreen(next: _PopBack())));
+                } on ApiException catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                  }
+                }
+              },
+              child: const Text("Passkey not working? Reset and create again", style: TextStyle(color: Color(0xFFB3261E))),
+            ),
           ]),
         ),
       ),
