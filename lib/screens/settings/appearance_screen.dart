@@ -59,8 +59,10 @@ class AppearanceScreen extends StatelessWidget {
               themeCard(ThemeMode.system, 'System', Mitti.cream, Mitti.night),
             ]),
             const SizedBox(height: 18),
-            Container(
-              decoration: BoxDecoration(color: bc.surface, borderRadius: BorderRadius.circular(18)),
+            Material(
+              color: bc.surface,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              clipBehavior: Clip.antiAlias,
               child: SwitchListTile(
                 title: const Text('Reduce animations'),
                 subtitle: const Text('Less motion, less battery'),

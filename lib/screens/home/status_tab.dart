@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/app_state.dart';
@@ -50,34 +51,50 @@ class StatusTab extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
                 child: Text('Status', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
               ),
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(color: bc.surface, borderRadius: BorderRadius.circular(20)),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  leading: Stack(clipBehavior: Clip.none, children: [
-                    _Ring(segments: math.max(1, s.myStatuses.length), active: s.myStatuses.isNotEmpty, child: Avatar(initials: myName[0].toUpperCase(), colorIndex: 2, size: 44)),
-                    Positioned(
-                      right: -2,
-                      bottom: -2,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle, border: Border.all(color: bc.surface, width: 2)),
-                        child: const Icon(Icons.add, size: 14, color: Colors.white),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Material(
+                  color: bc.surface,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
+                    leading: Stack(clipBehavior: Clip.none, children: [
+                      _Ring(
+                        segments: math.max(1, s.myStatuses.length),
+                        active: s.myStatuses.isNotEmpty,
+                        child: s.myStatuses.isEmpty
+                            ? Avatar(initials: myName[0].toUpperCase(), colorIndex: 2, size: 44)
+                            : StatusThumb(slide: s.myStatuses.last, size: 44),
                       ),
-                    ),
-                  ]),
-                  title: const Text('My status', style: TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text(s.myStatuses.isEmpty ? 'Tap to add a status' : '${s.myStatuses.length} update · just now'),
-                  onTap: () {
-                    if (s.myStatuses.isEmpty) {
-                      pickPhotoStatus(context);
-                    } else {
-                      Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => StatusViewer(item: StatusItem(myName, myName[0], 2, 'just now', s.myStatuses))));
-                    }
-                  },
+                      if (s.myStatuses.isEmpty)
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle, border: Border.all(color: bc.surface, width: 2)),
+                            child: const Icon(Icons.add, size: 14, color: Colors.white),
+                          ),
+                        ),
+                    ]),
+                    title: const Text('My status', style: TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(s.myStatuses.isEmpty
+                        ? 'Tap to add a status'
+                        : '${s.myStatuses.length} ${s.myStatuses.length == 1 ? 'update' : 'updates'} · ${statusAgo(s.myStatuses.last.at)}'),
+                    trailing: s.myStatuses.isEmpty
+                        ? null
+                        : IconButton(icon: const Icon(Icons.more_vert_rounded), tooltip: 'My updates', onPressed: () => showMyUpdates(context)),
+                    onTap: () {
+                      if (s.myStatuses.isEmpty) {
+                        pickPhotoStatus(context);
+                      } else {
+                        Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => StatusViewer(item: StatusItem(myName, myName[0], 2, 'My status', s.myStatuses), mine: true)));
+                      }
+                    },
+                  ),
                 ),
               ),
               if (fresh.isNotEmpty) ...[
@@ -189,7 +206,9 @@ class _RingPainter extends CustomPainter {
 /// Full-screen status viewer with progress bars, tap to skip, hold to pause.
 class StatusViewer extends StatefulWidget {
   final StatusItem item;
-  const StatusViewer({super.key, required this.item});
+  /// Own status: shows delete instead of reply.
+  final bool mine;
+  const StatusViewer({super.key, required this.item, this.mine = false});
   @override
   State<StatusViewer> createState() => _StatusViewerState();
 }
@@ -213,8 +232,10 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
       setState(() => _i++);
       _c.forward(from: 0);
     } else {
-      widget.item.seen = true;
-      AppState.instance.toggle(() {});
+      if (!widget.mine) {
+        widget.item.seen = true;
+        AppState.instance.toggle(() {});
+      }
       if (mounted) Navigator.pop(context);
     }
   }
@@ -226,6 +247,34 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
     } else {
       _c.forward(from: 0); // first story: just restart it
     }
+  }
+
+  Future<void> _delete() async {
+    _c.stop();
+    final slide = widget.item.slides[_i];
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Delete this status update?'),
+        content: const Text('It will be removed for everyone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Delete', style: TextStyle(color: Color(0xFFB3261E)))),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (ok != true) {
+      _c.forward();
+      return;
+    }
+    AppState.instance.deleteMyStatus(slide);
+    if (widget.item.slides.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    setState(() => _i = _i.clamp(0, widget.item.slides.length - 1));
+    _c.forward(from: 0);
   }
 
   @override
@@ -275,8 +324,12 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
             ListTile(
               leading: Avatar(initials: it.initials, colorIndex: it.colorIndex, size: 40),
               title: Text(it.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-              subtitle: Text(it.when, style: const TextStyle(color: Colors.white70)),
-              trailing: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: Colors.white)),
+              subtitle: Text(widget.mine ? statusAgo(slide.at) : it.when, style: const TextStyle(color: Colors.white70)),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (widget.mine)
+                  IconButton(onPressed: _delete, tooltip: 'Delete', icon: const Icon(Icons.delete_outline_rounded, color: Colors.white)),
+                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: Colors.white)),
+              ]),
             ),
             Expanded(
               child: AnimatedSwitcher(
@@ -301,6 +354,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                       ),
               ),
             ),
+            if (!widget.mine)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(children: [
@@ -490,6 +544,45 @@ class PhotoStatusScreen extends StatefulWidget {
 
 class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
   final _caption = TextEditingController();
+  late String _path = widget.path;
+
+  @override
+  void initState() {
+    super.initState();
+    // Open the cropper straight away, like WhatsApp's editor.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _crop());
+  }
+
+  Future<void> _crop() async {
+    try {
+      final f = await ImageCropper().cropImage(
+        sourcePath: _path,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop & rotate',
+            toolbarColor: Colors.black,
+            toolbarWidgetColor: Colors.white,
+            statusBarLight: false,
+            backgroundColor: Colors.black,
+            activeControlsWidgetColor: Mitti.terracotta,
+            lockAspectRatio: false,
+            freeStyleCropEnabled: true,
+            hideBottomControls: false,
+            initAspectRatio: CropAspectRatioPreset.original,
+            aspectRatioPresets: const [
+              CropAspectRatioPreset.original,
+              CropAspectRatioPreset.square,
+              CropAspectRatioPreset.ratio4x3,
+              CropAspectRatioPreset.ratio16x9,
+            ],
+          ),
+        ],
+      );
+      if (f != null && mounted) setState(() => _path = f.path);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't open the cropper ($e)")));
+    }
+  }
 
   @override
   void dispose() {
@@ -501,10 +594,18 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, title: const Text('Photo status')),
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        leading: IconButton(icon: const Icon(Icons.close_rounded), tooltip: 'Discard', onPressed: () => Navigator.pop(context)),
+        title: const Text('Photo status'),
+        actions: [
+          IconButton(icon: const Icon(Icons.crop_rotate_rounded), tooltip: 'Crop & rotate', onPressed: _crop),
+        ],
+      ),
       body: SafeArea(
         child: Column(children: [
-          Expanded(child: Image.file(File(widget.path), fit: BoxFit.contain, width: double.infinity)),
+          Expanded(child: Image.file(File(_path), key: ValueKey(_path), fit: BoxFit.contain, width: double.infinity)),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
             child: Row(children: [
@@ -530,7 +631,7 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
                 backgroundColor: Mitti.terracotta,
                 foregroundColor: Colors.white,
                 onPressed: () {
-                  AppState.instance.addMyStatus(StatusSlide.photo(widget.path, caption: _caption.text.trim()));
+                  AppState.instance.addMyStatus(StatusSlide.photo(_path, caption: _caption.text.trim()));
                   Navigator.pop(context);
                 },
                 child: const Icon(Icons.send_rounded),
@@ -545,4 +646,81 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
       ),
     );
   }
+}
+
+
+String statusAgo(DateTime t) {
+  final d = DateTime.now().difference(t);
+  if (d.inMinutes < 1) return 'just now';
+  if (d.inMinutes < 60) return '${d.inMinutes} min ago';
+  if (d.inHours < 24) return '${d.inHours} h ago';
+  return 'yesterday';
+}
+
+/// Small round preview of a status slide (photo or coloured text).
+class StatusThumb extends StatelessWidget {
+  final StatusSlide slide;
+  final double size;
+  const StatusThumb({super.key, required this.slide, this.size = 44});
+  @override
+  Widget build(BuildContext context) {
+    if (slide.isPhoto) {
+      return ClipOval(child: Image.file(File(slide.imagePath!), width: size, height: size, fit: BoxFit.cover, cacheWidth: (size * 3).round()));
+    }
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: Color(slide.bg), shape: BoxShape.circle),
+      child: Text(slide.text ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.white, fontSize: size * 0.16, fontWeight: FontWeight.w700, height: 1.1)),
+    );
+  }
+}
+
+/// List of my own updates with delete buttons.
+void showMyUpdates(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheet) => ListenableBuilder(
+      listenable: AppState.instance,
+      builder: (sheet, _) {
+        final s = AppState.instance;
+        final list = s.myStatuses.reversed.toList();
+        return SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(alignment: Alignment.centerLeft, child: Text('My updates', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+            ),
+            if (list.isEmpty)
+              const Padding(padding: EdgeInsets.all(24), child: Text('No status updates')),
+            for (final st in list)
+              ListTile(
+                leading: StatusThumb(slide: st, size: 44),
+                title: Text(st.isPhoto ? ((st.caption ?? '').isEmpty ? 'Photo' : st.caption!) : (st.text ?? ''), maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(statusAgo(st.at)),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFB3261E)),
+                  tooltip: 'Delete',
+                  onPressed: () => s.deleteMyStatus(st),
+                ),
+              ),
+            ListTile(
+              leading: CircleAvatar(backgroundColor: sheet.primary, child: const Icon(Icons.add_rounded, color: Colors.white)),
+              title: const Text('Add status', style: TextStyle(fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(sheet);
+                pickPhotoStatus(context);
+              },
+            ),
+            const SizedBox(height: 8),
+          ]),
+        );
+      },
+    ),
+  );
 }

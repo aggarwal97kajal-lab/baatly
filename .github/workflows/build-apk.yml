@@ -42,6 +42,9 @@ jobs:
           sed -i '0,/<application/s|<application|<uses-permission android:name="android.permission.READ_CONTACTS"/>\n    <application|' android/app/src/main/AndroidManifest.xml
           sed -i 's|</manifest>|    <queries>\n        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="sms"/></intent>\n        <intent><action android:name="android.intent.action.SENDTO"/><data android:scheme="smsto"/></intent>\n    </queries>\n</manifest>|' android/app/src/main/AndroidManifest.xml
           grep -n "READ_CONTACTS\|scheme=\"sms\"" android/app/src/main/AndroidManifest.xml
+          # Status photo crop & rotate (image_cropper / uCrop)
+          sed -i 's|</application>|    <activity android:name="com.yalantis.ucrop.UCropActivity" android:screenOrientation="portrait" android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>\n    </application>|' android/app/src/main/AndroidManifest.xml
+          grep -n "UCropActivity" android/app/src/main/AndroidManifest.xml
           cp -r android_overrides/res/. android/app/src/main/res/
           # Passkeys (Credential Manager) need Android 9+.
           GRADLE=android/app/build.gradle.kts

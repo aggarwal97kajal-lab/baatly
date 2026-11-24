@@ -257,6 +257,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void deleteMyStatus(StatusSlide s) {
+    myStatuses.remove(s);
+    notifyListeners();
+  }
+
   /// [until] null = unmute.
   void muteChat(Chat c, DateTime? until) {
     c.mutedUntil = until;

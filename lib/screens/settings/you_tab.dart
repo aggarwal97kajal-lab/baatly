@@ -223,8 +223,11 @@ class _Group extends StatelessWidget {
   final List<Widget> children;
   const _Group({required this.children});
   @override
-  Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(color: context.bc.surface, borderRadius: BorderRadius.circular(20)),
+  Widget build(BuildContext context) => Material(
+        // Material (not Container) so tap highlights are drawn inside the
+        // rounded card instead of leaking out at the corners.
+        color: context.bc.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         clipBehavior: Clip.antiAlias,
         child: Column(children: children),
       );
