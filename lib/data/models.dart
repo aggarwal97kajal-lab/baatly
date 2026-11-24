@@ -13,6 +13,8 @@ class Message {
   String? reaction;
   /// Real chats: we already told the sender this message was read.
   bool readSent;
+  /// Disappearing messages: deleted from this phone after this time.
+  DateTime? expiresAt;
 
   Message({
     required this.id,
