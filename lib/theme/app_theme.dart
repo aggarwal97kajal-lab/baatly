@@ -85,10 +85,6 @@ class AppTheme {
             : (isDark ? Mitti.nightRaised : const Color(0xFFE3D6C7))),
         trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
       ),
-      pageTransitionsTheme: const PageTransitionsTheme(builders: {
-        TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-      }),
     );
   }
 }
