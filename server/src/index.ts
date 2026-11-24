@@ -187,7 +187,22 @@ async function passkeyRegisterVerify(c: Ctx) {
 
 async function passkeyLoginOptions(c: Ctx) {
   const { rpID } = rp(c);
-  const options = await generateAuthenticationOptions({ rpID, userVerification: 'preferred', allowCredentials: [] });
+  // If the app sends the typed phone number, point the phone at that user's
+  // exact passkeys (more reliable on some Android builds than discovery).
+  let allow: { id: string; transports?: AuthenticatorTransportFuture[] }[] = [];
+  const body = await c.req.json<{ countryCode?: string; number?: string }>().catch(() => ({}) as { countryCode?: string; number?: string });
+  if (body.countryCode && body.number) {
+    try {
+      const phone = normalisePhone(body.countryCode, body.number);
+      const rows = await c.env.DB.prepare('SELECT p.id, p.transports FROM passkeys p JOIN users u ON u.id = p.user_id WHERE u.phone = ?')
+        .bind(phone)
+        .all<{ id: string; transports: string }>();
+      allow = rows.results.map((r) => ({ id: r.id, transports: JSON.parse(r.transports) as AuthenticatorTransportFuture[] }));
+    } catch {
+      allow = [];
+    }
+  }
+  const options = await generateAuthenticationOptions({ rpID, userVerification: 'preferred', allowCredentials: allow });
   const flowId = await saveChallenge(c.env, 'login', options.challenge, null);
   return json({ flowId, options });
 }

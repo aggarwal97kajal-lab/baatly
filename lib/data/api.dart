@@ -171,8 +171,9 @@ class Api {
   }
 
   /// Signs in with a passkey saved on this phone / Google account.
-  Future<AuthResult> loginWithPasskey() async {
-    final o = await _call('POST', '/v1/auth/passkey/login/options');
+  Future<AuthResult> loginWithPasskey({String? countryCode, String? number}) async {
+    final o = await _call('POST', '/v1/auth/passkey/login/options',
+        number != null && number.length >= 6 ? {'countryCode': countryCode?.replaceAll('+', ''), 'number': number} : <String, dynamic>{});
     final req = AuthenticateRequestType.fromJson(o['options'] as Map<String, dynamic>, preferImmediatelyAvailableCredentials: false);
     final AuthenticateResponseType res;
     try {
@@ -187,18 +188,23 @@ class Api {
   ApiException _passkeyError(AuthenticatorException e) {
     final msg = switch (e) {
       PasskeyAuthCancelledException() => 'Cancelled',
-      NoCredentialsAvailableException() => 'No BAATLY passkey found on this phone. Log in with OTP.',
+      NoCredentialsAvailableException() => 'No BAATLY passkey found. Type your phone number above and tap "Log in with passkey" again, or log in with OTP.',
       DeviceNotSupportedException() || PasskeyUnsupportedException() => "This phone doesn't support passkeys. Log in with OTP.",
       DomainNotAssociatedException(:final message) => 'Passkey setup is incomplete (app not linked to domain). [domain] ${message ?? ''}',
       NoCreateOptionException(:final message) =>
         'No passkey provider is on. Open phone Settings → Passwords & accounts (or Autofill) and turn on Google Password Manager. [no-create-option] ${message ?? ''}',
       MissingGoogleSignInException() => 'Sign in to a Google account on this phone to save passkeys. [missing-google-sign-in]',
       SyncAccountNotAvailableException() => 'Your Google account needs to sync passwords. Check Google Password Manager settings. [sync-account]',
-      ExcludeCredentialsCanNotBeRegisteredException() => 'A BAATLY passkey already exists on this phone. Use "Log in with passkey".',
+      ExcludeCredentialsCanNotBeRegisteredException() => 'ALREADY_EXISTS',
       TimeoutException() => 'Passkey request timed out. Please try again. [timeout]',
       UnhandledAuthenticatorException(:final code, :final message) => "Passkey didn't work. [$code] ${message ?? ''}",
       _ => "Passkey didn't work. [${e.runtimeType}]",
     };
-    return ApiException(-1, e is PasskeyAuthCancelledException ? 'CANCELLED' : 'PASSKEY', msg.trim());
+    final code = switch (e) {
+      PasskeyAuthCancelledException() => 'CANCELLED',
+      ExcludeCredentialsCanNotBeRegisteredException() => 'ALREADY_EXISTS',
+      _ => 'PASSKEY',
+    };
+    return ApiException(-1, code, msg.trim());
   }
 }

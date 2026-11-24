@@ -86,7 +86,7 @@ class _PhoneScreenState extends State<PhoneScreen> {
   Future<void> _passkey() async {
     setState(() => _passkeyBusy = true);
     try {
-      final r = await Api.instance.loginWithPasskey();
+      final r = await Api.instance.loginWithPasskey(countryCode: _code, number: _ctrl.text);
       if (!mounted) return;
       final s = AppState.instance;
       s.phone = r.user.phone;

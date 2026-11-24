@@ -32,6 +32,13 @@ class _PasskeySetupScreenState extends State<PasskeySetupScreen> {
       await Future<void>.delayed(const Duration(milliseconds: 900));
       if (mounted) _next();
     } on ApiException catch (e) {
+      if (e.code == 'ALREADY_EXISTS') {
+        // Already set up on this phone — that's a success, just move on.
+        setState(() => _done = true);
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+        if (mounted) _next();
+        return;
+      }
       if (e.code != 'CANCELLED') setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -67,7 +74,7 @@ class _PasskeySetupScreenState extends State<PasskeySetupScreen> {
             ),
           ),
           const SizedBox(height: 30),
-          Text(_done ? 'Passkey created!' : 'Skip the OTP next time',
+          Text(_done ? 'Passkey ready!' : 'Skip the OTP next time',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: bc.text)),
           const SizedBox(height: 10),
           Text('Create a passkey and log in with your fingerprint or screen lock.',
