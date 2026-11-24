@@ -152,12 +152,12 @@ class Notifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     final key = 'notif_lines_$chat';
-    final lines = [...(prefs.getStringList(key) ?? []), line];
+    final lines = <String>[...(prefs.getStringList(key) ?? const <String>[]), line];
     while (lines.length > 6) {
       lines.removeAt(0);
     }
     await prefs.setStringList(key, lines);
-    final ids = [...(prefs.getStringList('notif_ids_$chat') ?? []), payload['msgId'] as String? ?? ''];
+    final ids = <String>[...(prefs.getStringList('notif_ids_$chat') ?? const <String>[]), payload['msgId'] as String? ?? ''];
     await prefs.setStringList('notif_ids_$chat', ids.where((x) => x.isNotEmpty).toList());
     payload['msgIds'] = ids;
     final details = AndroidNotificationDetails(
@@ -245,7 +245,7 @@ class Notifier {
       // Remember it so the chat shows it next time the app opens.
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
-      final out = [...(prefs.getStringList('notif_outbox') ?? []), jsonEncode({'chat': chat, 'id': msgId, 't': text, 'ts': now})];
+      final out = <String>[...(prefs.getStringList('notif_outbox') ?? const <String>[]), jsonEncode({'chat': chat, 'id': msgId, 't': text, 'ts': now})];
       await prefs.setStringList('notif_outbox', out);
       await clear(chat);
     } catch (_) {}
