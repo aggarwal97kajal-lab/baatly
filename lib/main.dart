@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data/app_state.dart';
+import 'screens/home/home_shell.dart';
 import 'screens/onboarding/splash_screen.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarColor: Colors.transparent));
-  runApp(const BaatlyApp());
+  await AppState.instance.load();
+  runApp(BaatlyApp(skipOnboarding: AppState.instance.onboarded));
 }
 
 class BaatlyApp extends StatelessWidget {
-  const BaatlyApp({super.key});
+  /// Decided once at launch, so finishing onboarding doesn't swap the root route.
+  final bool skipOnboarding;
+  const BaatlyApp({super.key, this.skipOnboarding = false});
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +37,8 @@ class BaatlyApp extends StatelessWidget {
             child: child!,
           );
         },
-        home: const SplashScreen(),
+        // Animated splash + onboarding only on first launch; afterwards straight to chats.
+        home: skipOnboarding ? const HomeShell() : const SplashScreen(),
       ),
     );
   }

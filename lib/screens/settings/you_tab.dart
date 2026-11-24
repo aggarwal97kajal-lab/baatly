@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../onboarding/splash_screen.dart';
 import 'appearance_screen.dart';
 import 'wallpaper_screen.dart';
 
@@ -57,6 +58,11 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 _row(context, Icons.help_outline_rounded, 'Help'),
                 _row(context, Icons.info_outline_rounded, 'About BAATLY', onTap: () => _about(context)),
+                _row(context, Icons.logout_rounded, 'Logout (demo reset)', onTap: () async {
+                  await AppState.instance.resetDemo();
+                  if (!context.mounted) return;
+                  Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SplashScreen()), (_) => false);
+                }),
               ]),
               const SizedBox(height: 18),
               Center(child: Text('BAATLY v0.1.0 · Demo build (Milestone 1)', style: TextStyle(fontSize: 11, color: bc.muted))),

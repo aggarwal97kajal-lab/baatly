@@ -199,8 +199,12 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
   }
 
   void _prev() {
-    if (_i > 0) setState(() => _i--);
-    _c.forward(from: 0);
+    if (_i > 0) {
+      setState(() => _i--);
+      _c.forward(from: 0);
+    } else {
+      _c.forward(from: 0); // first story: just restart it
+    }
   }
 
   @override
@@ -217,7 +221,8 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
     return Scaffold(
       backgroundColor: bg,
       body: GestureDetector(
-        onTapUp: (d) => d.globalPosition.dx < MediaQuery.of(context).size.width / 3 ? _prev() : _next(),
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (d) => d.globalPosition.dx < MediaQuery.of(context).size.width * 0.35 ? _prev() : _next(),
         onLongPressStart: (_) => _c.stop(),
         onLongPressEnd: (_) => _c.forward(),
         child: SafeArea(

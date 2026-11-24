@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 
@@ -53,18 +54,69 @@ class AppState extends ChangeNotifier {
 
   final _rnd = Random();
 
+  // ------------------------------------------------------------- persistence
+  // Profile + settings survive app restarts, so onboarding and the splash
+  // animation only run once. Chats are still demo data (no backend yet).
+  SharedPreferences? _prefs;
+
+  Future<void> load() async {
+    try {
+      final p = _prefs = await SharedPreferences.getInstance();
+      onboarded = p.getBool('onboarded') ?? false;
+      name = p.getString('name') ?? '';
+      username = p.getString('username') ?? '';
+      about = p.getString('about') ?? about;
+      phone = p.getString('phone') ?? '';
+      themeMode = ThemeMode.values[(p.getInt('theme') ?? ThemeMode.system.index).clamp(0, ThemeMode.values.length - 1)];
+      wallpaper = Wallpaper.values[(p.getInt('wallpaper') ?? Wallpaper.desi.index).clamp(0, Wallpaper.values.length - 1)];
+      reduceMotion = p.getBool('reduceMotion') ?? false;
+      readReceipts = p.getBool('readReceipts') ?? true;
+      appLock = p.getBool('appLock') ?? false;
+    } catch (_) {
+      // Storage unavailable (e.g. tests): fall back to defaults.
+    }
+  }
+
+  void _save() {
+    final p = _prefs;
+    if (p == null) return;
+    p.setBool('onboarded', onboarded);
+    p.setString('name', name);
+    p.setString('username', username);
+    p.setString('about', about);
+    p.setString('phone', phone);
+    p.setInt('theme', themeMode.index);
+    p.setInt('wallpaper', wallpaper.index);
+    p.setBool('reduceMotion', reduceMotion);
+    p.setBool('readReceipts', readReceipts);
+    p.setBool('appLock', appLock);
+  }
+
+  /// Demo helper: forget the profile and show onboarding again.
+  Future<void> resetDemo() async {
+    await _prefs?.clear();
+    onboarded = false;
+    name = '';
+    username = '';
+    phone = '';
+    notifyListeners();
+  }
+
   void setTheme(ThemeMode m) {
     themeMode = m;
+    _save();
     notifyListeners();
   }
 
   void setWallpaper(Wallpaper w) {
     wallpaper = w;
+    _save();
     notifyListeners();
   }
 
   void toggle(void Function() f) {
     f();
+    _save();
     notifyListeners();
   }
 
@@ -73,6 +125,7 @@ class AppState extends ChangeNotifier {
     this.username = username.trim();
     this.about = about.trim().isEmpty ? 'Baat karte hain!' : about.trim();
     onboarded = true;
+    _save();
     notifyListeners();
   }
 

@@ -226,7 +226,7 @@ class _ChatRow extends StatelessWidget {
               ]),
               const SizedBox(height: 3),
               Row(children: [
-                if (m != null && m.fromMe) ...[Ticks(status: m.status, color: context.primary), const SizedBox(width: 3)],
+                if (m != null && m.fromMe) ...[Ticks(status: m.status, color: bc.muted), const SizedBox(width: 3)],
                 if (pIcon != null) ...[Icon(pIcon, size: 15, color: context.primary), const SizedBox(width: 3)],
                 Expanded(
                   child: Text(preview,

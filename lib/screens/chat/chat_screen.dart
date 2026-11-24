@@ -301,7 +301,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         const SizedBox(height: 3),
         Row(mainAxisSize: MainAxisSize.min, children: [
           Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: fg.withOpacity(0.7))),
-          if (me) ...[const SizedBox(width: 4), Ticks(status: m.status, color: Colors.white)],
+          if (me) ...[const SizedBox(width: 4), Ticks(status: m.status, color: Colors.white, readColor: kReadBlueOnBubble)],
         ]),
       ]),
     );

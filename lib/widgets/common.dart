@@ -17,7 +17,10 @@ class Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Mitti.avatarColors[colorIndex % Mitti.avatarColors.length];
-    return SizedBox(
+    // Material ancestor so the Hero flight never renders debug text styling.
+    return Material(
+      type: MaterialType.transparency,
+      child: SizedBox(
       width: size,
       height: size,
       child: Stack(
@@ -30,7 +33,13 @@ class Avatar extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               initials,
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: size * 0.34),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: size * 0.34,
+                fontFamily: 'Poppins',
+                decoration: TextDecoration.none,
+              ),
             ),
           ),
           if (online)
@@ -48,6 +57,7 @@ class Avatar extends StatelessWidget {
               ),
             ),
         ],
+      ),
       ),
     );
   }
@@ -67,10 +77,16 @@ class BaatlyMark extends StatelessWidget {
   }
 }
 
+/// Read-tick blues: one for light backgrounds (chat list), one for the
+/// terracotta outgoing bubble where a darker blue would disappear.
+const kReadBlue = Color(0xFF1E88E5);
+const kReadBlueOnBubble = Color(0xFF9FDCFF);
+
 class Ticks extends StatelessWidget {
   final MsgStatus status;
   final Color color;
-  const Ticks({super.key, required this.status, required this.color});
+  final Color readColor;
+  const Ticks({super.key, required this.status, required this.color, this.readColor = kReadBlue});
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +98,10 @@ class Ticks extends StatelessWidget {
       case MsgStatus.delivered:
         return Icon(Icons.done_all_rounded, size: 15, color: color.withOpacity(0.7));
       case MsgStatus.read:
-        return Icon(Icons.done_all_rounded, size: 15, color: color);
+        if (!AppState.instance.readReceipts) {
+          return Icon(Icons.done_all_rounded, size: 15, color: color.withOpacity(0.7));
+        }
+        return Icon(Icons.done_all_rounded, size: 15, color: readColor);
     }
   }
 }
