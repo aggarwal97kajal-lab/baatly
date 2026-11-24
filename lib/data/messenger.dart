@@ -23,11 +23,15 @@ class Peer {
   String phone;
   String about;
   String? key;
+  int photoVer = 0;
+  String? photo;
   Peer(this.id, this.name, this.phone, this.about, this.key);
 
-  Map<String, dynamic> toJson() => {'name': name, 'phone': phone, 'about': about, 'key': key};
+  Map<String, dynamic> toJson() => {'name': name, 'phone': phone, 'about': about, 'key': key, 'pv': photoVer, 'photo': photo};
   factory Peer.fromJson(String id, Map<String, dynamic> j) =>
-      Peer(id, j['name'] as String? ?? '', j['phone'] as String? ?? '', j['about'] as String? ?? '', j['key'] as String?);
+      Peer(id, j['name'] as String? ?? '', j['phone'] as String? ?? '', j['about'] as String? ?? '', j['key'] as String?)
+        ..photoVer = (j['pv'] as int?) ?? 0
+        ..photo = j['photo'] as String?;
 }
 
 /// Real 1:1 messaging: encrypts on this phone, relays through the server,
@@ -40,7 +44,7 @@ class Messenger {
   final Map<String, Peer> _peers = {};
   IOWebSocketChannel? _ws;
   StreamSubscription<dynamic>? _sub;
-  Timer? _retry, _ping, _saveTimer, _presenceTimer;
+  Timer? _retry, _ping, _saveTimer, _presenceTimer, _purgeTimer;
   int _backoff = 1;
   bool _paused = false;
   bool _syncing = false;
@@ -78,6 +82,62 @@ class Messenger {
     unawaited(_connect());
     unawaited(Push.instance.start());
     unawaited(StatusService.instance.refresh());
+    unawaited(_pullPrivacy());
+    // Keeps "My contacts" privacy and contact names up to date.
+    unawaited(ContactBook.instance.load().then((_) {}, onError: (_) {}));
+    unawaited(_refreshPeers());
+    _purge();
+    _purgeTimer?.cancel();
+    _purgeTimer = Timer.periodic(const Duration(seconds: 20), (_) => _purge());
+  }
+
+  // ------------------------------------------------------------------ privacy & profile photo
+  Future<void> _pullPrivacy() async {
+    try {
+      final d = await Api.instance.request('GET', '/v1/me/privacy');
+      _s.applyPrivacyJson(d['privacy'] as Map<String, dynamic>);
+    } catch (_) {}
+  }
+
+  /// Saves privacy settings on the server (which enforces them).
+  Future<String?> pushPrivacy() async {
+    try {
+      await Api.instance.request('PUT', '/v1/me/privacy', {'privacy': _s.privacyJson()});
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (_) {
+      return "Couldn't save. Check your internet.";
+    }
+  }
+
+  Future<void> uploadMyPhoto(String path) async {
+    final bytes = await File(path).readAsBytes();
+    await Api.instance.request('PUT', '/v1/me/photo', {'photo': base64Encode(bytes)});
+  }
+
+  Future<void> removeMyPhoto() async {
+    await Api.instance.request('DELETE', '/v1/me/photo');
+  }
+
+  Future<void> _refreshPeers() async {
+    for (final c in _s.chats.where((c) => c.isReal).toList()) {
+      try {
+        await _peer(c.peerId!, refresh: true);
+      } catch (_) {}
+    }
+  }
+
+  /// Disappearing messages: drop expired ones from this phone.
+  void _purge() {
+    final now = DateTime.now();
+    var changed = false;
+    for (final c in _s.chats) {
+      final before = c.messages.length;
+      c.messages.removeWhere((m) => m.expiresAt != null && m.expiresAt!.isBefore(now));
+      if (c.messages.length != before) changed = true;
+    }
+    if (changed) _s.changed();
   }
 
   Future<void> _publishKey(String uid) async {
@@ -98,6 +158,8 @@ class Messenger {
     _closeSocket();
     _retry?.cancel();
     _uid = null;
+    _purgeTimer?.cancel();
+    _presenceTimer?.cancel();
     Push.instance.forget();
     _peers.clear();
     _handled.clear();
@@ -117,6 +179,7 @@ class Messenger {
     }
     _paused = false;
     unawaited(_connect());
+    StatusService.instance.refreshSoon();
   }
 
   // ------------------------------------------------------------------ local storage
@@ -259,6 +322,15 @@ class Messenger {
       case 'typing':
         _onTyping(ev);
         ok = false;
+      case 'presence':
+        _onPresence(ev);
+        ok = false;
+      case 'status':
+        StatusService.instance.refreshSoon();
+        ok = false;
+      case 'status_view':
+        StatusService.instance.onView(ev['statusId'] as String, ev['viewer'] as String, ev['at'] as int);
+        ok = false;
       default:
         ok = true;
     }
@@ -275,10 +347,43 @@ class Messenger {
     final phone = u['phone'] as String? ?? '';
     final profile = u['name'] as String? ?? '';
     final name = ContactBook.instance.names[phone] ?? p?.name ?? (profile.isNotEmpty ? profile : ContactBook.pretty(phone));
-    final peer = Peer(id, name, phone, u['about'] as String? ?? '', u['x25519'] as String?);
+    final peer = Peer(id, name, phone, u['about'] as String? ?? '', u['x25519'] as String?)
+      ..photoVer = p?.photoVer ?? 0
+      ..photo = p?.photo;
     _peers[id] = peer;
+    final ver = (u['photo_ver'] as int?) ?? 0;
+    if (ver != peer.photoVer || (ver > 0 && peer.photo == null)) await _syncPhoto(peer, ver);
     return peer;
   }
+
+  Future<void> _syncPhoto(Peer peer, int ver) async {
+    try {
+      String? path;
+      if (ver > 0) {
+        final d = await Api.instance.request('GET', '/v1/users/${peer.id}/photo');
+        final dir = Directory('${(await getApplicationDocumentsDirectory()).path}/photos');
+        await dir.create(recursive: true);
+        final f = File('${dir.path}/${peer.id}_$ver.jpg');
+        await f.writeAsBytes(base64Decode(d['photo'] as String), flush: true);
+        path = f.path;
+      }
+      final old = peer.photo;
+      peer.photoVer = ver;
+      peer.photo = path;
+      for (final c in _s.chats) {
+        if (c.peerId == peer.id) c.photo = path;
+      }
+      _s.changed();
+      if (old != null && old != path) {
+        try {
+          await File(old).delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  /// Profile photo of a user, if we have it.
+  String? photoOf(String id) => _peers[id]?.photo;
 
   static String initialsOf(String name) {
     final words = name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty && RegExp(r'[A-Za-z]').hasMatch(w[0])).toList();
@@ -299,6 +404,8 @@ class Messenger {
       peerId: p.id,
       phone: p.phone,
     );
+    c.photo = p.photo;
+    c.disappear = _s.defaultTimer;
     _s.chats.add(c);
     return c;
   }
@@ -343,19 +450,22 @@ class Messenger {
       return false; // offline: keep it on the server and try again later
     }
     String text;
+    int ttl = 0;
     DateTime at = DateTime.fromMillisecondsSinceEpoch(ev['at'] as int? ?? DateTime.now().millisecondsSinceEpoch);
     try {
       final plain = await _open(body, peer);
       text = plain['t'] as String? ?? '';
       final ts = plain['ts'];
       if (ts is int) at = DateTime.fromMillisecondsSinceEpoch(ts);
+      ttl = (plain['ttl'] as int?) ?? 0;
     } catch (_) {
       text = "🔒 This message couldn't be decrypted. Ask them to send it again.";
     }
     final chat = _chatFor(peer);
     chat.typing = false;
+    chat.disappear = ttl; // follow the sender's disappearing-messages setting
     if (!chat.messages.any((m) => m.id == msgId)) {
-      final m = Message(id: msgId, text: text, fromMe: false, time: at);
+      final m = Message(id: msgId, text: text, fromMe: false, time: at, expiresAt: ttl > 0 ? DateTime.now().add(Duration(seconds: ttl)) : null);
       chat.messages.add(m);
       chat.messages.sort((a, b) => a.time.compareTo(b.time));
       if (chat.archived && !chat.muted) chat.archived = false;
@@ -386,7 +496,8 @@ class Messenger {
 
   void _onReceipt(Map<String, dynamic> ev) {
     final from = ev['from'] as String;
-    final status = ev['status'] == 'read' ? MsgStatus.read : MsgStatus.delivered;
+    // With read receipts off you don't see others' blue ticks either.
+    final status = ev['status'] == 'read' && _s.readReceipts ? MsgStatus.read : MsgStatus.delivered;
     final ids = (ev['msgIds'] as List? ?? []).cast<String>().toSet();
     for (final c in _s.chats) {
       if (c.peerId != from) continue;
@@ -395,6 +506,21 @@ class Messenger {
       }
     }
     _s.changed();
+  }
+
+  void _onPresence(Map<String, dynamic> ev) {
+    final user = ev['user'] as String?;
+    for (final c in _s.chats) {
+      if (c.peerId != user) continue;
+      c.presence = _presenceText(ev);
+    }
+    _s.changed();
+  }
+
+  static String _presenceText(Map<String, dynamic> d) {
+    if (d['online'] == true) return 'online';
+    if (d['lastSeen'] is int) return 'last seen ${_ago(DateTime.fromMillisecondsSinceEpoch(d['lastSeen'] as int))}';
+    return '';
   }
 
   void _onTyping(Map<String, dynamic> ev) {
@@ -423,7 +549,14 @@ class Messenger {
   String _newId() => base64Url.encode(List<int>.generate(12, (_) => _rnd.nextInt(256))).replaceAll('=', '');
 
   void send(Chat chat, String text) {
-    final m = Message(id: _newId(), text: text, fromMe: true, time: DateTime.now(), status: MsgStatus.sending);
+    final m = Message(
+      id: _newId(),
+      text: text,
+      fromMe: true,
+      time: DateTime.now(),
+      status: MsgStatus.sending,
+      expiresAt: chat.disappear > 0 ? DateTime.now().add(Duration(seconds: chat.disappear)) : null,
+    );
     chat.messages.add(m);
     if (chat.archived) chat.archived = false;
     _s.changed();
@@ -435,7 +568,8 @@ class Messenger {
       var peer = await _peer(chat.peerId!);
       if (peer.key == null) peer = await _peer(chat.peerId!, refresh: true);
       if (peer.key == null) return; // they haven't opened the new app yet; retried on next sync
-      final body = await E2E.instance.seal({'t': m.text, 'ts': m.time.millisecondsSinceEpoch}, peer.key!);
+      final ttl = m.expiresAt == null ? 0 : m.expiresAt!.difference(m.time).inSeconds;
+      final body = await E2E.instance.seal({'t': m.text, 'ts': m.time.millisecondsSinceEpoch, if (ttl > 0) 'ttl': ttl}, peer.key!);
       await Api.instance.request('POST', '/v1/messages', {'to': chat.peerId, 'msgId': m.id, 'body': body});
       if (m.status == MsgStatus.sending) m.status = MsgStatus.sent;
       _s.changed();
@@ -460,7 +594,8 @@ class Messenger {
     markRead(chat);
     unawaited(_refresh(chat));
     _presenceTimer?.cancel();
-    _presenceTimer = Timer.periodic(const Duration(seconds: 20), (_) => unawaited(_presence(chat)));
+    // Re-subscribe every minute; changes themselves arrive instantly over the socket.
+    _presenceTimer = Timer.periodic(const Duration(seconds: 60), (_) => unawaited(_presence(chat)));
   }
 
   void closeChat(Chat chat) {
@@ -479,23 +614,18 @@ class Messenger {
   }
 
   Future<void> _refresh(Chat chat) async {
+    await _presence(chat);
     try {
       final p = await _peer(chat.peerId!, refresh: true);
       chat.about = p.about;
+      _s.changed();
     } catch (_) {}
-    await _presence(chat);
   }
 
   Future<void> _presence(Chat chat) async {
     try {
-      final d = await Api.instance.request('GET', '/v1/users/${chat.peerId}/presence');
-      if (d['online'] == true) {
-        chat.presence = 'online';
-      } else if (d['lastSeen'] is int) {
-        chat.presence = 'last seen ${_ago(DateTime.fromMillisecondsSinceEpoch(d['lastSeen'] as int))}';
-      } else {
-        chat.presence = '';
-      }
+      final d = await Api.instance.request('POST', '/v1/users/${chat.peerId}/presence');
+      chat.presence = _presenceText(d);
       _s.changed();
     } catch (_) {}
   }

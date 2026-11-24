@@ -1,4 +1,5 @@
 import { notify, pushConfigured } from './fcm';
+import { cleanPrivacy, presenceFor, publicView } from './privacy';
 import { Env, HttpError, fromB64url, json, now, randomId, readJson } from './util';
 
 type Me = { id: string; phone: string; name: string; username: string | null; about: string };
@@ -11,7 +12,7 @@ function hub(env: Env, userId: string) {
 }
 
 /** Pushes to live sockets; returns how many phones got it live. */
-async function push(env: Env, to: string, event: unknown): Promise<number> {
+export async function push(env: Env, to: string, event: unknown): Promise<number> {
   try {
     const r = await hub(env, to).fetch('https://hub/push', { method: 'POST', body: JSON.stringify(event) });
     return ((await r.json()) as { live: number }).live ?? 0;
@@ -82,29 +83,76 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     const out: unknown[] = [];
     for (let i = 0; i < phones.length; i += 90) {
       const chunk = phones.slice(i, i + 90);
-      const q = `SELECT u.id, u.phone, u.name, u.username, u.about, k.x25519 FROM users u LEFT JOIN user_keys k ON k.user_id = u.id WHERE u.phone IN (${chunk.map(() => '?').join(',')})`;
-      const r = await env.DB.prepare(q).bind(...chunk).all();
-      for (const row of r.results) out.push(row);
+      const q = `SELECT u.id, u.phone, u.name, u.username, u.about, u.photo_ver, k.x25519 FROM users u LEFT JOIN user_keys k ON k.user_id = u.id WHERE u.phone IN (${chunk.map(() => '?').join(',')})`;
+      const r = await env.DB.prepare(q).bind(...chunk).all<{ id: string; about: string; photo_ver: number }>();
+      for (const row of r.results) out.push(await publicView(env, row, me.id));
     }
-    // The uploaded list is not stored anywhere.
+    // The uploaded phone book is not stored. We only remember which BAATLY
+    // users are in it, so "My contacts" privacy options can be enforced.
+    const ids = (out as { id: string }[]).map((u) => u.id);
+    const stmts = [env.DB.prepare('DELETE FROM user_contacts WHERE user_id = ?').bind(me.id)];
+    for (const id of ids) stmts.push(env.DB.prepare('INSERT OR IGNORE INTO user_contacts (user_id, contact_id) VALUES (?,?)').bind(me.id, id));
+    for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
     return json({ users: out });
   }
 
   const um = p.match(/^\/v1\/users\/([\w-]+)$/);
   if (m === 'GET' && um) {
     const row = await env.DB.prepare(
-      'SELECT u.id, u.phone, u.name, u.username, u.about, k.x25519 FROM users u LEFT JOIN user_keys k ON k.user_id = u.id WHERE u.id = ?',
+      'SELECT u.id, u.phone, u.name, u.username, u.about, u.photo_ver, k.x25519 FROM users u LEFT JOIN user_keys k ON k.user_id = u.id WHERE u.id = ?',
     )
       .bind(um[1])
-      .first();
+      .first<{ id: string; about: string; photo_ver: number }>();
     if (!row) throw new HttpError(404, 'USER_NOT_FOUND');
-    return json({ user: row });
+    return json({ user: await publicView(env, row, me.id) });
+  }
+
+  const ph = p.match(/^\/v1\/users\/([\w-]+)\/photo$/);
+  if (m === 'GET' && ph) {
+    const row = await env.DB.prepare('SELECT id, photo, photo_ver, about FROM users WHERE id = ?').bind(ph[1]).first<{ id: string; photo: string | null; photo_ver: number; about: string }>();
+    if (!row || !row.photo) throw new HttpError(404, 'NO_PHOTO');
+    const v = await publicView(env, row, me.id);
+    if (!v.photo_ver) throw new HttpError(404, 'NO_PHOTO');
+    return json({ photo: row.photo, ver: row.photo_ver });
+  }
+
+  if (m === 'PUT' && p === '/v1/me/photo') {
+    const b = await readJson<{ photo: string }>(c.req);
+    const photo = String(b.photo ?? '');
+    if (photo.length < 100 || photo.length > 700_000) throw new HttpError(413, 'PHOTO_TOO_LARGE', 'This photo is too large.');
+    await env.DB.prepare('UPDATE users SET photo = ?, photo_ver = photo_ver + 1 WHERE id = ?').bind(photo, me.id).run();
+    const r = await env.DB.prepare('SELECT photo_ver FROM users WHERE id = ?').bind(me.id).first<{ photo_ver: number }>();
+    return json({ ver: r?.photo_ver ?? 1 });
+  }
+
+  if (m === 'DELETE' && p === '/v1/me/photo') {
+    await env.DB.prepare('UPDATE users SET photo = NULL, photo_ver = 0 WHERE id = ?').bind(me.id).run();
+    return json({ ok: true });
+  }
+
+  if (m === 'GET' && p === '/v1/me/privacy') {
+    const r = await env.DB.prepare('SELECT privacy FROM users WHERE id = ?').bind(me.id).first<{ privacy: string }>();
+    let v: unknown = {};
+    try {
+      v = JSON.parse(r?.privacy || '{}');
+    } catch {}
+    return json({ privacy: cleanPrivacy(v) });
+  }
+
+  if (m === 'PUT' && p === '/v1/me/privacy') {
+    const b = await readJson<{ privacy: unknown }>(c.req);
+    const v = cleanPrivacy(b.privacy);
+    await env.DB.prepare('UPDATE users SET privacy = ? WHERE id = ?').bind(JSON.stringify(v), me.id).run();
+    return json({ privacy: v });
   }
 
   const pm = p.match(/^\/v1\/users\/([\w-]+)\/presence$/);
-  if (m === 'GET' && pm) {
-    const r = await hub(env, pm[1]).fetch('https://hub/presence');
-    return json(await r.json());
+  if ((m === 'GET' || m === 'POST') && pm) {
+    const h = hub(env, pm[1]);
+    // POST = "I have this chat open": get pushed online/offline changes instantly.
+    if (m === 'POST') await h.fetch('https://hub/watch', { method: 'POST', body: JSON.stringify({ watcher: me.id }) });
+    const r = (await (await h.fetch('https://hub/presence')).json()) as { online: boolean; lastSeen: number | null };
+    return json(await presenceFor(env, pm[1], me.id, r.online, r.lastSeen));
   }
 
   if (m === 'POST' && p === '/v1/messages') {
@@ -172,7 +220,9 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
 
   if (m === 'GET' && p === '/v1/ws') {
     if (c.req.headers.get('upgrade')?.toLowerCase() !== 'websocket') throw new HttpError(426, 'UPGRADE_REQUIRED');
-    return hub(env, me.id).fetch(c.req);
+    const req = new Request(c.req);
+    req.headers.set('x-user', me.id);
+    return hub(env, me.id).fetch(req);
   }
 
   return null;

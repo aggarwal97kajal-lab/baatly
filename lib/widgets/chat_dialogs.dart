@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../data/app_state.dart';
@@ -82,12 +84,15 @@ void showProfilePeek(BuildContext context, Chat chat) {
         AspectRatio(
           aspectRatio: 1,
           child: Stack(fit: StackFit.expand, children: [
-            Container(
-              color: c,
-              alignment: Alignment.center,
-              child: Text(chat.initials,
-                  style: const TextStyle(fontSize: 96, color: Colors.white, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
-            ),
+            if (chat.photo != null)
+              Image.file(File(chat.photo!), fit: BoxFit.cover)
+            else
+              Container(
+                color: c,
+                alignment: Alignment.center,
+                child: Text(chat.initials,
+                    style: const TextStyle(fontSize: 96, color: Colors.white, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+              ),
             Positioned(
               left: 0,
               right: 0,

@@ -381,6 +381,7 @@ async function deleteAccount(c: Ctx) {
     c.env.DB.prepare('DELETE FROM user_keys WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM inbox WHERE to_user = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM push_tokens WHERE user_id = ?').bind(user.id),
+    c.env.DB.prepare('DELETE FROM user_contacts WHERE user_id = ? OR contact_id = ?').bind(user.id, user.id),
     c.env.DB.prepare('DELETE FROM challenges WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
   ]);
@@ -432,7 +433,7 @@ async function route(c: Ctx): Promise<Response> {
     const r = await statusRoute(c, user, m, p);
     if (r) return r;
   }
-  if (/^\/v1\/(keys|contacts|users|messages|receipts|typing|inbox|ws|push)(\/|$)/.test(p)) {
+  if (/^\/v1\/(keys|contacts|users|messages|receipts|typing|inbox|ws|push)(\/|$)/.test(p) || /^\/v1\/me\/(photo|privacy)$/.test(p)) {
     const { user, sessionId } = await requireUser(c);
     const r = await chatRoute(c, user, m, p, sessionId);
     if (r) return r;

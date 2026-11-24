@@ -8,6 +8,8 @@ import '../../widgets/common.dart';
 import '../onboarding/passkey_setup_screen.dart';
 import '../onboarding/splash_screen.dart';
 import 'appearance_screen.dart';
+import 'privacy_screen.dart';
+import 'profile_photo.dart';
 import 'wallpaper_screen.dart';
 
 class YouTab extends StatelessWidget {
@@ -34,7 +36,22 @@ class YouTab extends StatelessWidget {
               _Group(children: [
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  leading: Avatar(initials: ini, colorIndex: 2, size: 56),
+                  leading: GestureDetector(
+                    onTap: () => changeProfilePhoto(context),
+                    child: Stack(clipBehavior: Clip.none, children: [
+                      Avatar(initials: ini, colorIndex: 2, size: 56, photo: s.myPhoto),
+                      Positioned(
+                        right: -2,
+                        bottom: -2,
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle, border: Border.all(color: bc.surface, width: 2)),
+                          child: const Icon(Icons.photo_camera_rounded, size: 12, color: Colors.white),
+                        ),
+                      ),
+                    ]),
+                  ),
                   title: Text(name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                   subtitle: Text('${s.username.isEmpty ? '' : '@${s.username} · '}${s.about}', maxLines: 1, overflow: TextOverflow.ellipsis),
                   trailing: const Icon(Icons.chevron_right_rounded),
@@ -44,7 +61,7 @@ class YouTab extends StatelessWidget {
               const SizedBox(height: 12),
               _Group(children: [
                 _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone),
-                _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => _privacy(context)),
+                _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrivacyScreen()))),
                 _row(context, Icons.fingerprint_rounded, 'Fingerprint login',
                     trailing: !kHasBackend ? 'Not in demo' : (Api.instance.hasFingerprint ? 'On ✓' : 'Turn on'),
                     onTap: !kHasBackend
@@ -131,34 +148,6 @@ class YouTab extends StatelessWidget {
             child: const Text('Save'),
           ),
         ]),
-      ),
-    );
-  }
-
-  void _privacy(BuildContext context) {
-    final s = AppState.instance;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheet) => ListenableBuilder(
-        listenable: s,
-        builder: (_, __) => SafeArea(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            SwitchListTile(
-              title: const Text('Read receipts'),
-              subtitle: const Text('If off, you won\'t see others\' receipts either'),
-              value: s.readReceipts,
-              onChanged: (v) => s.toggle(() => s.readReceipts = v),
-            ),
-            SwitchListTile(
-              title: const Text('App lock (fingerprint)'),
-              subtitle: const Text('Real lock arrives in Milestone 9'),
-              value: s.appLock,
-              onChanged: (v) => s.toggle(() => s.appLock = v),
-            ),
-            const SizedBox(height: 12),
-          ]),
-        ),
       ),
     );
   }

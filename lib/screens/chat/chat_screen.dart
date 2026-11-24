@@ -120,7 +120,7 @@ class _ChatScreenState extends State<ChatScreen> {
         title: InkWell(
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatInfoScreen(chat: chat))),
           child: Row(children: [
-            Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, size: 38)),
+            Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 38)),
             const SizedBox(width: 10),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

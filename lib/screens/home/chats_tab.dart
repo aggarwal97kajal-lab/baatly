@@ -216,7 +216,7 @@ class _ChatRow extends StatelessWidget {
         child: Row(children: [
           GestureDetector(
             onTap: () => showProfilePeek(context, chat),
-            child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, size: 52, online: chat.online)),
+            child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 52, online: chat.online)),
           ),
           const SizedBox(width: 14),
           Expanded(

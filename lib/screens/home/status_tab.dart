@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'dart:io';
@@ -79,7 +80,7 @@ class StatusTab extends StatelessWidget {
                         segments: math.max(1, s.myStatuses.length),
                         active: s.myStatuses.isNotEmpty,
                         child: s.myStatuses.isEmpty
-                            ? Avatar(initials: myName[0].toUpperCase(), colorIndex: 2, size: 44)
+                            ? Avatar(initials: myName[0].toUpperCase(), colorIndex: 2, size: 44, photo: s.myPhoto)
                             : StatusThumb(slide: s.myStatuses.last, size: 44),
                       ),
                       if (s.myStatuses.isEmpty)
@@ -249,6 +250,10 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
   }
 
   void _markSeen() {
+    if (widget.mine && _i < widget.item.slides.length) {
+      unawaited(StatusService.instance.loadViewers(widget.item.slides[_i]));
+      return;
+    }
     if (widget.mine || _i >= widget.item.slides.length) return;
     StatusService.instance.viewed(widget.item, widget.item.slides[_i]);
   }
@@ -256,36 +261,33 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
   Future<void> _showViews() async {
     final slide = widget.item.slides[_i];
     _c.stop();
+    unawaited(StatusService.instance.loadViewers(slide));
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (sheet) => FutureBuilder<List<(String, DateTime)>>(
-        future: StatusService.instance.viewers(slide),
-        builder: (sheet, snap) {
-          final list = snap.data;
+      builder: (sheet) => ListenableBuilder(
+        listenable: AppState.instance,
+        builder: (sheet, _) {
+          final list = StatusService.instance.viewerList(slide);
           return SafeArea(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(list == null ? 'Viewed by' : 'Viewed by ${list.length}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  child: Text('Viewed by ${slide.viewCount}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 ),
               ),
-              if (snap.connectionState != ConnectionState.done)
-                const Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())
-              else if (snap.hasError)
-                const Padding(padding: EdgeInsets.all(24), child: Text("Couldn't load views"))
-              else if (list!.isEmpty)
+              if (list.isEmpty)
                 const Padding(padding: EdgeInsets.all(24), child: Text('No views yet'))
               else
                 Flexible(
                   child: ListView(shrinkWrap: true, children: [
                     for (final v in list)
                       ListTile(
-                        leading: Avatar(initials: v.$1.isEmpty ? '#' : v.$1[0].toUpperCase(), colorIndex: v.$1.length % 7, size: 40),
+                        leading: Avatar(initials: v.$1.isEmpty ? '#' : v.$1[0].toUpperCase(), colorIndex: v.$1.length % 7, size: 40, photo: v.$2),
                         title: Text(v.$1, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text(statusAgo(v.$2)),
+                        subtitle: Text(statusAgo(v.$3)),
                       ),
                   ]),
                 ),
@@ -433,10 +435,13 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                     ? const Text('Sending…', style: TextStyle(color: Colors.white70))
                     : slide.failed
                         ? const Text("Couldn't send this update", style: TextStyle(color: Colors.white70))
-                        : TextButton.icon(
-                            onPressed: slide.remoteId == null ? null : _showViews,
-                            icon: const Icon(Icons.visibility_outlined, color: Colors.white),
-                            label: Text('${slide.views} ${slide.views == 1 ? 'view' : 'views'}', style: const TextStyle(color: Colors.white)),
+                        : ListenableBuilder(
+                            listenable: AppState.instance,
+                            builder: (_, __) => TextButton.icon(
+                              onPressed: slide.remoteId == null ? null : _showViews,
+                              icon: const Icon(Icons.visibility_outlined, color: Colors.white),
+                              label: Text('${slide.viewCount} ${slide.viewCount == 1 ? 'view' : 'views'}', style: const TextStyle(color: Colors.white)),
+                            ),
                           ),
               ),
             if (!widget.mine)
@@ -801,7 +806,7 @@ void showMyUpdates(BuildContext context) {
                     ? 'Sending…'
                     : st.failed
                         ? (StatusService.instance.lastError ?? "Couldn't send")
-                        : '${statusAgo(st.at)} · ${st.views} ${st.views == 1 ? 'view' : 'views'}'),
+                        : '${statusAgo(st.at)} · ${st.viewCount} ${st.viewCount == 1 ? 'view' : 'views'}'),
                 onTap: st.failed ? () => StatusService.instance.post(st) : null,
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                   if (st.failed)

@@ -1,3 +1,4 @@
+import { push } from './chat';
 import { Env, HttpError, json, now, randomId, readJson } from './util';
 
 type Me = { id: string };
@@ -34,6 +35,11 @@ export async function statusRoute(c: Ctx, me: Me, m: string, p: string): Promise
       stmts.push(env.DB.prepare('INSERT OR REPLACE INTO status_keys (status_id, viewer_id, sealed) VALUES (?,?,?)').bind(id, viewer, sealed));
     }
     for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+    // Tell viewers who are online right now, so it shows up immediately.
+    const viewers = keys.map(([v]) => v).filter((v) => v !== me.id);
+    for (let i = 0; i < viewers.length; i += 20) {
+      await Promise.all(viewers.slice(i, i + 20).map((v) => push(env, v, { type: 'status', from: me.id, id })));
+    }
     return json({ id, createdAt: t, expiresAt: t + TTL });
   }
 
@@ -85,7 +91,8 @@ export async function statusRoute(c: Ctx, me: Me, m: string, p: string): Promise
   }
   if (m === 'POST' && sub === 'view') {
     if (!mine) {
-      await env.DB.prepare('INSERT OR IGNORE INTO status_views (status_id, viewer_id, at) VALUES (?,?,?)').bind(id, me.id, t).run();
+      const r = await env.DB.prepare('INSERT OR IGNORE INTO status_views (status_id, viewer_id, at) VALUES (?,?,?)').bind(id, me.id, t).run();
+      if (r.meta.changes > 0) await push(env, st.owner_id, { type: 'status_view', statusId: id, viewer: me.id, at: t });
     }
     return json({ ok: true });
   }
@@ -96,7 +103,9 @@ export async function statusRoute(c: Ctx, me: Me, m: string, p: string): Promise
   }
   if (m === 'DELETE' && !sub) {
     if (!mine) throw new HttpError(403, 'NOT_YOURS');
+    const viewers = await env.DB.prepare('SELECT viewer_id FROM status_keys WHERE status_id = ? AND viewer_id != ?').bind(id, me.id).all<{ viewer_id: string }>();
     await deleteStatuses(env, [id]);
+    await Promise.all(viewers.results.slice(0, 200).map((v) => push(env, v.viewer_id, { type: 'status', from: me.id, id, deleted: true })));
     return json({ ok: true });
   }
   return null;

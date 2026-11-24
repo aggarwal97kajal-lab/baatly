@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -12,7 +14,9 @@ class Avatar extends StatelessWidget {
   final int colorIndex;
   final double size;
   final bool online;
-  const Avatar({super.key, required this.initials, required this.colorIndex, this.size = 50, this.online = false});
+  /// Profile photo file; falls back to initials.
+  final String? photo;
+  const Avatar({super.key, required this.initials, required this.colorIndex, this.size = 50, this.online = false, this.photo});
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +30,18 @@ class Avatar extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          if (photo != null)
+            ClipOval(
+              child: Image.file(
+                File(photo!),
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                cacheWidth: (size * 3).round(),
+                errorBuilder: (_, __, ___) => Container(width: size, height: size, color: c),
+              ),
+            )
+          else
           Container(
             width: size,
             height: size,

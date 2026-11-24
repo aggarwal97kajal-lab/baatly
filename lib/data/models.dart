@@ -24,6 +24,7 @@ class Message {
     this.voiceSeconds = 0,
     this.reaction,
     this.readSent = false,
+    this.expiresAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -34,6 +35,7 @@ class Message {
         's': status.index,
         if (reaction != null) 'r': reaction,
         if (readSent) 'rs': true,
+        if (expiresAt != null) 'x': expiresAt!.millisecondsSinceEpoch,
       };
 
   factory Message.fromJson(Map<String, dynamic> j) => Message(
@@ -44,6 +46,7 @@ class Message {
         status: MsgStatus.values[((j['s'] as int?) ?? 3).clamp(0, MsgStatus.values.length - 1)],
         reaction: j['r'] as String?,
         readSent: j['rs'] == true,
+        expiresAt: j['x'] is int ? DateTime.fromMillisecondsSinceEpoch(j['x'] as int) : null,
       );
 }
 
@@ -59,6 +62,10 @@ class Chat {
   String? phone;
   /// Real chats only: "online" / "last seen …" from the server.
   String? presence;
+  /// Profile photo file on this phone (real chats).
+  String? photo;
+  /// Disappearing messages timer for this chat, seconds (0 = off).
+  int disappear = 0;
   bool online;
   bool pinned;
   DateTime? mutedUntil; // null = not muted; year 9999 = always
@@ -103,6 +110,8 @@ class Chat {
         'pinned': pinned,
         'archived': archived,
         'unread': unread,
+        if (photo != null) 'photo': photo,
+        if (disappear > 0) 'dis': disappear,
         if (mutedUntil != null) 'mute': mutedUntil!.millisecondsSinceEpoch,
         'msgs': messages.map((m) => m.toJson()).toList(),
       };
@@ -121,6 +130,8 @@ class Chat {
       unread: j['unread'] as int? ?? 0,
       messages: [for (final m in (j['msgs'] as List? ?? [])) Message.fromJson(m as Map<String, dynamic>)],
     );
+    c.photo = j['photo'] as String?;
+    c.disappear = (j['dis'] as int?) ?? 0;
     final mute = j['mute'] as int?;
     if (mute != null) c.mutedUntil = DateTime.fromMillisecondsSinceEpoch(mute);
     return c;
@@ -153,6 +164,9 @@ class StatusSlide {
   bool failed = false;
   int views = 0;
   bool seen = false;
+  /// Own updates: who viewed it (user id -> time, ms).
+  final Map<String, int> viewerAt = {};
+  int get viewCount => viewerAt.length > views ? viewerAt.length : views;
 
   StatusSlide.text(this.text, this.bg, {DateTime? at, this.remoteId})
       : imagePath = null,

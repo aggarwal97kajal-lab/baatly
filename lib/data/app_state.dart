@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -59,6 +60,33 @@ class AppState extends ChangeNotifier {
   Set<String> closeFriends = {};
   bool statusAllowSharing = true;
 
+  // Privacy (enforced by the server). Rule: m 0 everyone, 1 my contacts,
+  // 2 my contacts except x, 3 nobody.
+  PrivacyRule lastSeenRule = PrivacyRule(0);
+  int onlineRule = 0; // 0 everyone, 1 same as last seen
+  PrivacyRule photoRule = PrivacyRule(0);
+  PrivacyRule aboutRule = PrivacyRule(0);
+  /// Disappearing messages for new chats, in seconds (0 = off).
+  int defaultTimer = 0;
+  /// My profile photo on this phone.
+  String? myPhoto;
+
+  Map<String, dynamic> privacyJson() => {
+        'lastSeen': lastSeenRule.toJson(),
+        'online': onlineRule,
+        'photo': photoRule.toJson(),
+        'about': aboutRule.toJson(),
+      };
+
+  void applyPrivacyJson(Map<String, dynamic> j) {
+    lastSeenRule = PrivacyRule.fromJson(j['lastSeen']);
+    onlineRule = j['online'] == 1 ? 1 : 0;
+    photoRule = PrivacyRule.fromJson(j['photo']);
+    aboutRule = PrivacyRule.fromJson(j['about']);
+    _save();
+    notifyListeners();
+  }
+
   final List<Chat> chats = [];
   /// True once real (server) chats replaced the demo chats.
   bool realChats = false;
@@ -117,6 +145,18 @@ class AppState extends ChangeNotifier {
       statusOnly = (p.getStringList('statusOnly') ?? []).toSet();
       closeFriends = (p.getStringList('closeFriends') ?? []).toSet();
       statusAllowSharing = p.getBool('statusAllowSharing') ?? true;
+      try {
+        final pj = p.getString('privacy');
+        if (pj != null) {
+          final j = jsonDecode(pj) as Map<String, dynamic>;
+          lastSeenRule = PrivacyRule.fromJson(j['lastSeen']);
+          onlineRule = j['online'] == 1 ? 1 : 0;
+          photoRule = PrivacyRule.fromJson(j['photo']);
+          aboutRule = PrivacyRule.fromJson(j['about']);
+        }
+      } catch (_) {}
+      defaultTimer = p.getInt('defaultTimer') ?? 0;
+      myPhoto = p.getString('myPhoto');
     } catch (_) {
       // Storage unavailable (e.g. tests): fall back to defaults.
     }
@@ -143,6 +183,13 @@ class AppState extends ChangeNotifier {
     p.setStringList('statusOnly', statusOnly.toList());
     p.setStringList('closeFriends', closeFriends.toList());
     p.setBool('statusAllowSharing', statusAllowSharing);
+    p.setString('privacy', jsonEncode(privacyJson()));
+    p.setInt('defaultTimer', defaultTimer);
+    if (myPhoto == null) {
+      p.remove('myPhoto');
+    } else {
+      p.setString('myPhoto', myPhoto!);
+    }
   }
 
   /// Demo helper: forget the profile and show onboarding again.
@@ -371,4 +418,24 @@ String chatTime(DateTime t) {
   if (diff.inDays < 2) return 'Yesterday';
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   return days[t.weekday - 1];
+}
+
+
+/// Who can see something: m 0 everyone, 1 my contacts, 2 my contacts except [x], 3 nobody.
+class PrivacyRule {
+  final int m;
+  final Set<String> x;
+  PrivacyRule(this.m, [Set<String>? x]) : x = x ?? {};
+  Map<String, dynamic> toJson() => {'m': m, 'x': x.toList()};
+  factory PrivacyRule.fromJson(dynamic j) {
+    if (j is! Map) return PrivacyRule(0);
+    final m = (j['m'] as num?)?.toInt() ?? 0;
+    return PrivacyRule(m.clamp(0, 3), {for (final e in (j['x'] as List? ?? [])) e.toString()});
+  }
+  String label() => switch (m) {
+        1 => 'My contacts',
+        2 => x.isEmpty ? 'My contacts except…' : '${x.length} contact${x.length == 1 ? '' : 's'} excluded',
+        3 => 'Nobody',
+        _ => 'Everyone',
+      };
 }

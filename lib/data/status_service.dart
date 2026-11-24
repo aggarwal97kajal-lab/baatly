@@ -147,7 +147,8 @@ class StatusService {
         final at = DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int);
         final st = known[id] ?? await _open(id, m['sealed'] as String, myKey, at);
         if (st == null) continue;
-        st.views = (m['views'] as int?) ?? 0;
+        final v = (m['views'] as int?) ?? 0;
+        if (v > st.views) st.views = v;
         myList.add(st);
       }
       // Others
@@ -204,17 +205,45 @@ class StatusService {
     unawaited(Api.instance.request('POST', '/v1/status/$id/view').catchError((_) => <String, dynamic>{}));
   }
 
-  /// Who saw one of my updates.
-  Future<List<(String, DateTime)>> viewers(StatusSlide st) async {
+  Timer? _soon;
+
+  /// New status from someone (pushed live): refresh shortly.
+  void refreshSoon() {
+    _soon?.cancel();
+    _soon = Timer(const Duration(milliseconds: 600), () => unawaited(refresh()));
+  }
+
+  /// Someone just viewed one of my updates (pushed live).
+  void onView(String statusId, String viewer, int at) {
+    for (final st in _s.myStatuses) {
+      if (st.remoteId == statusId) {
+        st.viewerAt[viewer] = at;
+        _s.changed();
+      }
+    }
+  }
+
+  /// Loads who saw one of my updates into [StatusSlide.viewerAt].
+  Future<void> loadViewers(StatusSlide st) async {
     final id = st.remoteId;
-    if (id == null) return [];
-    final d = await Api.instance.request('GET', '/v1/status/$id/views');
+    if (id == null) return;
+    try {
+      final d = await Api.instance.request('GET', '/v1/status/$id/views');
+      for (final v in (d['views'] as List? ?? [])) {
+        final m = v as Map<String, dynamic>;
+        st.viewerAt[m['viewer_id'] as String] = m['at'] as int;
+      }
+      if (st.viewerAt.length > st.views) st.views = st.viewerAt.length;
+      _s.changed();
+    } catch (_) {}
+  }
+
+  /// Viewers of an update, newest first, with display names.
+  List<(String, String?, DateTime)> viewerList(StatusSlide st) {
+    final l = st.viewerAt.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     return [
-      for (final v in (d['views'] as List? ?? []))
-        (
-          Messenger.instance.nameFor((v as Map<String, dynamic>)['viewer_id'] as String),
-          DateTime.fromMillisecondsSinceEpoch(v['at'] as int),
-        ),
+      for (final e in l)
+        (Messenger.instance.nameFor(e.key), Messenger.instance.photoOf(e.key), DateTime.fromMillisecondsSinceEpoch(e.value)),
     ];
   }
 

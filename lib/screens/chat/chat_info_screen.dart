@@ -39,7 +39,7 @@ class ChatInfoScreen extends StatelessWidget {
         body: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           children: [
-            Center(child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, size: 104))),
+            Center(child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 104))),
             const SizedBox(height: 12),
             Text(chat.name, textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: bc.text)),
             Text(chat.isGroup ? 'Group · ${chat.about}' : chat.about,
