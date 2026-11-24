@@ -49,6 +49,18 @@ jobs:
       - name: Apply migrations
         if: steps.cf.outputs.ok == 'true'
         run: npx wrangler d1 migrations apply baatly-db --remote
+      - name: Ensure R2 bucket (chat media)
+        if: steps.cf.outputs.ok == 'true'
+        run: |
+          if npx wrangler r2 bucket list 2>/tmp/r2err | grep -q "baatly-media"; then
+            echo "R2 bucket exists"
+          elif npx wrangler r2 bucket create baatly-media 2>>/tmp/r2err; then
+            echo "R2 bucket created"
+          else
+            cat /tmp/r2err
+            echo "::warning::R2 not available (enable R2 in the Cloudflare dashboard and give the API token 'Workers R2 Storage: Edit'). Deploying without chat media."
+            sed -i '/# R2-BEGIN/,/# R2-END/d' wrangler.toml
+          fi
       - name: Deploy worker
         if: steps.cf.outputs.ok == 'true'
         run: npx wrangler deploy

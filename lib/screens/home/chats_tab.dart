@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
+import '../../data/media.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/chat_dialogs.dart';
@@ -198,9 +199,15 @@ class _ChatRow extends StatelessWidget {
     String preview = '';
     IconData? pIcon;
     if (m != null) {
-      if (m.kind == MsgKind.voice) {
+      if (m.kind == MsgKind.image) {
+        pIcon = Icons.photo_camera_rounded;
+        preview = m.text.trim().isEmpty ? 'Photo' : m.text.replaceAll('\n', ' ');
+      } else if (m.kind == MsgKind.doc) {
+        pIcon = Icons.insert_drive_file_rounded;
+        preview = (m.media?['name'] as String?) ?? 'Document';
+      } else if (m.kind == MsgKind.voice) {
         pIcon = Icons.mic_rounded;
-        preview = 'Voice note · 0:${m.voiceSeconds.toString().padLeft(2, '0')}';
+        preview = 'Voice message · ${MediaFiles.fmtDur(m.voiceSeconds)}';
       } else {
         preview = m.text.replaceAll('\n', ' ');
       }

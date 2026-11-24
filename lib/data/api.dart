@@ -69,6 +69,43 @@ class Api {
     } catch (_) {}
   }
 
+  /// Uploads encrypted bytes; returns the media id.
+  Future<String> upload(List<int> bytes) async {
+    http.Response r;
+    try {
+      r = await http
+          .post(Uri.parse('$kApiBase/v1/media'),
+              headers: {'content-type': 'application/octet-stream', if (_token != null) 'authorization': 'Bearer $_token'}, body: bytes)
+          .timeout(const Duration(minutes: 3));
+    } catch (_) {
+      throw ApiException(0, 'NETWORK', "Couldn't upload. Check your internet.");
+    }
+    Map<String, dynamic> d = {};
+    try {
+      d = jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (_) {}
+    if (r.statusCode >= 400) throw ApiException(r.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+    return d['id'] as String;
+  }
+
+  /// Downloads encrypted media bytes.
+  Future<List<int>> download(String id) async {
+    http.Response r;
+    try {
+      r = await http.get(Uri.parse('$kApiBase/v1/media/$id'), headers: {if (_token != null) 'authorization': 'Bearer $_token'}).timeout(const Duration(minutes: 3));
+    } catch (_) {
+      throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
+    }
+    if (r.statusCode >= 400) {
+      Map<String, dynamic> d = {};
+      try {
+        d = jsonDecode(r.body) as Map<String, dynamic>;
+      } catch (_) {}
+      throw ApiException(r.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+    }
+    return r.bodyBytes;
+  }
+
   /// Authenticated JSON call, used by the messenger.
   Future<Map<String, dynamic>> request(String method, String path, [Object? body]) => _call(method, path, body);
   final _auth = PasskeyAuthenticator();

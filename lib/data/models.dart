@@ -1,6 +1,6 @@
 enum MsgStatus { sending, sent, delivered, read }
 
-enum MsgKind { text, voice }
+enum MsgKind { text, voice, image, doc }
 
 class Message {
   final String id;
@@ -16,6 +16,12 @@ class Message {
   /// Disappearing messages: deleted from this phone after this time.
   DateTime? expiresAt;
   bool starred;
+  /// Media (photo / voice / document): file on this phone, once available.
+  String? mediaPath;
+  /// Media details sent inside the encrypted message (id, key, name, size, thumb…).
+  Map<String, dynamic>? media;
+  /// Upload/download in progress (not saved).
+  bool busy = false;
 
   Message({
     required this.id,
@@ -29,6 +35,8 @@ class Message {
     this.readSent = false,
     this.expiresAt,
     this.starred = false,
+    this.mediaPath,
+    this.media,
   });
 
   Map<String, dynamic> toJson() => {
@@ -41,6 +49,10 @@ class Message {
         if (readSent) 'rs': true,
         if (expiresAt != null) 'x': expiresAt!.millisecondsSinceEpoch,
         if (starred) 'st': true,
+        if (kind != MsgKind.text) 'k': kind.index,
+        if (voiceSeconds > 0) 'vs': voiceSeconds,
+        if (mediaPath != null) 'mp': mediaPath,
+        if (media != null) 'md': media,
       };
 
   factory Message.fromJson(Map<String, dynamic> j) => Message(
@@ -53,6 +65,10 @@ class Message {
         readSent: j['rs'] == true,
         expiresAt: j['x'] is int ? DateTime.fromMillisecondsSinceEpoch(j['x'] as int) : null,
         starred: j['st'] == true,
+        kind: MsgKind.values[((j['k'] as int?) ?? 0).clamp(0, MsgKind.values.length - 1)],
+        voiceSeconds: (j['vs'] as int?) ?? 0,
+        mediaPath: j['mp'] as String?,
+        media: (j['md'] as Map?)?.cast<String, dynamic>(),
       );
 }
 

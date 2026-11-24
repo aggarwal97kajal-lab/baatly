@@ -24,6 +24,7 @@ import {
 import { chatRoute, profileChanged } from './chat';
 import { pushConfigured } from './fcm';
 import { deleteUserStatuses, expireStatuses, statusRoute } from './status';
+import { expireMedia, mediaConfigured, mediaRoute } from './media';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
 type Ctx = { req: Request; env: Env; url: URL };
@@ -406,7 +407,7 @@ async function route(c: Ctx): Promise<Response> {
   const m = req.method;
   if (m === 'GET' && p === '/.well-known/assetlinks.json') return assetLinks(c.env);
   if (m === 'GET' && p === '/') {
-    return json({ name: 'baatly-api', ok: true, otp: otpConfigured(c.env) ? 'messagecentral' : demoMode(c.env) ? 'demo' : 'not-configured', push: pushConfigured(c.env), rpId: url.hostname });
+    return json({ name: 'baatly-api', ok: true, otp: otpConfigured(c.env) ? 'messagecentral' : demoMode(c.env) ? 'demo' : 'not-configured', push: pushConfigured(c.env), media: mediaConfigured(c.env), rpId: url.hostname });
   }
   if (m === 'POST' && p === '/v1/auth/otp/send') return otpSend(c);
   if (m === 'POST' && p === '/v1/auth/otp/verify') return otpVerify(c);
@@ -429,6 +430,11 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'GET' && p === '/get') {
     return Response.redirect('https://github.com/aggarwal97kajal-lab/baatly/releases/latest/download/baatly.apk', 302);
   }
+  if (/^\/v1\/media(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await mediaRoute(c, user, m, p);
+    if (r) return r;
+  }
   if (/^\/v1\/status(\/|$)/.test(p)) {
     const { user } = await requireUser(c);
     const r = await statusRoute(c, user, m, p);
@@ -449,6 +455,7 @@ export { UserHub } from './hub';
 export default {
   async scheduled(_ev: ScheduledController, env: Env): Promise<void> {
     await expireStatuses(env);
+    await expireMedia(env);
   },
 
   async fetch(req: Request, env: Env): Promise<Response> {

@@ -29,3 +29,10 @@ class_name = "UserHub"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["UserHub"]
+
+# Chat media (encrypted). CI removes this block if R2 isn't enabled yet.
+# R2-BEGIN
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "baatly-media"
+# R2-END

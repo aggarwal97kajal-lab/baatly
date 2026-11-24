@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   HUB: DurableObjectNamespace;
+  MEDIA?: R2Bucket; // chat media (ciphertext); optional until R2 is enabled
   // vars (wrangler.toml)
   RP_NAME: string;
   ANDROID_PACKAGE: string;

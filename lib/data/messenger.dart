@@ -12,6 +12,7 @@ import 'api.dart';
 import 'app_state.dart';
 import 'contacts.dart';
 import 'e2e.dart';
+import 'media.dart';
 import 'models.dart';
 import 'push.dart';
 import 'status_service.dart';
@@ -462,6 +463,7 @@ class Messenger {
     }
     String text;
     int ttl = 0;
+    Map<String, dynamic>? md;
     DateTime at = DateTime.fromMillisecondsSinceEpoch(ev['at'] as int? ?? DateTime.now().millisecondsSinceEpoch);
     try {
       final plain = await _open(body, peer);
@@ -469,6 +471,7 @@ class Messenger {
       final ts = plain['ts'];
       if (ts is int) at = DateTime.fromMillisecondsSinceEpoch(ts);
       ttl = (plain['ttl'] as int?) ?? 0;
+      md = (plain['md'] as Map?)?.cast<String, dynamic>();
     } catch (_) {
       text = "🔒 This message couldn't be decrypted. Ask them to send it again.";
     }
@@ -476,7 +479,26 @@ class Messenger {
     chat.typing = false;
     chat.disappear = ttl; // follow the sender's disappearing-messages setting
     if (!chat.messages.any((m) => m.id == msgId)) {
-      final m = Message(id: msgId, text: text, fromMe: false, time: at, expiresAt: ttl > 0 ? DateTime.now().add(Duration(seconds: ttl)) : null);
+      final kind = switch (md?['type']) {
+        'image' => MsgKind.image,
+        'voice' => MsgKind.voice,
+        'doc' => MsgKind.doc,
+        _ => MsgKind.text,
+      };
+      final m = Message(
+        id: msgId,
+        text: text,
+        fromMe: false,
+        time: at,
+        kind: kind,
+        voiceSeconds: (md?['dur'] as int?) ?? 0,
+        media: md,
+        expiresAt: ttl > 0 ? DateTime.now().add(Duration(seconds: ttl)) : null,
+      );
+      // Photos and voice notes download automatically (small); documents on tap.
+      if ((kind == MsgKind.image || kind == MsgKind.voice) && ((md?['size'] as int?) ?? 0) < 16 * 1024 * 1024) {
+        unawaited(downloadMedia(m));
+      }
       chat.messages.add(m);
       chat.messages.sort((a, b) => a.time.compareTo(b.time));
       if (chat.archived && !chat.muted) chat.archived = false;
@@ -602,13 +624,98 @@ class Messenger {
       var peer = await _peer(chat.peerId!);
       if (peer.key == null) peer = await _peer(chat.peerId!, refresh: true);
       if (peer.key == null) return; // they haven't opened the new app yet; retried on next sync
+      if (m.kind != MsgKind.text && m.media?['id'] == null) {
+        await _uploadMedia(m);
+      }
       final ttl = m.expiresAt == null ? 0 : m.expiresAt!.difference(m.time).inSeconds;
-      final body = await E2E.instance.seal({'t': m.text, 'ts': m.time.millisecondsSinceEpoch, if (ttl > 0) 'ttl': ttl}, peer.key!);
+      final body = await E2E.instance.seal({
+        't': m.text,
+        'ts': m.time.millisecondsSinceEpoch,
+        if (ttl > 0) 'ttl': ttl,
+        if (m.media != null) 'md': m.media,
+      }, peer.key!);
       await Api.instance.request('POST', '/v1/messages', {'to': chat.peerId, 'msgId': m.id, 'body': body});
       if (m.status == MsgStatus.sending) m.status = MsgStatus.sent;
       _s.changed();
     } catch (_) {
       // Stays "sending" (clock icon); retried when the connection comes back.
+    }
+  }
+
+  // ------------------------------------------------------------------ media
+  /// Sends a photo / voice note / document. The file is encrypted on this
+  /// phone with a fresh key; the key goes inside the E2E message.
+  void sendMedia(Chat chat, {required String path, required MsgKind kind, String caption = '', String? name, int seconds = 0}) {
+    final fileName = name ?? path.split('/').last;
+    final m = Message(
+      id: _newId(),
+      text: caption,
+      fromMe: true,
+      time: DateTime.now(),
+      status: MsgStatus.sending,
+      kind: kind,
+      voiceSeconds: seconds,
+      mediaPath: path,
+      media: {
+        'type': switch (kind) { MsgKind.image => 'image', MsgKind.voice => 'voice', _ => 'doc' },
+        'name': fileName,
+        'mime': MediaFiles.mime(fileName),
+        if (seconds > 0) 'dur': seconds,
+      },
+      expiresAt: chat.disappear > 0 ? DateTime.now().add(Duration(seconds: chat.disappear)) : null,
+    );
+    chat.messages.add(m);
+    if (chat.archived) chat.archived = false;
+    _s.changed();
+    unawaited(_deliver(chat, m));
+  }
+
+  Future<void> _uploadMedia(Message m) async {
+    m.busy = true;
+    _s.changed();
+    try {
+      final file = File(m.mediaPath!);
+      final bytes = await file.readAsBytes();
+      if (m.kind == MsgKind.image) {
+        final t = await MediaFiles.thumb(file.path);
+        if (t != null) {
+          m.media!['thumb'] = t.$1;
+          m.media!['w'] = t.$2;
+          m.media!['h'] = t.$3;
+        }
+      }
+      final (key, blob) = await E2E.instance.lock(bytes);
+      final id = await Api.instance.upload(blob);
+      m.media!['id'] = id;
+      m.media!['k'] = base64Encode(key);
+      m.media!['size'] = bytes.length;
+    } finally {
+      m.busy = false;
+      _s.changed();
+    }
+  }
+
+  /// Downloads + decrypts a received file to this phone.
+  Future<String?> downloadMedia(Message m) async {
+    final md = m.media;
+    if (m.mediaPath != null && File(m.mediaPath!).existsSync()) return m.mediaPath;
+    if (md == null || md['id'] == null || m.busy) return null;
+    m.busy = true;
+    _s.changed();
+    try {
+      final blob = await Api.instance.download(md['id'] as String);
+      final clear = await E2E.instance.unlock(blob, base64Decode(md['k'] as String));
+      final name = (md['name'] as String?) ?? 'file';
+      final ext = MediaFiles.ext(name);
+      final f = File('${(await MediaFiles.dir()).path}/${m.id}${ext.isEmpty ? '' : '.$ext'}');
+      await f.writeAsBytes(clear, flush: true);
+      m.mediaPath = f.path;
+      return f.path;
+    } catch (_) {
+      return null;
+    } finally {
+      m.busy = false;
+      _s.changed();
     }
   }
 

@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
 
 import '../../data/app_state.dart';
 import '../../data/messenger.dart';
@@ -8,6 +14,8 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
 import 'chat_info_screen.dart';
+import 'media_widgets.dart';
+import '../../data/media.dart';
 
 class ChatScreen extends StatefulWidget {
   final Chat chat;
@@ -20,8 +28,153 @@ class _ChatScreenState extends State<ChatScreen> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
   Message? _replyTo;
+  final _rec = AudioRecorder();
+  bool _recording = false;
+  DateTime? _recStart;
+  Timer? _recTimer;
+  String? _recPath;
 
   Chat get chat => widget.chat;
+
+  void _toast(String t) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
+  }
+
+  void _sendMedia(String path, MsgKind kind, {String caption = '', String? name, int seconds = 0}) {
+    if (chat.isReal) {
+      Messenger.instance.sendMedia(chat, path: path, kind: kind, caption: caption, name: name, seconds: seconds);
+    } else {
+      final s = AppState.instance;
+      chat.messages.add(Message(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        text: caption,
+        fromMe: true,
+        time: DateTime.now(),
+        kind: kind,
+        voiceSeconds: seconds,
+        mediaPath: path,
+        media: {'name': name ?? path.split('/').last, 'type': kind.name},
+      ));
+      s.changed();
+    }
+  }
+
+  /// Copies a picked file into BAATLY's own folder (pickers use temp files).
+  Future<String> _keep(String src, String name) async {
+    final dir = await MediaFiles.dir();
+    final safe = name.replaceAll(RegExp(r'[^\w.\- ]'), '_');
+    final dest = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$safe');
+    await File(src).copy(dest.path);
+    return dest.path;
+  }
+
+  Future<void> _pickImage(ImageSource src) async {
+    XFile? f;
+    try {
+      f = await ImagePicker().pickImage(source: src, maxWidth: 2048, imageQuality: 85);
+    } catch (_) {
+      _toast('Camera / photos permission needed');
+      return;
+    }
+    if (f == null || !mounted) return;
+    final caption = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => SendPhotoScreen(path: f!.path, to: chat.name)));
+    if (caption == null) return;
+    final kept = await _keep(f.path, f.name.isEmpty ? 'photo.jpg' : f.name);
+    _sendMedia(kept, MsgKind.image, caption: caption, name: 'photo.jpg');
+  }
+
+  Future<void> _pickDoc() async {
+    FilePickerResult? r;
+    try {
+      r = await FilePicker.platform.pickFiles();
+    } catch (_) {
+      _toast("Couldn't open files");
+      return;
+    }
+    final f = r?.files.single;
+    if (f == null || f.path == null) return;
+    if (f.size > 64 * 1024 * 1024) {
+      _toast('Files up to 64 MB can be sent');
+      return;
+    }
+    final kept = await _keep(f.path!, f.name);
+    _sendMedia(kept, MsgKind.doc, name: f.name);
+  }
+
+  void _attach() {
+    final bc = context.bc;
+    Widget item(IconData i, String label, Color c, VoidCallback onTap) => Expanded(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () {
+              Navigator.pop(context);
+              onTap();
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(children: [
+                CircleAvatar(radius: 28, backgroundColor: c, child: Icon(i, color: Colors.white)),
+                const SizedBox(height: 8),
+                Text(label, style: TextStyle(fontSize: 12.5, color: bc.text)),
+              ]),
+            ),
+          ),
+        );
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+          child: Row(children: [
+            item(Icons.insert_drive_file_rounded, 'Document', const Color(0xFF7A5BA6), _pickDoc),
+            item(Icons.photo_camera_rounded, 'Camera', const Color(0xFFC8553D), () => _pickImage(ImageSource.camera)),
+            item(Icons.photo_library_rounded, 'Gallery', const Color(0xFF2E7D8C), () => _pickImage(ImageSource.gallery)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      if (!await _rec.hasPermission()) {
+        _toast('Allow microphone to record voice notes');
+        return;
+      }
+      final dir = await MediaFiles.dir();
+      _recPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _rec.start(const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 64000, sampleRate: 44100), path: _recPath!);
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _recording = true;
+        _recStart = DateTime.now();
+      });
+      _recTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => mounted ? setState(() {}) : null);
+    } catch (e) {
+      _toast("Couldn't start recording ($e)");
+    }
+  }
+
+  Future<void> _stopRecording({required bool send}) async {
+    _recTimer?.cancel();
+    final secs = _recStart == null ? 0 : DateTime.now().difference(_recStart!).inSeconds;
+    String? path;
+    try {
+      path = await _rec.stop();
+    } catch (_) {}
+    setState(() => _recording = false);
+    path ??= _recPath;
+    if (path == null) return;
+    if (!send || secs < 1) {
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      if (send) _toast('Hold on a bit longer to record');
+      return;
+    }
+    _sendMedia(path, MsgKind.voice, name: 'voice.m4a', seconds: secs);
+  }
 
   @override
   void initState() {
@@ -36,6 +189,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     if (AppState.instance.activeChatId == chat.id) AppState.instance.activeChatId = null;
     Messenger.instance.closeChat(chat);
+    _recTimer?.cancel();
+    _rec.dispose();
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
@@ -215,7 +370,16 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
+          if (_recording)
+            _RecordingBar(
+              seconds: _recStart == null ? 0 : DateTime.now().difference(_recStart!).inSeconds,
+              onCancel: () => _stopRecording(send: false),
+              onSend: () => _stopRecording(send: true),
+            )
+          else
           _Composer(
+            onAttach: _attach,
+            onMic: _startRecording,
             ctrl: _ctrl,
             replyTo: _replyTo,
             onCancelReply: () => setState(() => _replyTo = null),
@@ -275,7 +439,16 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     );
 
     Widget content;
-    if (m.kind == MsgKind.voice) {
+    final caption = m.text.trim().isEmpty
+        ? null
+        : Padding(padding: const EdgeInsets.only(top: 6), child: Text(m.text, style: TextStyle(fontSize: 15, color: fg, height: 1.35)));
+    if (m.kind == MsgKind.image) {
+      content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [ImageContent(m: m, fg: fg), if (caption != null) caption]);
+    } else if (m.kind == MsgKind.doc) {
+      content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [DocContent(m: m, fg: fg), if (caption != null) caption]);
+    } else if (m.kind == MsgKind.voice && (m.media != null || m.mediaPath != null)) {
+      content = VoiceContent(m: m, fg: fg, accent: me ? Colors.white24 : context.primary);
+    } else if (m.kind == MsgKind.voice) {
       content = Row(mainAxisSize: MainAxisSize.min, children: [
         Container(
           width: 34,
@@ -367,7 +540,17 @@ class _Composer extends StatelessWidget {
   final VoidCallback onCancelReply;
   final VoidCallback onSend;
   final VoidCallback onChanged;
-  const _Composer({required this.ctrl, required this.replyTo, required this.onCancelReply, required this.onSend, required this.onChanged});
+  final VoidCallback onAttach;
+  final VoidCallback onMic;
+  const _Composer({
+    required this.ctrl,
+    required this.replyTo,
+    required this.onCancelReply,
+    required this.onSend,
+    required this.onChanged,
+    required this.onAttach,
+    required this.onMic,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -422,13 +605,13 @@ class _Composer extends StatelessWidget {
                         ),
                       ),
                     ),
-                    IconButton(onPressed: () => showComingSoon(context, 'Photo / document bhejna'), icon: Icon(Icons.attach_file_rounded, color: bc.muted)),
+                    IconButton(onPressed: onAttach, icon: Icon(Icons.attach_file_rounded, color: bc.muted)),
                   ]),
                 ),
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: hasText ? onSend : () => showComingSoon(context, 'Voice note'),
+                onTap: hasText ? onSend : onMic,
                 child: AnimatedContainer(
                   duration: Mitti.fast,
                   width: 50,
@@ -444,6 +627,46 @@ class _Composer extends StatelessWidget {
             ]),
           ),
         ]),
+      ),
+    );
+  }
+}
+
+
+/// Shown instead of the text box while a voice note is recording.
+class _RecordingBar extends StatelessWidget {
+  final int seconds;
+  final VoidCallback onCancel;
+  final VoidCallback onSend;
+  const _RecordingBar({required this.seconds, required this.onCancel, required this.onSend});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return Container(
+      color: bc.surface,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+          child: Row(children: [
+            IconButton(onPressed: onCancel, tooltip: 'Delete', icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFB3261E))),
+            const SizedBox(width: 4),
+            const Icon(Icons.fiber_manual_record_rounded, color: Color(0xFFE53935), size: 16),
+            const SizedBox(width: 8),
+            Text(MediaFiles.fmtDur(seconds), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: bc.text)),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Recording…', style: TextStyle(color: bc.muted))),
+            GestureDetector(
+              onTap: onSend,
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle),
+                child: const Icon(Icons.send_rounded, color: Colors.white),
+              ),
+            ),
+          ]),
+        ),
       ),
     );
   }
