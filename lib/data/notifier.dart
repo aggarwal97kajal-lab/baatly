@@ -62,7 +62,9 @@ class Notifier {
       final launch = await _plugin.getNotificationAppLaunchDetails();
       final p = launch?.notificationResponse?.payload;
       if (launch?.didNotificationLaunchApp == true && p != null) {
-        pendingChat = (jsonDecode(p) as Map)['chat'] as String?;
+        final j = jsonDecode(p) as Map;
+        pendingChat = j['chat'] as String?;
+        pendingCall = j['call'] as String?;
       }
     } catch (_) {}
   }
@@ -104,8 +106,62 @@ class Notifier {
     return t;
   }
 
+  String? pendingCall;
+  void Function(String callId)? onOpenCall;
+
+  static const _callChannel = AndroidNotificationChannel(
+    'calls',
+    'Calls',
+    description: 'Incoming calls',
+    importance: Importance.max,
+  );
+
+  Future<void> _showCall(Map<String, dynamic> data) async {
+    await init();
+    await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(_callChannel);
+    var name = data['title'] as String? ?? 'BAATLY';
+    try {
+      await Api.instance.load();
+      final uid = Api.instance.userId;
+      if (uid != null) {
+        final peers = ((await _localData(uid))['peers'] as Map?)?.cast<String, dynamic>() ?? {};
+        final n = (peers[data['from']] as Map?)?['name'] as String?;
+        if (n != null && n.isNotEmpty) name = n;
+      }
+    } catch (_) {}
+    final video = data['video'] == '1';
+    await _plugin.show(
+      _idFor('call'),
+      name,
+      video ? 'Incoming video call' : 'Incoming voice call',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _callChannel.id,
+          _callChannel.name,
+          channelDescription: _callChannel.description,
+          importance: Importance.max,
+          priority: Priority.max,
+          category: AndroidNotificationCategory.call,
+          fullScreenIntent: true,
+          ongoing: true,
+          autoCancel: true,
+          timeoutAfter: 45000,
+          actions: const [
+            AndroidNotificationAction('decline_call', 'Decline', showsUserInterface: false),
+            AndroidNotificationAction('answer_call', 'Answer', showsUserInterface: true),
+          ],
+        ),
+      ),
+      payload: jsonEncode({'call': data['callId']}),
+    );
+  }
+
   /// Decrypts the pushed message on this phone and shows it.
   Future<void> showFromPush(Map<String, dynamic> data) async {
+    if (data['type'] == 'call') {
+      await _showCall(data);
+      return;
+    }
     if (data['type'] != 'msg') return;
     final chat = data['chat'] as String? ?? '';
     final from = data['from'] as String? ?? '';
@@ -189,6 +245,20 @@ class Notifier {
   Future<void> handleAction(NotificationResponse r) async {
     final p = r.payload == null ? <String, dynamic>{} : (jsonDecode(r.payload!) as Map).cast<String, dynamic>();
     final chat = p['chat'] as String? ?? '';
+    final call = p['call'] as String?;
+    if (call != null) {
+      await _plugin.cancel(_idFor('call'));
+      if (r.actionId == 'decline_call') {
+        try {
+          await Api.instance.load();
+          await Api.instance.request('POST', '/v1/calls/$call/signal', {'action': 'reject'});
+        } catch (_) {}
+        return;
+      }
+      pendingCall = call;
+      onOpenCall?.call(call);
+      return;
+    }
     if (r.actionId == 'reply') {
       final text = (r.input ?? '').trim();
       if (text.isNotEmpty) await _reply(p, text);

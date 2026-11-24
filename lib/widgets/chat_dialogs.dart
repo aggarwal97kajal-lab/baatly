@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'common.dart';
 import 'photo_viewer.dart';
+import '../data/calls.dart';
 
 String muteLabel(Chat c) {
   if (!c.muted) return 'Off';
@@ -127,8 +128,24 @@ void showProfilePeek(BuildContext context, Chat chat) {
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)));
               },
             ),
-            IconButton(tooltip: 'Audio call', icon: Icon(Icons.call_outlined, color: ctx.primary), onPressed: () => showComingSoon(ctx, 'Audio call')),
-            IconButton(tooltip: 'Video call', icon: Icon(Icons.videocam_outlined, color: ctx.primary), onPressed: () => showComingSoon(ctx, 'Video call')),
+            IconButton(
+              tooltip: 'Audio call',
+              icon: Icon(Icons.call_outlined, color: ctx.primary),
+              onPressed: () {
+                if (chat.peerId == null) return showComingSoon(ctx, 'Audio call');
+                Navigator.pop(ctx);
+                CallService.instance.start(chat, video: false);
+              },
+            ),
+            IconButton(
+              tooltip: 'Video call',
+              icon: Icon(Icons.videocam_outlined, color: ctx.primary),
+              onPressed: () {
+                if (chat.peerId == null) return showComingSoon(ctx, 'Video call');
+                Navigator.pop(ctx);
+                CallService.instance.start(chat, video: true);
+              },
+            ),
             IconButton(
               tooltip: 'Info',
               icon: Icon(Icons.info_outline_rounded, color: ctx.primary),

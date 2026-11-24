@@ -91,3 +91,17 @@ jobs:
           else
             echo "::notice::FCM_SERVICE_ACCOUNT not set - push notifications off"
           fi
+      - name: Set call relay (TURN) secrets
+        if: steps.cf.outputs.ok == 'true'
+        env:
+          TURN_KEY_ID: ${{ secrets.TURN_KEY_ID }}
+          TURN_KEY_TOKEN: ${{ secrets.TURN_KEY_TOKEN }}
+        run: |
+          if [ -n "$TURN_KEY_ID" ] && [ -n "$TURN_KEY_TOKEN" ]; then
+            node -e 'console.log(JSON.stringify({TURN_KEY_ID:process.env.TURN_KEY_ID,TURN_KEY_TOKEN:process.env.TURN_KEY_TOKEN}))' > /tmp/t.json
+            npx wrangler secret bulk /tmp/t.json
+            rm /tmp/t.json
+            echo "TURN configured"
+          else
+            echo "::notice::TURN_KEY_ID / TURN_KEY_TOKEN not set - calls use STUN only (may fail on some mobile networks)"
+          fi

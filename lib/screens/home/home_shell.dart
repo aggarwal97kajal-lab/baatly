@@ -6,6 +6,7 @@ import '../../data/app_state.dart';
 import '../../data/messenger.dart';
 import '../../data/status_service.dart';
 import '../../data/notifier.dart';
+import '../../data/calls.dart';
 import '../chat/chat_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
@@ -36,10 +37,19 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     Notifier.instance.onOpenChat = _openFromNotification;
+    Notifier.instance.onOpenCall = (id) {
+      Notifier.instance.pendingCall = null;
+      CallService.instance.openIncoming(id);
+    };
     if (kHasBackend && Api.instance.loggedIn) {
       Messenger.instance.start().then((_) {
         final p = Notifier.instance.pendingChat;
         if (p != null) _openFromNotification(p);
+        final call = Notifier.instance.pendingCall;
+        if (call != null) {
+          Notifier.instance.pendingCall = null;
+          CallService.instance.openIncoming(call);
+        }
       });
     } else {
       AppState.instance.startDemoActivity();

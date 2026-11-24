@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
+import '../../data/calls.dart';
+import '../../data/messenger.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
@@ -13,6 +15,23 @@ class CallsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(listenable: AppState.instance, builder: (context, _) => _build(context));
+  }
+
+  String _when(CallLog c) {
+    final at = c.at;
+    if (at == null) return c.when;
+    final now = DateTime.now();
+    final h = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    final time = '$h:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(at.year, at.month, at.day);
+    final day = d == today ? 'Today' : (today.difference(d).inDays == 1 ? 'Yesterday' : '${at.day}/${at.month}');
+    final rest = c.when.contains(' · ') ? ' · ${c.when.split(' · ').last}' : '';
+    return '${c.kind == CallKind.missed ? 'Missed · ' : ''}$day, $time${c.when.startsWith('Missed') ? '' : rest}';
+  }
+
+  Widget _build(BuildContext context) {
     final bc = context.bc;
     final calls = AppState.instance.calls;
     return Scaffold(
@@ -57,16 +76,25 @@ class CallsTab extends StatelessWidget {
                   color: c.kind == CallKind.missed ? Mitti.error : (c.kind == CallKind.incoming ? Mitti.success : bc.muted),
                 ),
                 const SizedBox(width: 4),
-                Flexible(child: Text(c.when, overflow: TextOverflow.ellipsis)),
+                Flexible(child: Text(_when(c), overflow: TextOverflow.ellipsis)),
               ]),
               trailing: IconButton(
                 icon: Icon(c.video ? Icons.videocam_outlined : Icons.call_outlined, color: context.primary),
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CallDemoScreen(log: c))),
+                onPressed: () {
+                  final chat = c.peerId == null ? null : Messenger.instance.chatById(c.peerId!);
+                  if (chat != null) {
+                    CallService.instance.start(chat, video: c.video);
+                  } else if (c.peerId != null) {
+                    CallService.instance.start(Messenger.instance.chatWithUser(c.peerId!, c.name, '', null), video: c.video);
+                  } else {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => CallDemoScreen(log: c)));
+                  }
+                },
               ),
             ),
           Padding(
             padding: const EdgeInsets.all(24),
-            child: Text('Demo build: call screen only. Real audio/video comes in Milestone 5.',
+            child: Text(calls.isEmpty ? 'No calls yet. Start one from any chat.' : 'Calls are encrypted and go directly between phones.',
                 textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: bc.muted)),
           ),
         ]),

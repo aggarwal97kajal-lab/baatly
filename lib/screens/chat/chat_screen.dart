@@ -21,6 +21,7 @@ import 'media_widgets.dart';
 import 'cards.dart';
 import 'group_screens.dart';
 import 'chat_tools.dart';
+import '../../data/calls.dart';
 import '../../data/media.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -413,8 +414,14 @@ class _ChatScreenState extends State<ChatScreen> {
           ]),
         ),
         actions: [
-          IconButton(onPressed: () => showComingSoon(context, 'Video call'), icon: const Icon(Icons.videocam_outlined)),
-          IconButton(onPressed: () => showComingSoon(context, 'Audio call'), icon: const Icon(Icons.call_outlined)),
+          IconButton(
+            onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: true) : () => showComingSoon(context, 'Group video call'),
+            icon: const Icon(Icons.videocam_outlined),
+          ),
+          IconButton(
+            onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: false) : () => showComingSoon(context, 'Group call'),
+            icon: const Icon(Icons.call_outlined),
+          ),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'search') Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatSearchScreen(chat: chat)));

@@ -5,6 +5,7 @@ import 'data/api.dart';
 import 'data/app_state.dart';
 import 'data/notifier.dart';
 import 'widgets/app_lock.dart';
+import 'nav.dart';
 import 'config.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'screens/home/home_shell.dart';
@@ -24,9 +25,6 @@ Future<void> main() async {
   }
   runApp(BaatlyApp(skipOnboarding: AppState.instance.onboarded));
 }
-
-/// Lets a notification tap open a chat from anywhere.
-final navigatorKey = GlobalKey<NavigatorState>();
 
 class BaatlyApp extends StatelessWidget {
   /// Decided once at launch, so finishing onboarding doesn't swap the root route.

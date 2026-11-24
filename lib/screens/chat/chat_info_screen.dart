@@ -8,6 +8,7 @@ import '../../widgets/common.dart';
 import '../../widgets/photo_viewer.dart';
 import 'starred_screen.dart';
 import 'chat_tools.dart';
+import '../../data/calls.dart';
 import '../settings/wallpaper_screen.dart';
 
 class ChatInfoScreen extends StatelessWidget {
@@ -21,7 +22,13 @@ class ChatInfoScreen extends StatelessWidget {
     Widget action(IconData i, String l, String what) => Expanded(
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
-            onTap: () => showComingSoon(context, what),
+            onTap: () {
+              if (chat.peerId != null && (what == 'Audio call' || what == 'Video call')) {
+                CallService.instance.start(chat, video: what == 'Video call');
+              } else {
+                showComingSoon(context, what);
+              }
+            },
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 4),
               padding: const EdgeInsets.symmetric(vertical: 12),

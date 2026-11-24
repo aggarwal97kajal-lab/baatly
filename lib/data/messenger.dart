@@ -16,6 +16,7 @@ import 'media.dart';
 import 'models.dart';
 import 'push.dart';
 import 'notifier.dart';
+import 'calls.dart';
 import 'status_service.dart';
 
 /// Someone we chat with: their public key is cached so we can encrypt.
@@ -85,6 +86,7 @@ class Messenger {
     unawaited(Push.instance.start());
     unawaited(StatusService.instance.refresh());
     unawaited(_pullPrivacy());
+    unawaited(CallService.instance.loadLog());
     // Keeps "My contacts" privacy and contact names up to date.
     unawaited(ContactBook.instance.load().then((_) {}, onError: (_) {}));
     unawaited(_refreshPeers());
@@ -198,6 +200,7 @@ class Messenger {
   }
 
   void pause() {
+    if (CallService.instance.current != null) return; // keep signalling alive during a call
     _paused = true;
     _closeSocket();
     _retry?.cancel();
@@ -368,6 +371,9 @@ class Messenger {
         ok = false;
       case 'group':
         ok = await _onGroupEvent(ev);
+      case 'call':
+        CallService.instance.onEvent(ev);
+        ok = false;
       case 'profile':
         unawaited(_onProfile(ev['user'] as String));
         ok = false;

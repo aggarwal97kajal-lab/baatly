@@ -215,7 +215,31 @@ class CallLog {
   final CallKind kind;
   final bool video;
   final String when;
-  CallLog(this.name, this.initials, this.colorIndex, this.kind, this.video, this.when);
+  /// Real calls: who, so you can call back.
+  final String? peerId;
+  final DateTime? at;
+  CallLog(this.name, this.initials, this.colorIndex, this.kind, this.video, this.when, {this.peerId, this.at});
+
+  Map<String, dynamic> toJson() => {
+        'n': name,
+        'i': initials,
+        'c': colorIndex,
+        'k': kind.index,
+        'v': video,
+        'w': when,
+        if (peerId != null) 'p': peerId,
+        if (at != null) 'a': at!.millisecondsSinceEpoch,
+      };
+  factory CallLog.fromJson(Map<String, dynamic> j) => CallLog(
+        j['n'] as String? ?? '',
+        j['i'] as String? ?? '#',
+        j['c'] as int? ?? 0,
+        CallKind.values[((j['k'] as int?) ?? 0).clamp(0, CallKind.values.length - 1)],
+        j['v'] == true,
+        j['w'] as String? ?? '',
+        peerId: j['p'] as String?,
+        at: j['a'] is int ? DateTime.fromMillisecondsSinceEpoch(j['a'] as int) : null,
+      );
 }
 
 /// One page of a status: either text on a colour, or a photo with caption.

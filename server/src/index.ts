@@ -26,6 +26,7 @@ import { pushConfigured } from './fcm';
 import { deleteUserStatuses, expireStatuses, statusRoute } from './status';
 import { expireMedia, mediaConfigured, mediaRoute } from './media';
 import { groupRoute } from './groups';
+import { callRoute } from './calls';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
 type Ctx = { req: Request; env: Env; url: URL };
@@ -431,6 +432,11 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'DELETE' && dk) return deviceKeyDelete(c, dk[1]);
   if (m === 'GET' && p === '/get') {
     return Response.redirect('https://github.com/aggarwal97kajal-lab/baatly/releases/latest/download/baatly.apk', 302);
+  }
+  if (/^\/v1\/calls(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await callRoute(c, user, m, p);
+    if (r) return r;
   }
   if (/^\/v1\/groups(\/|$)/.test(p)) {
     const { user } = await requireUser(c);

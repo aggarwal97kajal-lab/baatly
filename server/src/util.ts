@@ -10,7 +10,9 @@ export interface Env {
   MC_CUSTOMER_ID?: string;
   MC_PASSWORD?: string;
   DEMO_OTP?: string;
-  FCM_SERVICE_ACCOUNT?: string; // Firebase service-account JSON (secret) // "true" only while Message Central is not configured
+  FCM_SERVICE_ACCOUNT?: string;
+  TURN_KEY_ID?: string; // Cloudflare Realtime TURN (optional)
+  TURN_KEY_TOKEN?: string; // Firebase service-account JSON (secret) // "true" only while Message Central is not configured
 }
 
 export class HttpError extends Error {
