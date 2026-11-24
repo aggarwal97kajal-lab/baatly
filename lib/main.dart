@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 
 import 'data/api.dart';
 import 'data/app_state.dart';
+import 'data/notifier.dart';
+import 'config.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'screens/home/home_shell.dart';
 import 'screens/onboarding/splash_screen.dart';
 import 'theme/app_theme.dart';
@@ -12,8 +15,17 @@ Future<void> main() async {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarColor: Colors.transparent));
   await AppState.instance.load();
   await Api.instance.load();
+  if (kPushEnabled) {
+    FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
+    try {
+      await Notifier.instance.init();
+    } catch (_) {}
+  }
   runApp(BaatlyApp(skipOnboarding: AppState.instance.onboarded));
 }
+
+/// Lets a notification tap open a chat from anywhere.
+final navigatorKey = GlobalKey<NavigatorState>();
 
 class BaatlyApp extends StatelessWidget {
   /// Decided once at launch, so finishing onboarding doesn't swap the root route.
@@ -26,6 +38,7 @@ class BaatlyApp extends StatelessWidget {
     return ListenableBuilder(
       listenable: state,
       builder: (context, _) => MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'BAATLY',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),

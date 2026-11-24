@@ -5,6 +5,8 @@ import '../../data/api.dart';
 import '../../data/app_state.dart';
 import '../../data/messenger.dart';
 import '../../data/status_service.dart';
+import '../../data/notifier.dart';
+import '../chat/chat_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'calls_tab.dart';
@@ -33,11 +35,23 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    Notifier.instance.onOpenChat = _openFromNotification;
     if (kHasBackend && Api.instance.loggedIn) {
-      Messenger.instance.start();
+      Messenger.instance.start().then((_) {
+        final p = Notifier.instance.pendingChat;
+        if (p != null) _openFromNotification(p);
+      });
     } else {
       AppState.instance.startDemoActivity();
     }
+  }
+
+  void _openFromNotification(String id) {
+    Notifier.instance.pendingChat = null;
+    final chat = Messenger.instance.chatById(id);
+    if (chat == null || !mounted) return;
+    AppState.instance.openChat(chat);
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)));
   }
 
   @override

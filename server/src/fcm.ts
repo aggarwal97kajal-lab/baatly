@@ -54,7 +54,11 @@ async function accessToken(a: ServiceAccount): Promise<string> {
   return j.access_token;
 }
 
-/** Sends "New message from X" to every phone of `userId`. Removes dead tokens. */
+/**
+ * Wakes every phone of `userId` with a data-only push. The data carries the
+ * still-encrypted message, so the phone decrypts it and shows the text itself;
+ * Google and the server never see the plain text.
+ */
 export async function notify(env: Env, userId: string, title: string, body: string, data: Record<string, string>) {
   const a = sa(env);
   if (!a) return;
@@ -72,9 +76,8 @@ export async function notify(env: Env, userId: string, title: string, body: stri
       body: JSON.stringify({
         message: {
           token,
-          notification: { title, body },
-          data,
-          android: { priority: 'HIGH', collapse_key: data.chat ?? 'msg', notification: { tag: data.chat ?? 'msg', sound: 'default' } },
+          data: { ...data, title, preview: body },
+          android: { priority: 'HIGH', ttl: '2419200s' },
         },
       }),
     });

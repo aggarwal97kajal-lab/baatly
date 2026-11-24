@@ -15,6 +15,7 @@ import 'e2e.dart';
 import 'media.dart';
 import 'models.dart';
 import 'push.dart';
+import 'notifier.dart';
 import 'status_service.dart';
 
 /// Someone we chat with: their public key is cached so we can encrypt.
@@ -87,7 +88,7 @@ class Messenger {
     // Keeps "My contacts" privacy and contact names up to date.
     unawaited(ContactBook.instance.load().then((_) {}, onError: (_) {}));
     unawaited(_refreshPeers());
-    unawaited(loadGroups());
+    unawaited(loadGroups().then((_) => _mergeNotificationReplies()));
     _purge();
     _purgeTimer?.cancel();
     _purgeTimer = Timer.periodic(const Duration(seconds: 20), (_) => _purge());
@@ -128,6 +129,35 @@ class Messenger {
         await _peer(c.peerId!, refresh: true);
       } catch (_) {}
     }
+  }
+
+  /// Replies sent from a notification while the app was closed.
+  Future<void> _mergeNotificationReplies() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.reload();
+      final out = p.getStringList('notif_outbox') ?? [];
+      if (out.isEmpty) return;
+      for (final e in out) {
+        final j = jsonDecode(e) as Map<String, dynamic>;
+        final target = j['chat'] as String;
+        Chat? chat;
+        for (final c in _s.chats) {
+          if (c.peerId == target || c.groupId == target) chat = c;
+        }
+        if (chat == null || chat.messages.any((m) => m.id == j['id'])) continue;
+        chat.messages.add(Message(
+          id: j['id'] as String,
+          text: j['t'] as String,
+          fromMe: true,
+          time: DateTime.fromMillisecondsSinceEpoch(j['ts'] as int),
+          status: MsgStatus.sent,
+        ));
+        chat.messages.sort((a, b) => a.time.compareTo(b.time));
+      }
+      await p.remove('notif_outbox');
+      _s.changed();
+    } catch (_) {}
   }
 
   /// Disappearing messages: drop expired ones from this phone.
@@ -174,7 +204,16 @@ class Messenger {
     unawaited(_saveNow());
   }
 
+  /// Chat for a notification's chat id (peer id or group id).
+  Chat? chatById(String id) {
+    for (final c in _s.chats) {
+      if (c.peerId == id || c.groupId == id) return c;
+    }
+    return null;
+  }
+
   void resume() {
+    unawaited(_mergeNotificationReplies());
     if (_uid == null) {
       unawaited(start());
       return;
@@ -1091,6 +1130,7 @@ class Messenger {
   // ------------------------------------------------------------------ open chat
   void openChat(Chat chat) {
     if (!chat.isReal) return;
+    unawaited(Notifier.instance.clear(chat.groupId ?? chat.peerId!));
     chat.unread = 0;
     markRead(chat);
     if (chat.groupId != null) {

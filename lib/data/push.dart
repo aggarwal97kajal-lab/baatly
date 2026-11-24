@@ -3,6 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 import '../config.dart';
 import 'api.dart';
+import 'notifier.dart';
 
 /// Push notifications (Firebase Cloud Messaging).
 ///
@@ -23,6 +24,7 @@ class Push {
         await Firebase.initializeApp();
         _ready = true;
         FirebaseMessaging.instance.onTokenRefresh.listen(_upload);
+        await Notifier.instance.init();
       }
       final fm = FirebaseMessaging.instance;
       await fm.requestPermission(alert: true, badge: true, sound: true);

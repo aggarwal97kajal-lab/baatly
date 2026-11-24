@@ -21,6 +21,7 @@ dependencies:
   open_filex: ^4.5.0
   emoji_picker_flutter: ^4.3.0
   geolocator: ">=13.0.0 <15.0.0"
+  flutter_local_notifications: ">=18.0.0 <20.0.0"
   local_auth: ^2.3.0
   cryptography: ^2.7.0
   path_provider: ^2.1.5

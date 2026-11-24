@@ -189,7 +189,15 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     const ev = await deliver(env, to, { type: 'msg', from: me.id, msgId, body });
     if (!b.silent && ev.live === 0 && pushConfigured(env)) {
       try {
-        await notify(env, to, me.name || me.phone, 'New message', { type: 'msg', chat: me.id });
+        await notify(env, to, me.name || me.phone, 'New message', {
+          type: 'msg',
+          chat: me.id,
+          from: me.id,
+          msgId,
+          phone: me.phone,
+          // FCM data is limited to 4 KB; big ones (photos with previews) just say "New message".
+          body: body.length < 3000 ? body : '',
+        });
       } catch (e) {
         console.error('notify failed', e);
       }

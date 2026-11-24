@@ -168,7 +168,16 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
           at = ev.at as number;
           if (!b.silent && ev.live === 0 && pushConfigured(env)) {
             try {
-              await notify(env, u, name, `${me.name || me.phone}: New message`, { type: 'msg', chat: gid });
+              await notify(env, u, name, `${me.name || me.phone}: New message`, {
+                type: 'msg',
+                chat: gid,
+                group: gid,
+                from: me.id,
+                msgId,
+                phone: me.phone,
+                sender: me.name || me.phone,
+                body: body.length < 3000 ? body : '',
+              });
             } catch {}
           }
         }),
