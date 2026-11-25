@@ -50,6 +50,8 @@ jobs:
           grep -n "READ_CONTACTS\|scheme=\"sms\"" android/app/src/main/AndroidManifest.xml
           # Status photo crop & rotate (image_cropper / uCrop)
           sed -i 's|</application>|    <activity android:name="com.yalantis.ucrop.UCropActivity" android:screenOrientation="portrait" android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>\n    </application>|' android/app/src/main/AndroidManifest.xml
+          # Sticker background remover: fetch the on-device model at install time.
+          sed -i 's|</application>|    <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="subject_segment"/>\n    </application>|' android/app/src/main/AndroidManifest.xml
           grep -n "UCropActivity" android/app/src/main/AndroidManifest.xml
           cp -r android_overrides/res/. android/app/src/main/res/
           # Passkeys (Credential Manager) need Android 9+.

@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:google_mlkit_subject_segmentation/google_mlkit_subject_segmentation.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Sticker files kept on this phone: the built-in BAATLY pack (drawn once on
@@ -50,32 +52,19 @@ class StickerStore extends ChangeNotifier {
   }
 
   static const _pack = [
-    ('😂', 'HAHA', 0xFFF4A261),
-    ('🙏', 'THANK YOU', 0xFF2A9D8F),
-    ('☀️', 'GOOD MORNING', 0xFFE9C46A),
-    ('🌙', 'GOOD NIGHT', 0xFF3D5A80),
-    ('❤️', 'LOVE YOU', 0xFFE63946),
-    ('🥺', 'MISS YOU', 0xFF9D4EDD),
-    ('🎉', 'CONGRATS!', 0xFFF77F00),
-    ('🎂', 'HAPPY BIRTHDAY', 0xFFEF476F),
-    ('👍', 'OK DONE', 0xFF06A77D),
-    ('🤔', 'HMM...', 0xFF6C757D),
-    ('😴', 'SLEEPY', 0xFF457B9D),
-    ('🔥', 'AWESOME', 0xFFD62828),
-    ('😎', 'COOL', 0xFF118AB2),
-    ('🤗', 'HUGS', 0xFFC8553D),
-    ('😡', 'ANGRY', 0xFFB5179E),
-    ('👋', 'BYE BYE', 0xFF2E7D8C),
+    '😂', '🤣', '😍', '🥰', '😘', '😎', '🤗', '🙏', '👍', '👌', '👏', '🙌',
+    '❤️', '💔', '🔥', '🎉', '🎂', '🌹', '☕', '😴', '🤔', '🙄', '😢', '😭',
+    '😡', '🥺', '😱', '🤯', '🥳', '😇', '🤝', '👋',
   ];
 
   Future<List<String>> _ensureBuiltIn() async {
-    final d = await _dir('baatly_v1');
+    final d = await _dir('baatly_v2');
     final out = <String>[];
     for (var i = 0; i < _pack.length; i++) {
       final f = File('${d.path}/s$i.png');
       if (!f.existsSync() || f.lengthSync() == 0) {
         try {
-          await f.writeAsBytes(await _draw(_pack[i].$1, _pack[i].$2, Color(_pack[i].$3)));
+          await f.writeAsBytes(await _draw(_pack[i]));
         } catch (_) {
           continue;
         }
@@ -85,34 +74,90 @@ class StickerStore extends ChangeNotifier {
     return out;
   }
 
-  /// Draws one 512×512 transparent PNG sticker: big emoji, label on a pill,
-  /// white outline — the classic sticker look.
-  static Future<List<int>> _draw(String emoji, String label, Color color) async {
+  /// Draws one 512×512 transparent PNG sticker: a big emoji with a white
+  /// die-cut outline, the classic sticker look. No text.
+  static Future<List<int>> _draw(String emoji) async {
     const size = 512.0;
     final rec = ui.PictureRecorder();
     final c = Canvas(rec, const Rect.fromLTWH(0, 0, size, size));
-
-    final emojiP = TextPainter(
-      text: TextSpan(text: emoji, style: const TextStyle(fontSize: 250)),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    emojiP.paint(c, Offset((size - emojiP.width) / 2, 20));
-
-    final textStyle = TextStyle(fontSize: label.length > 10 ? 46 : 58, fontWeight: FontWeight.w900, letterSpacing: 1.5);
-    final tp = TextPainter(
-      text: TextSpan(text: label, style: textStyle.copyWith(color: Colors.white)),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout(maxWidth: size - 40);
-    final w = tp.width + 56, h = tp.height + 26;
-    final r = RRect.fromRectAndRadius(Rect.fromLTWH((size - w) / 2, size - h - 26, w, h), Radius.circular(h / 2));
-    c.drawRRect(r.inflate(8), Paint()..color = Colors.white);
-    c.drawRRect(r, Paint()..color = color);
-    tp.paint(c, Offset((size - tp.width) / 2, size - h - 26 + 13));
-
+    TextPainter p(Paint? fg) => TextPainter(
+          text: TextSpan(text: emoji, style: TextStyle(fontSize: 330, foreground: fg)),
+          textDirection: TextDirection.ltr,
+        )..layout();
+    final white = p(Paint()..colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcIn));
+    final normal = p(null);
+    final o = Offset((size - normal.width) / 2, (size - normal.height) / 2);
+    c.saveLayer(null, Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: 1, sigmaY: 1));
+    for (var a = 0; a < 16; a++) {
+      final r = a * 3.14159 * 2 / 16;
+      white.paint(c, o + Offset(14 * _cos(r), 14 * _sin(r)));
+    }
+    c.restore();
+    normal.paint(c, o);
     final img = await rec.endRecording().toImage(size.toInt(), size.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     return bytes!.buffer.asUint8List();
+  }
+
+  static double _sin(double x) => math.sin(x);
+  static double _cos(double x) => math.cos(x);
+
+  /// Cuts the person/object out of a photo (on the phone, nothing uploaded),
+  /// trims it, adds a white outline and returns a 512×512 PNG file path.
+  /// Returns null when no clear subject is found.
+  static Future<String?> cutOut(String src) async {
+    final seg = SubjectSegmenter(
+      options: SubjectSegmenterOptions(
+        enableForegroundBitmap: true,
+        enableForegroundConfidenceMask: false,
+        enableMultipleSubjects: SubjectResultOptions(enableConfidenceMask: false, enableSubjectBitmap: false),
+      ),
+    );
+    try {
+      final r = await seg.processImage(InputImage.fromFilePath(src));
+      final png = r.foregroundBitmap;
+      if (png == null || png.isEmpty) return null;
+      final codec = await ui.instantiateImageCodec(png);
+      final fg = (await codec.getNextFrame()).image;
+      // Find the visible area so the sticker isn't mostly empty space.
+      final px = (await fg.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+      var minX = fg.width, minY = fg.height, maxX = -1, maxY = -1;
+      for (var y = 0; y < fg.height; y += 2) {
+        for (var x = 0; x < fg.width; x += 2) {
+          if (px.getUint8((y * fg.width + x) * 4 + 3) > 40) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX < 0 || (maxX - minX) < 20 || (maxY - minY) < 20) return null;
+      const size = 512.0, pad = 26.0;
+      final box = Rect.fromLTRB(minX.toDouble(), minY.toDouble(), maxX + 1.0, maxY + 1.0);
+      final scale = (size - pad * 2) / (box.width > box.height ? box.width : box.height);
+      final w = box.width * scale, h = box.height * scale;
+      final dst = Rect.fromLTWH((size - w) / 2, (size - h) / 2, w, h);
+      final rec = ui.PictureRecorder();
+      final c = Canvas(rec, const Rect.fromLTWH(0, 0, size, size));
+      final outline = Paint()
+        ..colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcIn)
+        ..filterQuality = FilterQuality.medium;
+      for (var a = 0; a < 16; a++) {
+        final r = a * 3.14159 * 2 / 16;
+        c.drawImageRect(fg, box, dst.shift(Offset(9 * _cos(r), 9 * _sin(r))), outline);
+      }
+      c.drawImageRect(fg, box, dst, Paint()..filterQuality = FilterQuality.high);
+      final out = await rec.endRecording().toImage(size.toInt(), size.toInt());
+      final bytes = await out.toByteData(format: ui.ImageByteFormat.png);
+      final f = File('${Directory.systemTemp.path}/cut_${DateTime.now().millisecondsSinceEpoch}.png');
+      await f.writeAsBytes(bytes!.buffer.asUint8List());
+      return f.path;
+    } catch (_) {
+      return null;
+    } finally {
+      await seg.close();
+    }
   }
 }
 

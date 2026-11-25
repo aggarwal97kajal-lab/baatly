@@ -58,6 +58,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _recPath;
   bool _emoji = false;
   int _panel = 0; // 0 emoji, 1 stickers, 2 GIF
+  bool _emojiSearch = false;
   final _focus = FocusNode();
 
   Chat get chat => widget.chat;
@@ -133,12 +134,32 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _createSticker() async {
     XFile? f;
     try {
-      f = await ImagePicker().pickImage(source: ImageSource.gallery);
+      f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, maxHeight: 1600);
     } catch (_) {
       _toast('Photos permission needed');
       return;
     }
-    if (f == null) return;
+    if (f == null || !mounted) return;
+    // Like WhatsApp: cut the subject out of the photo automatically.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(children: [
+          SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+          SizedBox(width: 16),
+          Expanded(child: Text('Removing background…')),
+        ]),
+      ),
+    );
+    final cut = await StickerStore.cutOut(f.path);
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    if (cut != null) {
+      await StickerStore.instance.add(cut);
+      _toast('Added to your stickers');
+      return;
+    }
+    _toast("Couldn't find a clear subject. Crop the photo instead.");
     CroppedFile? c;
     try {
       c = await ImageCropper().cropImage(
@@ -899,49 +920,97 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           if (_emoji && !_recording && !chat.left)
             SizedBox(
-              height: 330,
+              height: 340,
               child: Column(children: [
+                // WhatsApp-style top bar: search · [emoji | GIF | sticker] · backspace
+                Container(
+                  color: bc.surface,
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+                  child: Row(children: [
+                    SizedBox(
+                      width: 48,
+                      child: _panel == 0
+                          ? IconButton(
+                              onPressed: () => setState(() => _emojiSearch = !_emojiSearch),
+                              icon: Icon(_emojiSearch ? Icons.close_rounded : Icons.search_rounded, color: bc.muted),
+                            )
+                          : null,
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: Container(
+                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), border: Border.all(color: bc.line)),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            for (final (i, icon) in const [(0, Icons.emoji_emotions_outlined), (2, Icons.gif_box_outlined), (1, Icons.sticky_note_2_outlined)])
+                              InkWell(
+                                borderRadius: BorderRadius.circular(22),
+                                onTap: () => setState(() {
+                                  _panel = i;
+                                  _emojiSearch = false;
+                                }),
+                                child: AnimatedContainer(
+                                  duration: Mitti.fast,
+                                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: _panel == i ? context.primary.withOpacity(0.18) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(22),
+                                  ),
+                                  child: Icon(icon, size: 24, color: _panel == i ? context.primary : bc.muted),
+                                ),
+                              ),
+                          ]),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: _panel == 0
+                          ? IconButton(
+                              onPressed: () {
+                                final t = _ctrl.text;
+                                if (t.isEmpty) return;
+                                _ctrl.text = t.characters.skipLast(1).toString();
+                                setState(() {});
+                              },
+                              icon: Icon(Icons.backspace_outlined, color: bc.muted),
+                            )
+                          : null,
+                    ),
+                  ]),
+                ),
                 Expanded(
                   child: _panel == 0
-                      ? EmojiPicker(
-              textEditingController: _ctrl,
-              onEmojiSelected: (_, __) => setState(() {}),
-              config: Config(
-                height: 280,
-                emojiViewConfig: EmojiViewConfig(backgroundColor: bc.bg, columns: 8, emojiSizeMax: 28),
-                categoryViewConfig: CategoryViewConfig(
-                  backgroundColor: bc.surface,
-                  indicatorColor: context.primary,
-                  iconColor: bc.muted,
-                  iconColorSelected: context.primary,
-                  backspaceColor: context.primary,
-                  dividerColor: bc.line,
-                ),
-                bottomActionBarConfig: BottomActionBarConfig(backgroundColor: bc.surface, buttonColor: bc.surface, buttonIconColor: bc.muted),
-                searchViewConfig: SearchViewConfig(backgroundColor: bc.surface, buttonIconColor: bc.muted),
-              ),
-            )
+                      ? (_emojiSearch
+                          ? _EmojiSearch(onPick: (e) {
+                              _ctrl.text = _ctrl.text + e;
+                              setState(() {});
+                            })
+                          : EmojiPicker(
+                              textEditingController: _ctrl,
+                              onEmojiSelected: (_, __) => setState(() {}),
+                              config: Config(
+                                height: 290,
+                                viewOrderConfig: const ViewOrderConfig(
+                                  top: EmojiPickerItem.searchBar,
+                                  middle: EmojiPickerItem.emojiView,
+                                  bottom: EmojiPickerItem.categoryBar,
+                                ),
+                                emojiViewConfig: EmojiViewConfig(backgroundColor: bc.bg, columns: 8, emojiSizeMax: 28),
+                                categoryViewConfig: CategoryViewConfig(
+                                  backgroundColor: bc.surface,
+                                  indicatorColor: context.primary,
+                                  iconColor: bc.muted,
+                                  iconColorSelected: context.primary,
+                                  backspaceColor: context.primary,
+                                  dividerColor: bc.line,
+                                ),
+                                bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
+                                searchViewConfig: SearchViewConfig(backgroundColor: bc.surface, buttonIconColor: bc.muted),
+                              ),
+                            ))
                       : _panel == 1
                           ? _StickerPanel(onSend: _sendSticker, onCreate: _createSticker)
                           : GifPanel(onSend: _sendKlipy, onPickFromPhone: _pickGif),
-                ),
-                Container(
-                  color: bc.surface,
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    for (final (i, label) in const [(0, 'Emoji'), (1, 'Stickers'), (2, 'GIF')])
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: ChoiceChip(
-                          label: Text(label),
-                          selected: _panel == i,
-                          showCheckmark: false,
-                          selectedColor: context.primary.withOpacity(0.18),
-                          labelStyle: TextStyle(color: _panel == i ? context.primary : bc.muted, fontWeight: FontWeight.w600),
-                          onSelected: (_) => setState(() => _panel = i),
-                        ),
-                      ),
-                  ]),
                 ),
               ]),
             ),
@@ -1252,6 +1321,65 @@ class _Composer extends StatelessWidget {
   }
 }
 
+
+/// Type a word ("love", "laugh") to find emoji.
+class _EmojiSearch extends StatefulWidget {
+  final void Function(String emoji) onPick;
+  const _EmojiSearch({required this.onPick});
+  @override
+  State<_EmojiSearch> createState() => _EmojiSearchState();
+}
+
+class _EmojiSearchState extends State<_EmojiSearch> {
+  final _utils = EmojiPickerUtils();
+  List<Emoji> _found = [];
+
+  Future<void> _search(String q) async {
+    if (q.trim().isEmpty) {
+      setState(() => _found = []);
+      return;
+    }
+    final r = await _utils.searchEmoji(q.trim(), defaultEmojiSet);
+    if (mounted) setState(() => _found = r);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return ColoredBox(
+      color: bc.bg,
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+          child: TextField(
+            autofocus: true,
+            onChanged: _search,
+            style: TextStyle(color: bc.text),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: bc.raised,
+              prefixIcon: Icon(Icons.search_rounded, color: bc.muted, size: 20),
+              hintText: 'Search emoji',
+              hintStyle: TextStyle(color: bc.muted),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+            ),
+          ),
+        ),
+        Expanded(
+          child: GridView.count(
+            crossAxisCount: 8,
+            padding: const EdgeInsets.all(6),
+            children: [
+              for (final e in _found)
+                InkWell(onTap: () => widget.onPick(e.emoji), child: Center(child: Text(e.emoji, style: const TextStyle(fontSize: 26)))),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+}
 
 /// Built-in BAATLY pack + "My stickers" (make one from a photo).
 class _StickerPanel extends StatefulWidget {
