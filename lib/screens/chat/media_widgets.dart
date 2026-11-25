@@ -446,10 +446,11 @@ class VideoContent extends StatelessWidget {
         if (context.mounted) Navigator.of(context).push(MaterialPageRoute(builder: (_) => VideoPlayerScreen(path: p)));
       },
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        // Video notes are round, like WhatsApp.
+        borderRadius: BorderRadius.circular(md['note'] == true ? w : 12),
         child: Container(
-          width: w,
-          height: w * 9 / 16,
+          width: md['note'] == true ? w * 0.85 : w,
+          height: md['note'] == true ? w * 0.85 : w * 9 / 16,
           decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF2B2B2B), Color(0xFF111111)])),
           child: Stack(children: [
             if (md['thumb'] is String)

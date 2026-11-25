@@ -27,6 +27,7 @@ import 'location.dart';
 import 'gif_panel.dart';
 import 'links.dart';
 import 'photo_screen.dart';
+import 'camera_screen.dart';
 import 'safety_screens.dart';
 import '../../data/calls.dart';
 import '../../data/group_calls.dart';
@@ -240,6 +241,24 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     if (f == null) return;
+    await _sendVideoPath(f.path, f.name);
+  }
+
+  Future<void> _openCamera() async {
+    final shots = await CameraScreen.open(context, chat.name);
+    if (shots == null) return;
+    for (final s in shots) {
+      if (s.video) {
+        await _sendVideoPath(s.path, 'video.mp4', note: s.note);
+      } else {
+        final kept = await _keep(s.path, s.path.toLowerCase().endsWith('.png') ? 'photo.png' : 'photo.jpg');
+        _sendMedia(kept, MsgKind.image, caption: s.caption, name: 'photo.jpg', once: s.once);
+      }
+    }
+  }
+
+  Future<void> _sendVideoPath(String path, String pickedName, {bool note = false}) async {
+    final f = XFile(path, name: pickedName);
     final size = await File(f.path).length();
     if (size > 500 * 1024 * 1024) {
       _toast('This video is too large');
@@ -279,7 +298,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final name = f.name.isEmpty ? 'video.mp4' : f.name;
     final kept = await _keep(src, name.toLowerCase().endsWith('.mp4') ? name : '$name.mp4');
     if (chat.isReal) {
-      Messenger.instance.sendMedia(chat, path: kept, kind: MsgKind.video, name: name, seconds: secs, extra: {if (thumb != null) 'thumb': thumb});
+      Messenger.instance.sendMedia(chat, path: kept, kind: MsgKind.video, name: name, seconds: secs, extra: {if (thumb != null) 'thumb': thumb, if (note) 'note': true});
     } else {
       _sendMedia(kept, MsgKind.video, name: name, seconds: secs);
     }
@@ -407,7 +426,7 @@ class _ChatScreenState extends State<ChatScreen> {
             physics: const NeverScrollableScrollPhysics(),
             children: [
               item(Icons.photo_library_rounded, 'Gallery', const Color(0xFF2E7D8C), () => _pickImage(ImageSource.gallery)),
-              item(Icons.photo_camera_rounded, 'Camera', const Color(0xFFC8553D), () => _pickImage(ImageSource.camera)),
+              item(Icons.photo_camera_rounded, 'Camera', const Color(0xFFC8553D), _openCamera),
               item(Icons.location_on_rounded, 'Location', const Color(0xFF2E7D5B), () async {
                 final md = await Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(builder: (_) => const SendLocationScreen()));
                 if (md == null) return;
@@ -932,7 +951,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onUp: () => _micUp(),
               onCancel: () => _micUp(cancelled: true),
             ),
-            onCamera: () => _pickImage(ImageSource.camera),
+            onCamera: _openCamera,
             focus: _focus,
             emojiOpen: _emoji,
             onEmoji: () {
