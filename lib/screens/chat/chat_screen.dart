@@ -57,8 +57,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Chat get chat => widget.chat;
 
-  void _toast(String t) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
+  void _toast(String t, {Duration duration = const Duration(seconds: 3)}) {
+    if (!mounted) return;
+    final m = ScaffoldMessenger.of(context);
+    m.hideCurrentSnackBar(); // never queue up behind an old one
+    m.showSnackBar(SnackBar(content: Text(t), duration: duration));
   }
 
   void _sendMedia(String path, MsgKind kind, {String caption = '', String? name, int seconds = 0, bool once = false}) {
@@ -343,7 +346,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _stopRecording(send: false);
     } else if (_recElapsed.inMilliseconds < 700) {
       _stopRecording(send: false);
-      _toast('Hold to record, release to send');
+      _toast('Hold to record, release to send', duration: const Duration(milliseconds: 1200));
     } else {
       _stopRecording(send: true);
     }
