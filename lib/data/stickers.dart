@@ -165,8 +165,16 @@ class StickerStore extends ChangeNotifier {
 bool isBigEmoji(String t) {
   final s = t.trim();
   if (s.isEmpty || s.length > 40) return false;
-  if (!RegExp(r'^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|‍|️|⃣)+$', unicode: true).hasMatch(s)) {
-    return false;
+  for (final r in s.runes) {
+    final ok = (r >= 0x1F000 && r <= 0x1FAFF) ||
+        (r >= 0x2600 && r <= 0x27BF) ||
+        (r >= 0x2300 && r <= 0x23FF) ||
+        (r >= 0x2B00 && r <= 0x2BFF) ||
+        (r >= 0x2190 && r <= 0x21FF) ||
+        (r >= 0x25A0 && r <= 0x25FF) ||
+        (r >= 0xE0020 && r <= 0xE007F) ||
+        const {0x200D, 0xFE0F, 0x20E3, 0x3030, 0x303D, 0x3297, 0x3299, 0x00A9, 0x00AE, 0x2122, 0x2139, 0x2934, 0x2935}.contains(r);
+    if (!ok) return false;
   }
   return s.characters.length <= 3;
 }
