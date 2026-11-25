@@ -571,6 +571,16 @@ class Messenger {
     } catch (_) {}
   }
 
+  /// Chat with any BAATLY user by id (call links, shared contacts).
+  Future<Chat?> chatForUser(String id) async {
+    try {
+      final p = await _peer(id);
+      return chatWithUser(p.id, p.name, p.phone, p.key);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Profile photo of a user, if we have it.
   String? photoOf(String id) => _peers[id]?.photo;
 

@@ -9,6 +9,11 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../../data/media.dart';
+import '../../data/messenger.dart';
+import '../../data/models.dart';
+import 'chat_tools.dart';
+
 /// What the camera hands back to the chat.
 class CameraShot {
   final String path;
@@ -243,10 +248,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: Stack(children: [
+        // fit: expand — the Stack must fill the screen, or the controls end up at the top.
+        body: Stack(fit: StackFit.expand, children: [
           Positioned.fill(child: preview),
           // Top bar
-          SafeArea(
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: Row(children: [
@@ -268,6 +278,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
               ]),
             ),
+          ),
           ),
           // Bottom: recent strip, controls, modes
           Positioned(
@@ -544,4 +555,33 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       ),
     );
   }
+}
+
+/// Home screen camera button: take a photo / video, then pick who gets it.
+Future<void> cameraToChats(BuildContext context) async {
+  final shots = await CameraScreen.open(context, 'Send to…');
+  if (shots == null || shots.isEmpty || !context.mounted) return;
+  // Keep the files in BAATLY's media folder (camera files are temporary).
+  final dir = await MediaFiles.dir();
+  final kept = <String>[];
+  for (final s in shots) {
+    final ext = s.path.split('.').last;
+    final dest = '${dir.path}/${DateTime.now().microsecondsSinceEpoch}.$ext';
+    await File(s.path).copy(dest);
+    kept.add(dest);
+  }
+  if (!context.mounted) return;
+  await pickChatsAndSend(context, (c) {
+    for (final (i, s) in shots.indexed) {
+      Messenger.instance.sendMedia(
+        c,
+        path: kept[i],
+        kind: s.video ? MsgKind.video : MsgKind.image,
+        caption: s.caption,
+        name: s.video ? 'video.mp4' : 'photo.jpg',
+        once: s.once,
+        extra: {if (s.note) 'note': true},
+      );
+    }
+  });
 }

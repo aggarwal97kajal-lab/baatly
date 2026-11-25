@@ -16,6 +16,7 @@ import '../../data/contacts.dart';
 import '../settings/privacy_screen.dart';
 import '../../data/messenger.dart';
 import '../../data/calls.dart';
+import '../../data/group_calls.dart';
 import '../settings/wallpaper_screen.dart';
 
 class ChatInfoScreen extends StatelessWidget {
@@ -32,6 +33,8 @@ class ChatInfoScreen extends StatelessWidget {
             onTap: () {
               if (chat.peerId != null && (what == 'Audio call' || what == 'Video call')) {
                 CallService.instance.start(chat, video: what == 'Video call');
+              } else if (chat.isRealGroup && (what == 'Audio call' || what == 'Video call')) {
+                GroupCallService.instance.start(chat, video: what == 'Video call');
               } else {
                 showComingSoon(context, what);
               }

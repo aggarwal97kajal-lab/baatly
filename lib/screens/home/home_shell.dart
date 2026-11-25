@@ -5,6 +5,7 @@ import '../../widgets/haptics.dart';
 import '../../config.dart';
 import '../../data/api.dart';
 import '../../data/backup.dart';
+import 'package:app_links/app_links.dart';
 import '../../data/app_state.dart';
 import '../../data/messenger.dart';
 import '../../data/status_service.dart';
@@ -48,6 +49,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       Messenger.instance.start().then((_) async {
         await BackupService.instance.load();
         unawaited(BackupService.instance.maybeAuto());
+        _listenLinks();
         final p = Notifier.instance.pendingChat;
         if (p != null) _openFromNotification(p);
         final call = Notifier.instance.pendingCall;
@@ -72,6 +74,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _links?.cancel();
     _pages.dispose();
     super.dispose();
   }
@@ -93,6 +96,30 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     (Icons.groups_outlined, Icons.groups_rounded, 'Community'),
     (Icons.person_outline_rounded, Icons.person_rounded, 'You'),
   ];
+
+  StreamSubscription<Uri>? _links;
+  String? _lastLink;
+
+  /// Call links: baatly://call/<user id>?v=1 → call that person.
+  void _listenLinks() {
+    _links ??= AppLinks().uriLinkStream.listen((u) async {
+      if (u.scheme != 'baatly' || u.host != 'call' || u.pathSegments.isEmpty) return;
+      final key = u.toString();
+      if (key == _lastLink) return;
+      _lastLink = key;
+      final id = u.pathSegments.first;
+      if (id == Messenger.instance.myId) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This is your own call link')));
+        return;
+      }
+      final chat = await Messenger.instance.chatForUser(id);
+      if (chat == null) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't open this call link")));
+        return;
+      }
+      CallService.instance.start(chat, video: u.queryParameters['v'] == '1');
+    }, onError: (_) {});
+  }
 
   @override
   Widget build(BuildContext context) {

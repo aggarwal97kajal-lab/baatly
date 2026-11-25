@@ -81,7 +81,8 @@ class BackupService extends ChangeNotifier {
   // ------------------------------------------------------------------ Google account
   Future<void> _init() async {
     if (_inited) return;
-    await GoogleSignIn.instance.initialize();
+    // Web client id from google-services.json (public, not a secret).
+    await GoogleSignIn.instance.initialize(serverClientId: '69592152328-i817576ud5aqhbnnidsrhis5qqb4f813.apps.googleusercontent.com');
     _inited = true;
   }
 

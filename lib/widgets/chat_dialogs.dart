@@ -11,6 +11,7 @@ import '../theme/tokens.dart';
 import 'common.dart';
 import 'photo_viewer.dart';
 import '../data/calls.dart';
+import '../data/group_calls.dart';
 
 String muteLabel(Chat c) {
   if (!c.muted) return 'Off';
@@ -132,8 +133,9 @@ void showProfilePeek(BuildContext context, Chat chat) {
               tooltip: 'Audio call',
               icon: Icon(Icons.call_outlined, color: ctx.primary),
               onPressed: () {
-                if (chat.peerId == null) return showComingSoon(ctx, 'Audio call');
                 Navigator.pop(ctx);
+                if (chat.isRealGroup) return GroupCallService.instance.start(chat, video: false);
+                if (chat.peerId == null) return showComingSoon(context, 'Audio call');
                 CallService.instance.start(chat, video: false);
               },
             ),
@@ -141,8 +143,9 @@ void showProfilePeek(BuildContext context, Chat chat) {
               tooltip: 'Video call',
               icon: Icon(Icons.videocam_outlined, color: ctx.primary),
               onPressed: () {
-                if (chat.peerId == null) return showComingSoon(ctx, 'Video call');
                 Navigator.pop(ctx);
+                if (chat.isRealGroup) return GroupCallService.instance.start(chat, video: true);
+                if (chat.peerId == null) return showComingSoon(context, 'Video call');
                 CallService.instance.start(chat, video: true);
               },
             ),

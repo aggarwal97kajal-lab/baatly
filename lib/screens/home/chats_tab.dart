@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../data/app_state.dart';
+import '../chat/camera_screen.dart';
 import '../../data/media.dart';
 import '../../data/messenger.dart';
 import '../../data/models.dart';
@@ -33,7 +34,7 @@ class _ChatsTabState extends State<ChatsTab> {
         final lockedCount = s.chats.where((c) => c.locked).length;
         if (_filter == 1) list = list.where((c) => c.unread > 0).toList();
         if (_filter == 2) list = list.where((c) => c.isGroup).toList();
-        if (_filter == 3) list = list.where((c) => c.pinned).toList();
+        if (_filter == 3) list = list.where((c) => c.favourite).toList();
         if (_q.isNotEmpty) {
           final q = _q.toLowerCase();
           list = list.where((c) => c.name.toLowerCase().contains(q) || c.messages.any((m) => m.text.toLowerCase().contains(q))).toList();
@@ -69,7 +70,7 @@ class _ChatsTabState extends State<ChatsTab> {
                         style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: _showArchived ? 0 : 1.5, color: bc.text)),
                     const Spacer(),
                     IconButton(
-                      onPressed: () => showComingSoon(context, 'Camera'),
+                      onPressed: () => cameraToChats(context),
                       icon: Icon(Icons.photo_camera_outlined, color: bc.text),
                     ),
                   ]),
@@ -169,6 +170,14 @@ class _ChatRow extends StatelessWidget {
       showDragHandle: true,
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: Icon(chat.favourite ? Icons.favorite_rounded : Icons.favorite_border_rounded),
+            title: Text(chat.favourite ? 'Remove from favourites' : 'Add to favourites'),
+            onTap: () {
+              Navigator.pop(context);
+              s.toggle(() => chat.favourite = !chat.favourite);
+            },
+          ),
           ListTile(
             leading: Icon(chat.pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
             title: Text(chat.pinned ? 'Unpin' : 'Pin'),

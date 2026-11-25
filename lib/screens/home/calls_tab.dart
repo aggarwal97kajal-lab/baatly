@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../config.dart';
 
 import '../../data/app_state.dart';
 import '../../data/calls.dart';
@@ -17,6 +19,92 @@ class CallsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(listenable: AppState.instance, builder: (context, _) => _build(context));
+  }
+
+  Future<void> _action(BuildContext context, String what) async {
+    final s = AppState.instance;
+    final people = s.chats.where((c) => c.peerId != null && c.isReal).toList();
+    final groups = s.chats.where((c) => c.isRealGroup && !c.left).toList();
+    Widget sheet(String title, List<Chat> list, Widget Function(BuildContext, Chat) trailing, {String empty = 'No chats yet'}) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+            child: ListView(shrinkWrap: true, children: [
+              ListTile(title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17))),
+              if (list.isEmpty) Padding(padding: const EdgeInsets.all(20), child: Text(empty, textAlign: TextAlign.center)),
+              for (final c in list)
+                Builder(
+                  builder: (ctx) => ListTile(
+                    leading: Avatar(initials: c.initials, colorIndex: c.colorIndex, photo: c.photo, size: 42),
+                    title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: trailing(ctx, c),
+                  ),
+                ),
+            ]),
+          ),
+        );
+    Widget callButtons(BuildContext ctx, Chat c, {bool group = false}) => Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              group ? GroupCallService.instance.start(c, video: false) : CallService.instance.start(c, video: false);
+            },
+            icon: Icon(Icons.call_outlined, color: context.primary),
+          ),
+          IconButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              group ? GroupCallService.instance.start(c, video: true) : CallService.instance.start(c, video: true);
+            },
+            icon: Icon(Icons.videocam_outlined, color: context.primary),
+          ),
+        ]);
+    switch (what) {
+      case 'Call':
+        await showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => sheet('New call', people, (ctx, c) => callButtons(ctx, c), empty: 'Your BAATLY contacts will show here'),
+        );
+      case 'Group call':
+        await showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => sheet('Group call', groups, (ctx, c) => callButtons(ctx, c, group: true), empty: 'Make a group first, then call everyone in it'),
+        );
+      case 'Link':
+        final me = Messenger.instance.myId;
+        if (me == null) return;
+        final video = await showModalBottomSheet<bool>(
+          context: context,
+          builder: (sh) => SafeArea(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const ListTile(
+                title: Text('Create call link', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+                subtitle: Text('Anyone with BAATLY who opens the link will call you.'),
+              ),
+              ListTile(leading: const Icon(Icons.call_outlined), title: const Text('Voice call link'), onTap: () => Navigator.pop(sh, false)),
+              ListTile(leading: const Icon(Icons.videocam_outlined), title: const Text('Video call link'), onTap: () => Navigator.pop(sh, true)),
+            ]),
+          ),
+        );
+        if (video == null) return;
+        final link = '$kApiBase/c/$me${video ? '?v=1' : ''}';
+        await SharePlus.instance.share(ShareParams(text: 'Join my BAATLY ${video ? 'video' : 'voice'} call: $link'));
+      case 'Favourite':
+        await showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => StatefulBuilder(
+            builder: (ctx, set) => sheet('Favourites', people, (c2, c) => Checkbox(
+                  value: c.favourite,
+                  onChanged: (v) {
+                    s.toggle(() => c.favourite = v == true);
+                    set(() {});
+                  },
+                ), empty: 'Your BAATLY contacts will show here'),
+          ),
+        );
+    }
   }
 
   String _when(CallLog c) {
@@ -51,7 +139,7 @@ class CallsTab extends StatelessWidget {
                 for (final a in [(Icons.call_rounded, 'Call'), (Icons.groups_rounded, 'Group call'), (Icons.link_rounded, 'Link'), (Icons.star_rounded, 'Favourite')])
                   InkWell(
                     borderRadius: BorderRadius.circular(30),
-                    onTap: () => showComingSoon(context, a.$2),
+                    onTap: () => _action(context, a.$2),
                     child: Padding(
                       padding: const EdgeInsets.all(4),
                       child: Column(children: [
@@ -64,6 +152,19 @@ class CallsTab extends StatelessWidget {
               ],
             ),
           ),
+          if (AppState.instance.chats.any((c) => c.favourite && c.peerId != null)) ...[
+            const SectionLabel('Favourites'),
+            for (final c in AppState.instance.chats.where((c) => c.favourite && c.peerId != null))
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 22),
+                leading: Avatar(initials: c.initials, colorIndex: c.colorIndex, photo: c.photo, size: 44),
+                title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(onPressed: () => CallService.instance.start(c, video: false), icon: Icon(Icons.call_outlined, color: context.primary)),
+                  IconButton(onPressed: () => CallService.instance.start(c, video: true), icon: Icon(Icons.videocam_outlined, color: context.primary)),
+                ]),
+              ),
+          ],
           const SectionLabel('Recent'),
           for (final c in calls)
             ListTile(

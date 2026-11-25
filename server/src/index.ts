@@ -436,6 +436,20 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'POST' && p === '/v1/auth/device/verify') return deviceKeyVerify(c);
   const dk = p.match(/^\/v1\/me\/device-keys\/([\w-]+)$/);
   if (m === 'DELETE' && dk) return deviceKeyDelete(c, dk[1]);
+  // Call link: opens BAATLY and calls the person who shared it.
+  const cl = p.match(/^\/c\/([\w-]{6,64})$/);
+  if (m === 'GET' && cl) {
+    const v = c.url.searchParams.get('v') === '1' ? '1' : '0';
+    const deep = `baatly://call/${cl[1]}?v=${v}`;
+    const intent = `intent://call/${cl[1]}?v=${v}#Intent;scheme=baatly;package=app.baatly.baatly;S.browser_fallback_url=${encodeURIComponent('https://baatly-api.pitaragames.workers.dev/get')};end`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join BAATLY ${v === '1' ? 'video' : 'voice'} call</title>
+<style>body{margin:0;font-family:system-ui,sans-serif;background:#181210;color:#f3e9e4;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center}
+.b{display:inline-block;margin:10px;padding:14px 28px;border-radius:28px;background:#e06a4e;color:#fff;text-decoration:none;font-weight:700}.l{color:#bda;}</style></head>
+<body><div><div style="font-size:54px">${v === '1' ? '🎥' : '📞'}</div><h2>Join ${v === '1' ? 'video' : 'voice'} call on BAATLY</h2>
+<a class="b" href="${intent}">Join call</a><p style="opacity:.7">Don't have BAATLY? <a class="l" href="/get">Download</a></p></div>
+<script>setTimeout(function(){location.href=${JSON.stringify(deep)}},300)</script></body></html>`;
+    return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  }
   if (m === 'GET' && p === '/get') {
     return Response.redirect('https://github.com/aggarwal97kajal-lab/baatly/releases/latest/download/baatly.apk', 302);
   }

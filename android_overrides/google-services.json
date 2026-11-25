@@ -12,7 +12,20 @@
           "package_name": "app.baatly.baatly"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "69592152328-fq54knjgccnmgkm67tdlsto65erf4aif.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "app.baatly.baatly",
+            "certificate_hash": "f8cda761cbc523a57acc4cc72cd28e2cc5152306"
+          }
+        },
+        {
+          "client_id": "69592152328-i817576ud5aqhbnnidsrhis5qqb4f813.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyABzXr53Gp8-4171bRpJrdUh-F10n5w8TQ"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "69592152328-i817576ud5aqhbnnidsrhis5qqb4f813.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

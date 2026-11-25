@@ -52,6 +52,8 @@ jobs:
           grep -n "READ_CONTACTS\|scheme=\"sms\"" android/app/src/main/AndroidManifest.xml
           # Status photo crop & rotate (image_cropper / uCrop)
           sed -i 's|</application>|    <activity android:name="com.yalantis.ucrop.UCropActivity" android:screenOrientation="portrait" android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>\n    </application>|' android/app/src/main/AndroidManifest.xml
+          # Call links (baatly://call/...) open the app; BAATLY handles them itself.
+          sed -i '0,/<\/activity>/s|<\/activity>|    <intent-filter>\n                <action android:name="android.intent.action.VIEW"/>\n                <category android:name="android.intent.category.DEFAULT"/>\n                <category android:name="android.intent.category.BROWSABLE"/>\n                <data android:scheme="baatly"/>\n            </intent-filter>\n            <meta-data android:name="flutter_deeplinking_enabled" android:value="false"/>\n        </activity>|' android/app/src/main/AndroidManifest.xml
           # Sticker background remover: fetch the on-device model at install time.
           sed -i 's|</application>|    <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="subject_segment"/>\n    </application>|' android/app/src/main/AndroidManifest.xml
           grep -n "UCropActivity" android/app/src/main/AndroidManifest.xml

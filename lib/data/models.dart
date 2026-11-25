@@ -123,6 +123,8 @@ class Chat {
   String? pinnedId;
   /// Hidden behind fingerprint in "Locked chats".
   bool locked = false;
+  /// In "Favourites" (chats filter + quick calls).
+  bool favourite = false;
   String? phone;
   /// Real chats only: "online" / "last seen …" from the server.
   String? presence;
@@ -183,6 +185,7 @@ class Chat {
         'ei': editInfo,
         'sm': sendMessages,
         if (pinnedId != null) 'pin': pinnedId,
+        if (favourite) 'fav': true,
         if (locked) 'lk': true,
         'pinned': pinned,
         'archived': archived,
@@ -219,6 +222,7 @@ class Chat {
     c.sendMessages = j['sm'] as String? ?? 'all';
     c.pinnedId = j['pin'] as String?;
     c.locked = j['lk'] == true;
+    c.favourite = j['fav'] == true;
     c.disappear = (j['dis'] as int?) ?? 0;
     final mute = j['mute'] as int?;
     if (mute != null) c.mutedUntil = DateTime.fromMillisecondsSinceEpoch(mute);
