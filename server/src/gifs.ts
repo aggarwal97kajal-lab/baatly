@@ -1,4 +1,4 @@
-// Deploy note: KLIPY_KEY comes from the GitHub secret of the same name.
+// Deploy note: KLIPY_KEY comes from the GitHub secret of the same name (redeploy: TURN keys).
 import { Env, HttpError, json } from './util';
 
 type Me = { id: string };
