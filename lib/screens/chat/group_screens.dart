@@ -16,12 +16,19 @@ import 'chat_tools.dart';
 import '../../widgets/photo_viewer.dart';
 
 /// New group: pick members, then name it.
-Future<void> startNewGroup(BuildContext context) async {
+Future<void> startNewGroup(BuildContext context, {Set<String> preselected = const {}}) async {
   final ids = await Navigator.of(context).push<Set<String>>(
-    MaterialPageRoute(builder: (_) => const ContactPickerScreen(title: 'Add members', initial: {})),
+    MaterialPageRoute(builder: (_) => ContactPickerScreen(title: 'Add members', initial: preselected)),
   );
   if (ids == null || ids.isEmpty || !context.mounted) return;
-  await Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => _GroupNameScreen(members: ids.toList())));
+  // From a profile there's nothing to replace; from "New chat" the picker page goes.
+  final nav = Navigator.of(context);
+  final route = MaterialPageRoute<void>(builder: (_) => _GroupNameScreen(members: ids.toList()));
+  if (preselected.isEmpty) {
+    await nav.pushReplacement(route);
+  } else {
+    await nav.push(route);
+  }
 }
 
 class _GroupNameScreen extends StatefulWidget {

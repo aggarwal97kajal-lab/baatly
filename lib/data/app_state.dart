@@ -314,9 +314,9 @@ class AppState extends ChangeNotifier {
 
   /// Sends a message locally and simulates delivery/read and a reply,
   /// so the UI flow can be felt before the real backend exists.
-  void send(Chat chat, String text) {
+  void send(Chat chat, String text, {Map<String, dynamic>? lp}) {
     if (chat.isReal) {
-      Messenger.instance.send(chat, text);
+      Messenger.instance.send(chat, text, lp: lp);
       return;
     }
     final m = Message(

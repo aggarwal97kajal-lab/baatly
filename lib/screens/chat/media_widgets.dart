@@ -41,14 +41,16 @@ class StickerContent extends StatelessWidget {
 class ImageContent extends StatelessWidget {
   final Message m;
   final Color fg;
-  const ImageContent({super.key, required this.m, required this.fg});
+  final VoidCallback? onOpen;
+  const ImageContent({super.key, required this.m, required this.fg, this.onOpen});
 
   @override
   Widget build(BuildContext context) {
     final md = m.media ?? {};
     final w = (md['w'] as int?) ?? 4, h = (md['h'] as int?) ?? 3;
-    final maxW = MediaQuery.of(context).size.width * 0.66;
-    final ratio = (w / h).clamp(0.55, 1.8);
+    // WhatsApp-like size: wide, and portrait photos stand tall.
+    final maxW = MediaQuery.of(context).size.width * 0.72;
+    final ratio = (w / h).clamp(0.62, 1.6);
     final path = m.mediaPath;
     final has = path != null && File(path).existsSync();
     Widget img;
@@ -62,7 +64,11 @@ class ImageContent extends StatelessWidget {
     return GestureDetector(
       onTap: () async {
         if (has) {
-          PhotoViewerScreen.open(context, path, 'Photo');
+          if (onOpen != null) {
+            onOpen!();
+          } else {
+            PhotoViewerScreen.open(context, path, 'Photo');
+          }
         } else {
           final p = await Messenger.instance.downloadMedia(m);
           if (p == null && context.mounted) {
@@ -71,7 +77,7 @@ class ImageContent extends StatelessWidget {
         }
       },
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: SizedBox(
           width: maxW,
           height: maxW / ratio,

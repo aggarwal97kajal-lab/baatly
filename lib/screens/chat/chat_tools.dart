@@ -73,6 +73,18 @@ class _ChatSearchScreenState extends State<ChatSearchScreen> {
 }
 
 /// Forward a message to one or more chats.
+/// Pick chats, then run [send] for each.
+Future<void> pickChatsAndSend(BuildContext context, void Function(Chat c) send) async {
+  final picked = await Navigator.of(context).push<List<Chat>>(MaterialPageRoute(builder: (_) => _ForwardPicker()));
+  if (picked == null || picked.isEmpty) return;
+  for (final c in picked) {
+    send(c);
+  }
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sent to ${picked.length} chat${picked.length == 1 ? '' : 's'}')));
+  }
+}
+
 Future<void> forwardMessage(BuildContext context, Message m) async {
   final picked = await Navigator.of(context).push<List<Chat>>(MaterialPageRoute(builder: (_) => _ForwardPicker()));
   if (picked == null || picked.isEmpty) return;

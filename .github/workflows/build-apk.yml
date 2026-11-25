@@ -39,7 +39,7 @@ jobs:
             sed -i '0,/<application/s|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' android/app/src/main/AndroidManifest.xml
           grep -n "INTERNET" android/app/src/main/AndroidManifest.xml
           # Contacts (who is on BAATLY) + opening the SMS app for invites.
-          sed -i '0,/<application/s|<application|<uses-permission android:name="android.permission.READ_CONTACTS"/>\n    <application|' android/app/src/main/AndroidManifest.xml
+          sed -i '0,/<application/s|<application|<uses-permission android:name="android.permission.READ_CONTACTS"/>\n    <uses-permission android:name="android.permission.WRITE_CONTACTS"/>\n    <application|' android/app/src/main/AndroidManifest.xml
           sed -i '0,/<application/s|<application|<uses-permission android:name="android.permission.RECORD_AUDIO"/>\n    <application|' android/app/src/main/AndroidManifest.xml
           sed -i '0,/<application/s|<application|<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <application|' android/app/src/main/AndroidManifest.xml
           # Calls: camera/mic/network + full-screen incoming call over the lock screen

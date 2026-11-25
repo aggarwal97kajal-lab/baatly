@@ -25,6 +25,8 @@ import 'group_screens.dart';
 import 'chat_tools.dart';
 import 'location.dart';
 import 'gif_panel.dart';
+import 'links.dart';
+import 'photo_screen.dart';
 import 'safety_screens.dart';
 import '../../data/calls.dart';
 import '../../data/group_calls.dart';
@@ -43,6 +45,26 @@ class _ChatScreenState extends State<ChatScreen> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
   Message? _replyTo;
+  Map<String, dynamic>? _lp; // link preview for the text being typed
+  String? _lpFor, _lpOff;
+  Timer? _lpTimer;
+
+  void _watchLink() {
+    final url = firstUrl(_ctrl.text);
+    if (url == null) {
+      if (_lp != null || _lpFor != null) setState(() => _lp = _lpFor = null);
+      return;
+    }
+    if (url == _lpFor || url == _lpOff) return;
+    _lpFor = url;
+    _lp = null;
+    _lpTimer?.cancel();
+    _lpTimer = Timer(const Duration(milliseconds: 500), () async {
+      final p = await fetchLinkPreview(url);
+      if (!mounted || _lpFor != url) return;
+      setState(() => _lp = p);
+    });
+  }
   final _rec = AudioRecorder();
   bool _recording = false; // mic is live (holding or locked)
   bool _recLocked = false; // slid up: hands-free
@@ -554,6 +576,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (AppState.instance.activeChatId == chat.id) AppState.instance.activeChatId = null;
     Messenger.instance.closeChat(chat);
     _recTimer?.cancel();
+    _lpTimer?.cancel();
     _ampSub?.cancel();
     _rec.dispose();
     _focus.dispose();
@@ -567,9 +590,14 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty) return;
     HapticFeedback.lightImpact();
     final full = _replyTo == null ? text : '↪ ${_replyTo!.text.split('\n').first}\n$text';
+    final lp = _lp != null && firstUrl(text) == _lp!['u'] ? _lp : null;
     _ctrl.clear();
-    setState(() => _replyTo = null);
-    AppState.instance.send(chat, full);
+    _lpTimer?.cancel();
+    setState(() {
+      _replyTo = null;
+      _lp = _lpFor = _lpOff = null;
+    });
+    AppState.instance.send(chat, full, lp: lp);
   }
 
   void _msgMenu(Message m) {
@@ -842,7 +870,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         setState(() => _replyTo = m);
                         _focus.requestFocus();
                       },
-                      child: _Bubble(key: ValueKey(m.id), m: m, chat: chat, onLongPress: () => _msgMenu(m)),
+                      child: _Bubble(key: ValueKey(m.id), m: m, chat: chat, onLongPress: () => _msgMenu(m), onReply: (x) => setState(() => _replyTo = x)),
                     );
                   },
                 );
@@ -883,7 +911,16 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Text("You can't send messages to this group because you're no longer a member.",
                   textAlign: TextAlign.center, style: TextStyle(color: bc.muted)),
             )
-          else
+          else ...[
+          if (_lp != null && !_recording)
+            Container(
+              color: bc.surface,
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+              child: LinkPreviewCard(lp: _lp!, fg: bc.text, bg: bc.raised, onClose: () => setState(() {
+                _lpOff = _lp!['u'] as String?;
+                _lp = null;
+              })),
+            ),
           _Composer(
             onAttach: _attach,
             mic: _MicState(
@@ -917,8 +954,10 @@ class _ChatScreenState extends State<ChatScreen> {
             onChanged: () {
               setState(() {});
               if (_ctrl.text.isNotEmpty) Messenger.instance.typing(chat);
+              _watchLink();
             },
           ),
+          ],
           if (_emoji && !_recording && !chat.left)
             SizedBox(
               height: 340,
@@ -1025,7 +1064,8 @@ class _Bubble extends StatefulWidget {
   final Message m;
   final Chat chat;
   final VoidCallback onLongPress;
-  const _Bubble({super.key, required this.m, required this.chat, required this.onLongPress});
+  final void Function(Message m) onReply;
+  const _Bubble({super.key, required this.m, required this.chat, required this.onLongPress, required this.onReply});
   @override
   State<_Bubble> createState() => _BubbleState();
 }
@@ -1068,7 +1108,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     Widget content;
     final caption = m.text.trim().isEmpty
         ? null
-        : Padding(padding: const EdgeInsets.only(top: 6), child: Text(m.text, style: TextStyle(fontSize: 15, color: fg, height: 1.35)));
+        : Padding(padding: const EdgeInsets.fromLTRB(6, 6, 6, 0), child: LinkText(m.text, style: TextStyle(fontSize: 15, color: fg, height: 1.35), linkColor: me ? Colors.white : context.primary));
     final accent = me ? Colors.white : context.primary;
     if (m.deleted) {
       content = Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1092,7 +1132,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     } else if (m.kind == MsgKind.video) {
       content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [VideoContent(m: m, fg: fg), if (caption != null) caption]);
     } else if (m.kind == MsgKind.image) {
-      content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [ImageContent(m: m, fg: fg), if (caption != null) caption]);
+      content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [ImageContent(m: m, fg: fg, onOpen: () => ChatPhotoScreen.open(context, widget.chat, m, onReply: widget.onReply)), if (caption != null) caption]);
     } else if (m.kind == MsgKind.doc && const {'mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'flac', 'amr'}.contains(MediaFiles.ext((m.media?['name'] as String?) ?? ''))) {
       // Audio files play right in the chat, like WhatsApp.
       content = VoiceContent(m: m, fg: fg, accent: me ? Colors.white24 : context.primary);
@@ -1128,7 +1168,17 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
             ),
             child: Text(lines.first.substring(2), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: fg.withOpacity(0.85))),
           ),
-        Text(quoted ? lines.skip(1).join('\n') : m.text, style: TextStyle(fontSize: 15, color: fg, height: 1.35)),
+        if (m.media?['lp'] is Map)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: LinkPreviewCard(
+              lp: (m.media!['lp'] as Map).cast<String, dynamic>(),
+              fg: fg,
+              bg: (me ? Colors.black : context.primary).withOpacity(me ? 0.14 : 0.08),
+            ),
+          ),
+        LinkText(quoted ? lines.skip(1).join('\n') : m.text,
+            style: TextStyle(fontSize: 15, color: fg, height: 1.35), linkColor: me ? Colors.white : context.primary),
       ]);
     }
 
@@ -1139,7 +1189,11 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final bubble = Container(
       constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
       margin: EdgeInsets.only(top: 4, bottom: m.reaction != null ? 14 : 4),
-      padding: bare ? const EdgeInsets.fromLTRB(4, 2, 4, 2) : const EdgeInsets.fromLTRB(14, 10, 12, 8),
+      padding: bare
+          ? const EdgeInsets.fromLTRB(4, 2, 4, 2)
+          : (!m.deleted && (m.kind == MsgKind.image || m.kind == MsgKind.video) && m.media?['once'] != true)
+              ? const EdgeInsets.fromLTRB(4, 4, 4, 6)
+              : const EdgeInsets.fromLTRB(14, 10, 12, 8),
       decoration: bare ? null : BoxDecoration(
         color: bg,
         borderRadius: radius,
@@ -1204,7 +1258,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         position: Tween(begin: Offset(me ? 0.15 : -0.15, 0.25), end: Offset.zero).animate(CurvedAnimation(parent: _a, curve: Curves.easeOutCubic)),
         child: Align(
           alignment: me ? Alignment.centerRight : Alignment.centerLeft,
-          child: GestureDetector(onLongPress: widget.onLongPress, child: withReaction),
+          child: GestureDetector(onTap: widget.onLongPress, onLongPress: widget.onLongPress, child: withReaction),
         ),
       ),
     );

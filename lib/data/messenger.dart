@@ -779,9 +779,10 @@ class Messenger {
   // ------------------------------------------------------------------ outgoing
   String _newId() => base64Url.encode(List<int>.generate(12, (_) => _rnd.nextInt(256))).replaceAll('=', '');
 
-  void send(Chat chat, String text) {
+  void send(Chat chat, String text, {Map<String, dynamic>? lp}) {
     final m = Message(
       id: _newId(),
+      media: lp == null ? null : {'lp': lp},
       text: text,
       fromMe: true,
       time: DateTime.now(),

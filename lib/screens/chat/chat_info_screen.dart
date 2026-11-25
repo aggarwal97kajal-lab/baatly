@@ -9,6 +9,10 @@ import '../../widgets/photo_viewer.dart';
 import 'starred_screen.dart';
 import 'chat_tools.dart';
 import 'safety_screens.dart';
+import 'contact_actions.dart';
+import 'group_screens.dart';
+import 'chat_screen.dart';
+import '../../data/contacts.dart';
 import '../settings/privacy_screen.dart';
 import '../../data/messenger.dart';
 import '../../data/calls.dart';
@@ -48,7 +52,29 @@ class ChatInfoScreen extends StatelessWidget {
       listenable: s,
       builder: (context, _) => Scaffold(
         backgroundColor: bc.bg,
-        appBar: AppBar(backgroundColor: bc.bg),
+        appBar: AppBar(
+          backgroundColor: bc.bg,
+          actions: [
+            if (chat.peerId != null && chat.phone != null)
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  switch (v) {
+                    case 'share':
+                      shareContactCard(context, chat);
+                    case 'edit':
+                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditContactScreen(chat: chat)));
+                    case 'book':
+                      viewInAddressBook(context, chat);
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'share', child: Text('Share')),
+                  PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  PopupMenuItem(value: 'book', child: Text('View in address book')),
+                ],
+              ),
+          ],
+        ),
         body: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           children: [
@@ -60,6 +86,8 @@ class ChatInfoScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(chat.name, textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: bc.text)),
+            if (!chat.isGroup && chat.phone != null)
+              Text(ContactBook.pretty(chat.phone!), textAlign: TextAlign.center, style: TextStyle(fontSize: 15, color: bc.muted)),
             Text(chat.isGroup ? 'Group · ${chat.about}' : chat.about,
                 textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: bc.muted)),
             const SizedBox(height: 16),
@@ -151,6 +179,41 @@ class ChatInfoScreen extends StatelessWidget {
                 onTap: chat.peerId == null ? null : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SafetyNumberScreen(chat: chat))),
               ),
             ]),
+            if (chat.peerId != null) ...[
+              const SizedBox(height: 12),
+              Builder(builder: (context) {
+                final common = [
+                  for (final g in s.chats)
+                    if (g.isRealGroup && !g.left && g.members.contains(chat.peerId)) g
+                ];
+                return _Card(children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(common.isEmpty ? 'No groups in common' : '${common.length} group${common.length == 1 ? '' : 's'} in common',
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: bc.muted)),
+                    ),
+                  ),
+                  ListTile(
+                    leading: CircleAvatar(backgroundColor: context.primary, child: const Icon(Icons.group_add_rounded, color: Colors.white)),
+                    title: Text('Create group with ${chat.name.split(' ').first}'),
+                    onTap: () => startNewGroup(context, preselected: {chat.peerId!}),
+                  ),
+                  for (final g in common)
+                    ListTile(
+                      leading: Avatar(initials: g.initials, colorIndex: g.colorIndex, photo: g.photo, size: 40),
+                      title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                        g.members.map((u) => u == Messenger.instance.myId ? 'You' : Messenger.instance.nameFor(u)).take(6).join(', '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: g))),
+                    ),
+                ]);
+              }),
+            ],
             const SizedBox(height: 12),
             _Card(children: [
               ListTile(
@@ -167,9 +230,21 @@ class ChatInfoScreen extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFB3261E)),
                 title: const Text('Clear chat', style: TextStyle(color: Color(0xFFB3261E))),
-                onTap: () {
+                onTap: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (d) => AlertDialog(
+                      title: const Text('Clear this chat?'),
+                      content: const Text('All messages in this chat will be deleted from this phone.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+                        TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Clear chat')),
+                      ],
+                    ),
+                  );
+                  if (ok != true) return;
                   s.toggle(() => chat.messages.clear());
-                  Navigator.pop(context);
+                  if (context.mounted) Navigator.pop(context);
                 },
               ),
             ]),

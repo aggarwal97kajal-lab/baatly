@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_contacts/flutter_contacts.dart' show FlutterContacts, Contact, Phone, Name;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
@@ -92,6 +95,7 @@ class PollContent extends StatelessWidget {
 }
 
 /// Shared contact card: message them on BAATLY or invite.
+/// Shared contact, WhatsApp style: photo + name, then "Message" | "Add contact".
 class ContactContent extends StatelessWidget {
   final Message m;
   final Color fg;
@@ -102,33 +106,77 @@ class ContactContent extends StatelessWidget {
     final name = md['name'] as String? ?? 'Contact';
     final phone = md['phone'] as String? ?? '';
     final uid = md['uid'] as String?;
-    return Container(
-      width: MediaQuery.of(context).size.width * 0.62,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: fg.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          CircleAvatar(radius: 20, backgroundColor: fg.withOpacity(0.2), child: Icon(Icons.person_rounded, color: fg)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, color: fg)),
-              Text(ContactBook.pretty(phone), style: TextStyle(fontSize: 12, color: fg.withOpacity(0.75))),
+    final photo = uid == null ? null : Messenger.instance.photoOf(uid);
+    final saved = ContactBook.instance.names.containsKey(phone);
+    final onBaatly = uid != null && uid != Messenger.instance.myId;
+    final accent = m.fromMe ? fg : Theme.of(context).colorScheme.primary;
+
+    Future<void> message() async {
+      if (onBaatly && Api.instance.loggedIn) {
+        final chat = Messenger.instance.chatWithUser(uid, name, phone, null);
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)));
+      } else {
+        final text = Uri.encodeComponent("Let's chat on BAATLY! Download: https://baatly-api.pitaragames.workers.dev/get");
+        await launchUrl(Uri.parse('sms:$phone?body=$text'), mode: LaunchMode.externalApplication);
+      }
+    }
+
+    Future<void> add() async {
+      try {
+        final parts = name.trim().split(RegExp(r'\s+'));
+        await FlutterContacts.native.showCreator(
+          contact: Contact(
+            name: Name(first: parts.first, last: parts.length > 1 ? parts.sublist(1).join(' ') : null),
+            phones: [Phone(number: phone)],
+          ),
+        );
+        await ContactBook.instance.load();
+      } catch (_) {}
+    }
+
+    Widget btn(String t, VoidCallback onTap) => Expanded(
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              child: Text(t, textAlign: TextAlign.center, style: TextStyle(color: accent, fontWeight: FontWeight.w700, fontSize: 14.5)),
+            ),
+          ),
+        );
+
+    return SizedBox(
+      width: MediaQuery.of(context).size.width * 0.66,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+        InkWell(
+          onTap: onBaatly ? message : null,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
+            child: Row(children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: fg.withOpacity(0.18),
+                backgroundImage: photo != null ? FileImage(File(photo)) : null,
+                child: photo != null ? null : Icon(Icons.person_rounded, color: fg, size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: accent)),
+                  if (!saved || name.isEmpty) Text(ContactBook.pretty(phone), style: TextStyle(fontSize: 12.5, color: fg.withOpacity(0.75))),
+                ]),
+              ),
             ]),
           ),
-        ]),
-        const SizedBox(height: 6),
-        TextButton(
-          onPressed: () async {
-            if (uid != null && uid != Messenger.instance.myId && Api.instance.loggedIn) {
-              final chat = Messenger.instance.chatWithUser(uid, name, phone, null);
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)));
-            } else {
-              final text = Uri.encodeComponent("Let's chat on BAATLY! Download: https://baatly-api.pitaragames.workers.dev/get");
-              await launchUrl(Uri.parse('sms:$phone?body=$text'), mode: LaunchMode.externalApplication);
-            }
-          },
-          child: Text(uid != null ? 'Message' : 'Invite to BAATLY', style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
+        ),
+        Divider(height: 1, color: fg.withOpacity(0.2)),
+        IntrinsicHeight(
+          child: Row(children: [
+            btn(onBaatly ? 'Message' : 'Invite', message),
+            if (!saved) ...[
+              VerticalDivider(width: 1, color: fg.withOpacity(0.2)),
+              btn('Add contact', add),
+            ],
+          ]),
         ),
       ]),
     );
