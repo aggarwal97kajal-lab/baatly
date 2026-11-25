@@ -13,6 +13,31 @@ import '../../data/models.dart';
 import '../../widgets/photo_viewer.dart';
 
 /// Photo inside a chat bubble: blurred preview until downloaded, tap for full screen.
+/// A sticker: no bubble, transparent, fixed size.
+class StickerContent extends StatelessWidget {
+  final Message m;
+  const StickerContent({super.key, required this.m});
+  @override
+  Widget build(BuildContext context) {
+    final path = m.mediaPath;
+    final has = path != null && File(path).existsSync();
+    return GestureDetector(
+      onTap: has || m.busy ? null : () => Messenger.instance.downloadMedia(m),
+      child: SizedBox(
+        width: 150,
+        height: 150,
+        child: has
+            ? Image.file(File(path), fit: BoxFit.contain, cacheWidth: 400, gaplessPlayback: true)
+            : Center(
+                child: m.busy
+                    ? const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.5))
+                    : const Icon(Icons.download_rounded, size: 30, color: Colors.black38),
+              ),
+      ),
+    );
+  }
+}
+
 class ImageContent extends StatelessWidget {
   final Message m;
   final Color fg;
@@ -52,6 +77,16 @@ class ImageContent extends StatelessWidget {
           height: maxW / ratio,
           child: Stack(fit: StackFit.expand, children: [
             img,
+            if (md['gif'] == true)
+              Positioned(
+                left: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                  child: const Text('GIF', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+              ),
             if (m.busy && m.progress != null)
               Positioned(
                 right: 8,

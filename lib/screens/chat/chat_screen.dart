@@ -27,6 +27,8 @@ import 'location.dart';
 import 'safety_screens.dart';
 import '../../data/calls.dart';
 import '../../data/media.dart';
+import '../../data/stickers.dart';
+import 'package:image_cropper/image_cropper.dart';
 
 class ChatScreen extends StatefulWidget {
   final Chat chat;
@@ -53,6 +55,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<double> _amps = [];
   String? _recPath;
   bool _emoji = false;
+  int _panel = 0; // 0 emoji, 1 stickers, 2 GIF
   final _focus = FocusNode();
 
   Chat get chat => widget.chat;
@@ -105,6 +108,71 @@ class _ChatScreenState extends State<ChatScreen> {
     if (r == null) return;
     final kept = await _keep(f.path, f.name.isEmpty ? 'photo.jpg' : f.name);
     _sendMedia(kept, MsgKind.image, caption: r.$1, name: 'photo.jpg', once: r.$2);
+  }
+
+  void _sendSticker(String path) {
+    if (chat.isReal) {
+      Messenger.instance.sendMedia(chat, path: path, kind: MsgKind.image, name: 'sticker.png', extra: {'stk': true});
+    } else {
+      _sendMedia(path, MsgKind.image, name: 'sticker.png');
+    }
+  }
+
+  Future<void> _createSticker() async {
+    XFile? f;
+    try {
+      f = await ImagePicker().pickImage(source: ImageSource.gallery);
+    } catch (_) {
+      _toast('Photos permission needed');
+      return;
+    }
+    if (f == null) return;
+    CroppedFile? c;
+    try {
+      c = await ImageCropper().cropImage(
+        sourcePath: f.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        maxWidth: 512,
+        maxHeight: 512,
+        compressFormat: ImageCompressFormat.png,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Make a sticker',
+            toolbarColor: Colors.black,
+            toolbarWidgetColor: Colors.white,
+            statusBarLight: false,
+            backgroundColor: Colors.black,
+            lockAspectRatio: true,
+          ),
+        ],
+      );
+    } catch (_) {}
+    if (c == null) return;
+    await StickerStore.instance.add(c.path);
+    _toast('Added to your stickers');
+  }
+
+  Future<void> _pickGif() async {
+    FilePickerResult? r;
+    try {
+      r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['gif']);
+    } catch (_) {
+      _toast('Storage permission needed');
+      return;
+    }
+    final f = r?.files.single;
+    if (f?.path == null) return;
+    if ((f!.size) > 16 * 1024 * 1024) {
+      _toast('This GIF is too large');
+      return;
+    }
+    final kept = await _keep(f.path!, 'anim.gif');
+    if (chat.isReal) {
+      Messenger.instance.sendMedia(chat, path: kept, kind: MsgKind.image, name: 'anim.gif', extra: {'gif': true});
+    } else {
+      _sendMedia(kept, MsgKind.image, name: 'anim.gif');
+    }
+    setState(() => _emoji = false);
   }
 
   Future<void> _pickVideo() async {
@@ -531,6 +599,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 forwardMessage(context, m);
               },
             ),
+          if (!m.deleted && m.media?['stk'] == true && m.mediaPath != null && File(m.mediaPath!).existsSync())
+            ListTile(
+              leading: const Icon(Icons.emoji_emotions_outlined),
+              title: const Text('Add to my stickers'),
+              onTap: () async {
+                Navigator.pop(sheet);
+                await StickerStore.instance.load();
+                await StickerStore.instance.add(m.mediaPath!);
+                _toast('Added to your stickers');
+              },
+            ),
           ListTile(
             leading: Icon(m.starred ? Icons.star_rounded : Icons.star_outline_rounded),
             title: Text(m.starred ? 'Unstar' : 'Star'),
@@ -807,7 +886,12 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
           if (_emoji && !_recording && !chat.left)
-            EmojiPicker(
+            SizedBox(
+              height: 330,
+              child: Column(children: [
+                Expanded(
+                  child: _panel == 0
+                      ? EmojiPicker(
               textEditingController: _ctrl,
               onEmojiSelected: (_, __) => setState(() {}),
               config: Config(
@@ -824,6 +908,30 @@ class _ChatScreenState extends State<ChatScreen> {
                 bottomActionBarConfig: BottomActionBarConfig(backgroundColor: bc.surface, buttonColor: bc.surface, buttonIconColor: bc.muted),
                 searchViewConfig: SearchViewConfig(backgroundColor: bc.surface, buttonIconColor: bc.muted),
               ),
+            )
+                      : _panel == 1
+                          ? _StickerPanel(onSend: _sendSticker, onCreate: _createSticker)
+                          : _GifPanel(onPick: _pickGif),
+                ),
+                Container(
+                  color: bc.surface,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    for (final (i, label) in const [(0, 'Emoji'), (1, 'Stickers'), (2, 'GIF')])
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: ChoiceChip(
+                          label: Text(label),
+                          selected: _panel == i,
+                          showCheckmark: false,
+                          selectedColor: context.primary.withOpacity(0.18),
+                          labelStyle: TextStyle(color: _panel == i ? context.primary : bc.muted, fontWeight: FontWeight.w600),
+                          onSelected: (_) => setState(() => _panel = i),
+                        ),
+                      ),
+                  ]),
+                ),
+              ]),
             ),
         ]),
       ),
@@ -887,6 +995,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         Text(me ? 'You deleted this message' : 'This message was deleted',
             style: TextStyle(fontSize: 14.5, fontStyle: FontStyle.italic, color: fg.withOpacity(0.75))),
       ]);
+    } else if (m.kind == MsgKind.image && m.media?['stk'] == true) {
+      content = StickerContent(m: m);
     } else if (m.kind == MsgKind.image && m.media?['once'] == true) {
       content = ViewOnceContent(chat: widget.chat, m: m, fg: fg);
     } else if (m.kind == MsgKind.poll) {
@@ -940,11 +1050,15 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
       ]);
     }
 
+    final bare = !m.deleted &&
+        ((m.kind == MsgKind.image && m.media?['stk'] == true) || (m.kind == MsgKind.text && isBigEmoji(m.text)));
+    if (bare && m.kind == MsgKind.text) content = Text(m.text.trim(), style: const TextStyle(fontSize: 56, height: 1.15));
+    final metaFg = bare ? bc.muted : fg;
     final bubble = Container(
       constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
       margin: EdgeInsets.only(top: 4, bottom: m.reaction != null ? 14 : 4),
-      padding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
-      decoration: BoxDecoration(
+      padding: bare ? const EdgeInsets.fromLTRB(4, 2, 4, 2) : const EdgeInsets.fromLTRB(14, 10, 12, 8),
+      decoration: bare ? null : BoxDecoration(
         color: bg,
         borderRadius: radius,
         boxShadow: me ? null : const [BoxShadow(color: Color(0x0F000000), blurRadius: 4, offset: Offset(0, 1))],
@@ -974,10 +1088,10 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         content,
         const SizedBox(height: 3),
         Row(mainAxisSize: MainAxisSize.min, children: [
-          if (m.starred) ...[Icon(Icons.star_rounded, size: 12, color: fg.withOpacity(0.7)), const SizedBox(width: 3)],
-          if (m.expiresAt != null) ...[Icon(Icons.timer_outlined, size: 11, color: fg.withOpacity(0.7)), const SizedBox(width: 3)],
-          Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: fg.withOpacity(0.7))),
-          if (me) ...[const SizedBox(width: 4), Ticks(status: m.status, color: Colors.white, readColor: kReadBlueOnBubble)],
+          if (m.starred) ...[Icon(Icons.star_rounded, size: 12, color: metaFg.withOpacity(0.7)), const SizedBox(width: 3)],
+          if (m.expiresAt != null) ...[Icon(Icons.timer_outlined, size: 11, color: metaFg.withOpacity(0.7)), const SizedBox(width: 3)],
+          Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: metaFg.withOpacity(0.7))),
+          if (me) ...[const SizedBox(width: 4), Ticks(status: m.status, color: bare ? bc.muted : Colors.white, readColor: kReadBlueOnBubble)],
         ]),
       ]),
     );
@@ -1126,6 +1240,110 @@ class _Composer extends StatelessWidget {
   }
 }
 
+
+/// Built-in BAATLY pack + "My stickers" (make one from a photo).
+class _StickerPanel extends StatefulWidget {
+  final void Function(String path) onSend;
+  final VoidCallback onCreate;
+  const _StickerPanel({required this.onSend, required this.onCreate});
+  @override
+  State<_StickerPanel> createState() => _StickerPanelState();
+}
+
+class _StickerPanelState extends State<_StickerPanel> {
+  @override
+  void initState() {
+    super.initState();
+    StickerStore.instance.load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return ColoredBox(
+      color: bc.bg,
+      child: ListenableBuilder(
+        listenable: StickerStore.instance,
+        builder: (context, _) {
+          final st = StickerStore.instance;
+          Widget tile(String p, {bool mine = false}) => InkWell(
+                onTap: () => widget.onSend(p),
+                onLongPress: mine
+                    ? () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (d) => AlertDialog(
+                            title: const Text('Remove this sticker?'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('No')),
+                              TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Remove')),
+                            ],
+                          ),
+                        );
+                        if (ok == true) st.remove(p);
+                      }
+                    : null,
+                child: Padding(padding: const EdgeInsets.all(6), child: Image.file(File(p), fit: BoxFit.contain, cacheWidth: 220)),
+              );
+          Text head(String t) => Text(t, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: bc.muted));
+          return CustomScrollView(slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+              sliver: SliverToBoxAdapter(child: head('MY STICKERS')),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              sliver: SliverGrid.count(crossAxisCount: 4, children: [
+                InkWell(
+                  onTap: widget.onCreate,
+                  child: Container(
+                    margin: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: bc.line, width: 1.5)),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.add_photo_alternate_outlined, color: context.primary),
+                      const SizedBox(height: 4),
+                      Text('Create', style: TextStyle(fontSize: 11.5, color: bc.muted)),
+                    ]),
+                  ),
+                ),
+                for (final p in st.mine) tile(p, mine: true),
+              ]),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+              sliver: SliverToBoxAdapter(child: head('BAATLY')),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+              sliver: SliverGrid.count(crossAxisCount: 4, children: [for (final p in st.builtIn) tile(p)]),
+            ),
+          ]);
+        },
+      ),
+    );
+  }
+}
+
+class _GifPanel extends StatelessWidget {
+  final VoidCallback onPick;
+  const _GifPanel({required this.onPick});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return ColoredBox(
+      color: bc.bg,
+      child: Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.gif_box_outlined, size: 56, color: bc.muted),
+          const SizedBox(height: 10),
+          Text('Send a GIF saved on your phone', style: TextStyle(color: bc.muted)),
+          const SizedBox(height: 14),
+          FilledButton.icon(onPressed: onPick, icon: const Icon(Icons.folder_open_rounded), label: const Text('Choose GIF')),
+        ]),
+      ),
+    );
+  }
+}
 
 /// Everything the composer needs to draw the hold-to-record mic.
 class _MicState {

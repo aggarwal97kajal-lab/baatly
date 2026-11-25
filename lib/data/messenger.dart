@@ -1361,7 +1361,7 @@ class Messenger {
     try {
       final file = File(m.mediaPath!);
       final bytes = await file.readAsBytes();
-      if (m.kind == MsgKind.image && m.media!['once'] != true) {
+      if (m.kind == MsgKind.image && m.media!['once'] != true && m.media!['stk'] != true) {
         final t = await MediaFiles.thumb(file.path);
         if (t != null) {
           m.media!['thumb'] = t.$1;

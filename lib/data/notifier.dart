@@ -88,6 +88,8 @@ class Notifier {
     final t = (plain['t'] as String? ?? '').trim();
     switch (md?['type']) {
       case 'image':
+        if (md?['stk'] == true) return '🙂 Sticker';
+        if (md?['gif'] == true) return 'GIF';
         return md?['once'] == true ? '① Photo' : '📷 ${t.isEmpty ? 'Photo' : t}';
       case 'voice':
         return '🎤 Voice message';

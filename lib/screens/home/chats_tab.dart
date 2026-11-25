@@ -268,7 +268,13 @@ class _ChatRow extends StatelessWidget {
       pIcon = Icons.looks_one_outlined;
       preview = 'Photo';
     } else if (m != null) {
-      if (m.kind == MsgKind.image) {
+      if (m.kind == MsgKind.image && m.media?['stk'] == true) {
+        pIcon = Icons.emoji_emotions_outlined;
+        preview = 'Sticker';
+      } else if (m.kind == MsgKind.image && m.media?['gif'] == true) {
+        pIcon = Icons.gif_box_outlined;
+        preview = 'GIF';
+      } else if (m.kind == MsgKind.image) {
         pIcon = Icons.photo_camera_rounded;
         preview = m.text.trim().isEmpty ? 'Photo' : m.text.replaceAll('\n', ' ');
       } else if (m.kind == MsgKind.doc) {
