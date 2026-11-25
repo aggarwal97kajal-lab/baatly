@@ -1,3 +1,4 @@
+// Deploy note: KLIPY_KEY comes from the GitHub secret of the same name.
 import { Env, HttpError, json } from './util';
 
 type Me = { id: string };
