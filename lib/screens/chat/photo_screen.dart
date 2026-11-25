@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,7 +40,6 @@ class _ChatPhotoScreenState extends State<ChatPhotoScreen> {
   late final List<Message> _photos;
   late final PageController _page;
   int _i = 0;
-  int _turns = 0;
   bool _chrome = true;
 
   @override
@@ -196,7 +194,13 @@ class _ChatPhotoScreenState extends State<ChatPhotoScreen> {
         // Google Lens (or any app that can search images) from the share sheet.
         await SharePlus.instance.share(ShareParams(files: [XFile(_path)], text: 'Search this image'));
       case 'rotate':
-        setState(() => _turns = (_turns + 3) % 4);
+        // Saved on the message, so the chat shows it rotated too (this phone only).
+        final m = _m;
+        final md = m.media ?? <String, dynamic>{};
+        md['rot'] = (((md['rot'] as int?) ?? 0) + 1) % 4;
+        m.media = md;
+        AppState.instance.changed();
+        setState(() {});
     }
   }
 
@@ -253,16 +257,14 @@ class _ChatPhotoScreenState extends State<ChatPhotoScreen> {
           child: PageView.builder(
             controller: _page,
             itemCount: _photos.length,
-            onPageChanged: (i) => setState(() {
-              _i = i;
-              _turns = 0;
-            }),
+            onPageChanged: (i) => setState(() => _i = i),
             itemBuilder: (_, i) => InteractiveViewer(
               minScale: 1,
               maxScale: 5,
               child: Center(
-                child: Transform.rotate(
-                  angle: i == _i ? -_turns * math.pi / 2 : 0,
+                // RotatedBox lays the photo out rotated, so it always fits the screen.
+                child: RotatedBox(
+                  quarterTurns: (_photos[i].media?['rot'] as int?) ?? 0,
                   child: Image.file(File(_photos[i].mediaPath!), fit: BoxFit.contain, filterQuality: FilterQuality.high),
                 ),
               ),

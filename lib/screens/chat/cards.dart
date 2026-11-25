@@ -8,6 +8,7 @@ import '../../data/api.dart';
 import '../../data/contacts.dart';
 import '../../data/messenger.dart';
 import '../../data/models.dart';
+import '../../data/calls.dart';
 import '../../widgets/photo_viewer.dart';
 import 'chat_screen.dart';
 
@@ -148,7 +149,8 @@ class ContactContent extends StatelessWidget {
       width: MediaQuery.of(context).size.width * 0.66,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
         InkWell(
-          onTap: onBaatly ? message : null,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ViewContactScreen(name: name, phone: phone, uid: onBaatly ? uid : null, onMessage: message, onAdd: add, saved: saved))),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
             child: Row(children: [
@@ -176,6 +178,81 @@ class ContactContent extends StatelessWidget {
               VerticalDivider(width: 1, color: fg.withOpacity(0.2)),
               btn('Add contact', add),
             ],
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+/// "View contact" (tap a shared contact's name), like WhatsApp.
+class ViewContactScreen extends StatelessWidget {
+  final String name, phone;
+  final String? uid;
+  final bool saved;
+  final Future<void> Function() onMessage, onAdd;
+  const ViewContactScreen({super.key, required this.name, required this.phone, required this.uid, required this.onMessage, required this.onAdd, required this.saved});
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = uid == null ? null : Messenger.instance.photoOf(uid!);
+    final cs = Theme.of(context).colorScheme;
+    Chat? chat() => uid == null ? null : Messenger.instance.chatWithUser(uid!, name, phone, null);
+    return Scaffold(
+      appBar: AppBar(title: const Text('View contact')),
+      body: ListView(children: [
+        ListTile(
+          contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          leading: CircleAvatar(
+            radius: 26,
+            backgroundColor: cs.primary.withOpacity(0.2),
+            backgroundImage: photo != null ? FileImage(File(photo)) : null,
+            child: photo != null ? null : Icon(Icons.person_rounded, color: cs.primary, size: 30),
+          ),
+          title: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          trailing: saved
+              ? null
+              : FilledButton(
+                  style: FilledButton.styleFrom(minimumSize: const Size(64, 36)),
+                  onPressed: onAdd,
+                  child: const Text('Add'),
+                ),
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.contact_phone_outlined),
+          title: Text(ContactBook.pretty(phone)),
+          subtitle: Text(uid != null ? 'Mobile · on BAATLY' : 'Mobile'),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(
+              tooltip: uid != null ? 'Message' : 'Invite',
+              onPressed: () {
+                Navigator.pop(context);
+                onMessage();
+              },
+              icon: Icon(Icons.chat_outlined, color: cs.primary),
+            ),
+            IconButton(
+              tooltip: 'Voice call',
+              onPressed: () {
+                final c = chat();
+                if (c != null) {
+                  CallService.instance.start(c, video: false);
+                } else {
+                  launchUrl(Uri(scheme: 'tel', path: phone));
+                }
+              },
+              icon: Icon(Icons.call_outlined, color: cs.primary),
+            ),
+            if (uid != null)
+              IconButton(
+                tooltip: 'Video call',
+                onPressed: () {
+                  final c = chat();
+                  if (c != null) CallService.instance.start(c, video: true);
+                },
+                icon: Icon(Icons.videocam_outlined, color: cs.primary),
+              ),
           ]),
         ),
       ]),

@@ -163,32 +163,47 @@ class _ChatBackupScreenState extends State<ChatBackupScreen> {
               ]),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Backup settings', style: TextStyle(fontWeight: FontWeight.w700, color: bc.text)),
-              const SizedBox(height: 4),
-              Text("Back up your chats and media to your Google Drive so you don't lose them when you change phone.", style: TextStyle(color: bc.muted, fontSize: 13)),
-              const SizedBox(height: 12),
-              Text('Last backup: ${b.lastAt == null ? 'Never' : _when(b.lastAt!)}', style: TextStyle(color: bc.text, fontSize: 13.5)),
-              if (b.lastSize > 0) Text('Size: ${_size(b.lastSize)}', style: TextStyle(color: bc.text, fontSize: 13.5)),
-              const SizedBox(height: 12),
-              if (b.busy) ...[
-                Text(b.stage ?? 'Working…', style: TextStyle(color: bc.muted)),
-                const SizedBox(height: 6),
-                LinearProgressIndicator(value: b.progress),
-                if (b.progress != null) Text('${(b.progress! * 100).round()}%', style: TextStyle(fontSize: 12, color: bc.muted)),
-              ] else
-                Row(children: [
-                  FilledButton(onPressed: _backup, child: const Text('Back up')),
-                  const SizedBox(width: 10),
-                  OutlinedButton(onPressed: _restore, child: const Text('Restore')),
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.cloud_upload_outlined, color: context.primary, size: 28),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Backup settings', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5, color: bc.text)),
+                  const SizedBox(height: 4),
+                  Text("Back up your chats and media to Google Drive so you don't lose them when you change phone.",
+                      style: TextStyle(color: bc.muted, fontSize: 13, height: 1.4)),
+                  const SizedBox(height: 12),
+                  Text('Last backup: ${b.lastAt == null ? 'Never' : _when(b.lastAt!)}', style: TextStyle(color: bc.text, fontSize: 13.5)),
+                  Text('Size: ${b.lastSize > 0 ? _size(b.lastSize) : '—'}', style: TextStyle(color: bc.text, fontSize: 13.5)),
+                  const SizedBox(height: 14),
+                  if (b.busy) ...[
+                    Text(b.stage ?? 'Working…', style: TextStyle(color: bc.muted)),
+                    const SizedBox(height: 6),
+                    LinearProgressIndicator(value: b.progress, borderRadius: BorderRadius.circular(4)),
+                    if (b.progress != null)
+                      Padding(padding: const EdgeInsets.only(top: 4), child: Text('${(b.progress! * 100).round()}%', style: TextStyle(fontSize: 12, color: bc.muted))),
+                  ] else
+                    Wrap(spacing: 10, runSpacing: 8, children: [
+                      FilledButton(
+                        style: FilledButton.styleFrom(minimumSize: const Size(110, 42), padding: const EdgeInsets.symmetric(horizontal: 22)),
+                        onPressed: _backup,
+                        child: const Text('Back up'),
+                      ),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(minimumSize: const Size(100, 42), padding: const EdgeInsets.symmetric(horizontal: 20)),
+                        onPressed: _restore,
+                        child: const Text('Restore'),
+                      ),
+                    ]),
                 ]),
+              ),
             ]),
           ),
           const Divider(),
           ListTile(
             title: const Text('Google Account'),
-            subtitle: Text(b.email ?? 'None selected'),
+            subtitle: Text(b.email ?? 'Tap to choose'),
             onTap: b.busy
                 ? null
                 : () async {

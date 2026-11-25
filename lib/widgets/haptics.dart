@@ -9,6 +9,16 @@ import 'package:flutter/widgets.dart';
 class TapHaptics {
   static final _down = <int, (Offset, Duration)>{};
 
+  static DateTime _last = DateTime(2000);
+
+  /// One tick, never two in a row for the same tap.
+  static void tick() {
+    final now = DateTime.now();
+    if (now.difference(_last).inMilliseconds < 120) return;
+    _last = now;
+    HapticFeedback.lightImpact();
+  }
+
   static void install() {
     GestureBinding.instance.pointerRouter.addGlobalRoute(_route);
   }
@@ -21,7 +31,8 @@ class TapHaptics {
       if (d == null) return;
       if ((e.position - d.$1).distance > 16) return; // a drag / scroll
       if (e.timeStamp - d.$2 > const Duration(milliseconds: 450)) return; // long press has its own
-      if (_tappable(e.position, e.viewId)) HapticFeedback.selectionClick();
+      // lightImpact = Android's normal key-press vibration (selectionClick is too weak on many phones).
+      if (_tappable(e.position, e.viewId)) tick();
     } else if (e is PointerCancelEvent) {
       _down.remove(e.pointer);
     }

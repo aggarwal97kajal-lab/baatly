@@ -348,6 +348,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
               onLongPress: c.admin ? () => _confirmRemove(g.id, g.name) : null,
               trailing: c.member
                   ? FilledButton.tonal(
+                      style: FilledButton.styleFrom(minimumSize: const Size(72, 36)),
                       onPressed: _busy.contains(g.id) ? null : () => _run(g.id, 'POST', '/v1/communities/${c.id}/groups/${g.id}/join'),
                       child: _busy.contains(g.id) ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Join'),
                     )

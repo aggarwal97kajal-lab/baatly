@@ -85,19 +85,28 @@ Future<void> pickChatsAndSend(BuildContext context, void Function(Chat c) send) 
   }
 }
 
-Future<void> forwardMessage(BuildContext context, Message m) async {
+void _forwardTo(Chat c, Message m) {
+  final ms = Messenger.instance;
+  if (m.kind == MsgKind.text) {
+    ms.forwardText(c, m.text);
+  } else if (const {MsgKind.image, MsgKind.voice, MsgKind.doc, MsgKind.video}.contains(m.kind) && m.mediaPath != null && File(m.mediaPath!).existsSync()) {
+    ms.sendMedia(c, path: m.mediaPath!, kind: m.kind, caption: m.text, name: m.media?['name'] as String?, seconds: m.voiceSeconds, forwarded: true);
+  } else if (m.media != null) {
+    final md = Map<String, dynamic>.from(m.media!)..remove('votes')..remove('rot')..remove('ed');
+    if (m.kind == MsgKind.poll) md['votes'] = <String, dynamic>{};
+    ms.sendCard(c, m.kind, md, text: m.text, forwarded: true);
+  }
+}
+
+Future<void> forwardMessage(BuildContext context, Message m) => forwardMany(context, [m]);
+
+/// Pick chats once, forward every message to each of them.
+Future<void> forwardMany(BuildContext context, List<Message> list) async {
   final picked = await Navigator.of(context).push<List<Chat>>(MaterialPageRoute(builder: (_) => _ForwardPicker()));
   if (picked == null || picked.isEmpty) return;
-  final ms = Messenger.instance;
   for (final c in picked) {
-    if (m.kind == MsgKind.text) {
-      ms.forwardText(c, m.text);
-    } else if (const {MsgKind.image, MsgKind.voice, MsgKind.doc, MsgKind.video}.contains(m.kind) && m.mediaPath != null && File(m.mediaPath!).existsSync()) {
-      ms.sendMedia(c, path: m.mediaPath!, kind: m.kind, caption: m.text, name: m.media?['name'] as String?, seconds: m.voiceSeconds, forwarded: true);
-    } else if (m.media != null) {
-      final md = Map<String, dynamic>.from(m.media!)..remove('votes');
-      if (m.kind == MsgKind.poll) md['votes'] = <String, dynamic>{};
-      ms.sendCard(c, m.kind, md, text: m.text, forwarded: true);
+    for (final m in list) {
+      _forwardTo(c, m);
     }
   }
   if (context.mounted) {

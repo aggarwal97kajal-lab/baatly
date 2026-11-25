@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/haptics.dart';
 
 import '../../config.dart';
 import '../../data/api.dart';
@@ -107,6 +108,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       body: PageView(
         controller: _pages,
         onPageChanged: (i) {
+          if (i != _tab) TapHaptics.tick();
           setState(() => _tab = i);
           if (i == 1) StatusService.instance.refresh();
         },
@@ -125,7 +127,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 final col = on ? context.primary : bc.muted;
                 return Expanded(
                   child: InkWell(
-                    onTap: () => _go(i),
+                    onTap: () {
+                      TapHaptics.tick();
+                      _go(i);
+                    },
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                       AnimatedContainer(
                         duration: Mitti.fast,

@@ -47,15 +47,18 @@ class ImageContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final md = m.media ?? {};
-    final w = (md['w'] as int?) ?? 4, h = (md['h'] as int?) ?? 3;
+    final rot = (md['rot'] as int?) ?? 0;
+    var w = (md['w'] as int?) ?? 4, h = (md['h'] as int?) ?? 3;
+    if (rot.isOdd) (w, h) = (h, w);
     // WhatsApp-like size: wide, and portrait photos stand tall.
     final maxW = MediaQuery.of(context).size.width * 0.72;
-    final ratio = (w / h).clamp(0.62, 1.6);
+    final ratio = (w / h).clamp(0.8, 1.9); // tall photos are cropped in the chat; tap for the full one
     final path = m.mediaPath;
     final has = path != null && File(path).existsSync();
     Widget img;
     if (has) {
       img = Image.file(File(path), fit: BoxFit.cover, cacheWidth: 900);
+      if (rot != 0) img = RotatedBox(quarterTurns: rot, child: img);
     } else if (md['thumb'] is String) {
       img = Image.memory(base64Decode(md['thumb'] as String), fit: BoxFit.cover, filterQuality: FilterQuality.low, gaplessPlayback: true);
     } else {

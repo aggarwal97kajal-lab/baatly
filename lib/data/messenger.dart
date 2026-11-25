@@ -50,6 +50,28 @@ class Messenger {
   String? _uid;
   final Map<String, Peer> _peers = {};
   IOWebSocketChannel? _ws;
+  bool _wsReady = false;
+  final _acks = <String, Completer<bool>>{};
+
+  /// Sends a message over the open socket (fast: no new request, the server
+  /// answers "accepted" at once). Falls back to a normal request.
+  Future<void> _post(String path, Map<String, dynamic> body) async {
+    final ws = _ws;
+    if (ws != null && _wsReady) {
+      final rid = _newId();
+      final done = Completer<bool>();
+      _acks[rid] = done;
+      try {
+        ws.sink.add(jsonEncode({'type': 'send', 'rid': rid, 'path': path, 'body': body}));
+        final ok = await done.future.timeout(const Duration(seconds: 4), onTimeout: () => false);
+        if (ok) return;
+      } catch (_) {
+      } finally {
+        _acks.remove(rid);
+      }
+    }
+    await Api.instance.request('POST', path, body);
+  }
   StreamSubscription<dynamic>? _sub;
   Timer? _retry, _ping, _saveTimer, _presenceTimer, _purgeTimer;
   int _backoff = 1;
@@ -344,7 +366,20 @@ class Messenger {
       (d) {
         if (d is! String || d == 'pong') return;
         try {
-          unawaited(_onLive(jsonDecode(d) as Map<String, dynamic>));
+          final ev = jsonDecode(d) as Map<String, dynamic>;
+          if (ev['type'] == 'ack') {
+            _acks.remove(ev['rid'])?.complete(ev['ok'] == true);
+            return;
+          }
+          if (ev['type'] == 'send_failed') {
+            final m = _find(ev['msgId'] as String? ?? '');
+            if (m != null && m.fromMe && m.status == MsgStatus.sent) {
+              m.status = MsgStatus.sending;
+              _s.changed();
+            }
+            return;
+          }
+          unawaited(_onLive(ev));
         } catch (_) {}
       },
       onDone: _dropped,
@@ -357,6 +392,7 @@ class Messenger {
       _dropped();
       return;
     }
+    _wsReady = true;
     _backoff = 1;
     _ping?.cancel();
     _ping = Timer.periodic(const Duration(seconds: 25), (_) {
@@ -368,6 +404,11 @@ class Messenger {
   }
 
   void _closeSocket() {
+    _wsReady = false;
+    for (final c in _acks.values) {
+      if (!c.isCompleted) c.complete(false);
+    }
+    _acks.clear();
     _ping?.cancel();
     _sub?.cancel();
     try {
@@ -609,7 +650,7 @@ class Messenger {
       if (ts is int) at = DateTime.fromMillisecondsSinceEpoch(ts);
       ttl = (plain['ttl'] as int?) ?? 0;
       md = (plain['md'] as Map?)?.cast<String, dynamic>();
-      for (final k in const ['del', 'opened', 'vote', 'pin', 'unpin', 'live']) {
+      for (final k in const ['del', 'opened', 'vote', 'pin', 'unpin', 'live', 'edit']) {
         if (plain.containsKey(k)) control = {k: plain[k]};
       }
     } catch (_) {
@@ -839,7 +880,7 @@ class Messenger {
           if (p.key != null) bodies[u] = await E2E.instance.seal(payload, p.key!);
         } catch (_) {}
       }
-      await Api.instance.request('POST', '/v1/groups/${chat.groupId}/messages', {'msgId': msgId, 'bodies': bodies, if (silent) 'silent': true, if (silent) 'control': true});
+      await _post('/v1/groups/${chat.groupId}/messages', {'msgId': msgId, 'bodies': bodies, if (silent) 'silent': true, if (silent) 'control': true});
       return true;
     }
     final to = onlyTo ?? chat.peerId!;
@@ -847,7 +888,7 @@ class Messenger {
     if (peer.key == null) peer = await _peer(to, refresh: true);
     if (peer.key == null) return false; // they haven't opened the new app yet; retried on next sync
     final body = await E2E.instance.seal(payload, peer.key!);
-    await Api.instance.request('POST', '/v1/messages', {'to': to, 'msgId': msgId, 'body': body, if (silent) 'silent': true});
+    await _post('/v1/messages', {'to': to, 'msgId': msgId, 'body': body, if (silent) 'silent': true});
     return true;
   }
 
@@ -879,6 +920,14 @@ class Messenger {
       // Only the sender can delete it, and only for a short while.
       if (m != null && !m.fromMe && (m.from == null || m.from == from) && DateTime.now().difference(m.time).inMinutes < 10) {
         _wipe(m);
+      }
+    } else if (c['edit'] is Map) {
+      final v = (c['edit'] as Map).cast<String, dynamic>();
+      final m = _find(v['id'] as String? ?? '');
+      // Only the sender can edit, and only for a short while.
+      if (m != null && !m.fromMe && !m.deleted && (m.from == null || m.from == from) && DateTime.now().difference(m.time).inMinutes < 20) {
+        m.text = (v['t'] as String? ?? m.text);
+        (m.media ??= <String, dynamic>{})['ed'] = true;
       }
     } else if (c['opened'] is String) {
       final m = _find(c['opened'] as String);
@@ -927,6 +976,17 @@ class Messenger {
   }
 
   /// Delete for everyone (my messages, recent ones).
+  /// Edit a message I sent (allowed for a few minutes, like WhatsApp).
+  Future<void> editMessage(Chat chat, Message m, String text) async {
+    m.text = text;
+    (m.media ??= <String, dynamic>{})['ed'] = true;
+    _s.changed();
+    if (!chat.isReal) return;
+    try {
+      await _sendPayload(chat, _newId(), {'edit': {'id': m.id, 't': text}, 'ts': DateTime.now().millisecondsSinceEpoch}, silent: true);
+    } catch (_) {}
+  }
+
   Future<void> deleteForEveryone(Chat chat, Message m) async {
     _wipe(m);
     _s.changed();

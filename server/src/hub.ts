@@ -1,5 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
+import { chatRoute } from './chat';
+import { groupRoute } from './groups';
 import { presenceFor } from './privacy';
+import { HttpError } from './util';
 import type { Env } from './util';
 
 const WATCH_MS = 150_000;
@@ -23,6 +26,12 @@ export class UserHub extends DurableObject<Env> {
     const url = new URL(req.url);
     const uid = req.headers.get('x-user');
     if (uid) await this.ctx.storage.put('uid', uid);
+    const meHdr = req.headers.get('x-me');
+    if (meHdr) {
+      try {
+        await this.ctx.storage.put('me', JSON.parse(decodeURIComponent(meHdr)));
+      } catch {}
+    }
 
     if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
       const wasOnline = this.openSockets().length > 0;
@@ -83,6 +92,72 @@ export class UserHub extends DurableObject<Env> {
   private async closed(ws: WebSocket) {
     await this.ctx.storage.put('lastSeen', Date.now());
     if (this.openSockets(ws).length === 0) await this.tellWatchers(false);
+  }
+
+  // ------------------------------------------------------------ fast send
+  // The phone sends messages over its open socket. We store the message here
+  // (on-disk, instant), answer "accepted" right away (= ✓), then deliver it.
+  // If delivery can't finish now, an alarm retries it.
+  async webSocketMessage(ws: WebSocket, data: string | ArrayBuffer) {
+    if (typeof data !== 'string' || data === 'ping') return;
+    let m: { type?: string; rid?: string; path?: string; body?: unknown };
+    try {
+      m = JSON.parse(data);
+    } catch {
+      return;
+    }
+    if (m.type !== 'send' || !m.rid || !m.path) return;
+    const path = String(m.path);
+    if (path !== '/v1/messages' && !/^\/v1\/groups\/[\w-]+\/messages$/.test(path)) {
+      ws.send(JSON.stringify({ type: 'ack', rid: m.rid, ok: false }));
+      return;
+    }
+    const key = `q:${Date.now()}:${m.rid}`;
+    await this.ctx.storage.put(key, { rid: m.rid, path, body: m.body, tries: 0 });
+    ws.send(JSON.stringify({ type: 'ack', rid: m.rid, ok: true }));
+    this.ctx.waitUntil(this.run(key));
+  }
+
+  private async run(key: string) {
+    const item = await this.ctx.storage.get<{ rid: string; path: string; body: unknown; tries: number }>(key);
+    const me = await this.ctx.storage.get<{ id: string; phone: string; name: string; username: string | null; about: string }>('me');
+    if (!item || !me) return;
+    const url = new URL(`https://hub${item.path}`);
+    const c = {
+      req: new Request(url, { method: 'POST', body: JSON.stringify(item.body ?? {}), headers: { 'content-type': 'application/json' } }),
+      env: this.env,
+      url,
+      later: (p: Promise<unknown>) => this.ctx.waitUntil(p.catch(() => {})),
+    };
+    try {
+      if (item.path === '/v1/messages') await chatRoute(c, me, 'POST', item.path, '');
+      else await groupRoute(c, me, 'POST', item.path);
+      await this.ctx.storage.delete(key);
+    } catch (e) {
+      const status = e instanceof HttpError ? e.status : 0;
+      // Bad request / not allowed: give up and tell the phone.
+      if ((status >= 400 && status < 500 && status !== 429) || item.tries >= 8) {
+        await this.ctx.storage.delete(key);
+        const msgId = (item.body as { msgId?: string })?.msgId;
+        const out = JSON.stringify({ type: 'send_failed', rid: item.rid, msgId, error: e instanceof HttpError ? e.code : 'ERROR' });
+        for (const w of this.openSockets()) {
+          try {
+            w.send(out);
+          } catch {}
+        }
+        return;
+      }
+      item.tries++;
+      await this.ctx.storage.put(key, item);
+      const at = Date.now() + Math.min(60_000, 2_000 * 2 ** item.tries);
+      const cur = await this.ctx.storage.getAlarm();
+      if (!cur || cur > at) await this.ctx.storage.setAlarm(at);
+    }
+  }
+
+  async alarm() {
+    const pending = await this.ctx.storage.list({ prefix: 'q:' });
+    for (const key of pending.keys()) await this.run(key);
   }
 
   async webSocketClose(ws: WebSocket, code: number) {

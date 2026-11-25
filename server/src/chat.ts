@@ -263,6 +263,8 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     if (c.req.headers.get('upgrade')?.toLowerCase() !== 'websocket') throw new HttpError(426, 'UPGRADE_REQUIRED');
     const req = new Request(c.req);
     req.headers.set('x-user', me.id);
+    // The hub sends messages for this user straight from the socket.
+    req.headers.set('x-me', encodeURIComponent(JSON.stringify({ id: me.id, phone: me.phone, name: me.name, username: me.username, about: me.about })));
     return hub(env, me.id).fetch(req);
   }
 

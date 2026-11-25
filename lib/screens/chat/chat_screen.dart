@@ -46,6 +46,220 @@ class _ChatScreenState extends State<ChatScreen> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
   Message? _replyTo;
+  // WhatsApp-style selection: long-press a message.
+  final Set<String> _sel = {};
+  OverlayEntry? _reactBar;
+  Message? _editing;
+
+  List<Message> get _selMsgs => chat.messages.where((m) => _sel.contains(m.id)).toList();
+
+  bool _canEdit(Message m) =>
+      m.fromMe && !m.deleted && m.kind == MsgKind.text && DateTime.now().difference(m.time).inMinutes < 5;
+
+  void _hideReactBar() {
+    _reactBar?.remove();
+    _reactBar = null;
+  }
+
+  void _clearSel() {
+    _hideReactBar();
+    if (_sel.isNotEmpty) setState(() => _sel.clear());
+  }
+
+  void _onLongPress(Message m, BuildContext bubble) {
+    if (m.kind == MsgKind.system) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _sel.add(m.id));
+    _hideReactBar();
+    if (_sel.length == 1 && !m.deleted) _showReactBar(m, bubble);
+  }
+
+  void _onTapMsg(Message m) {
+    if (_sel.isEmpty) return;
+    _hideReactBar();
+    setState(() => _sel.contains(m.id) ? _sel.remove(m.id) : _sel.add(m.id));
+  }
+
+  void _showReactBar(Message m, BuildContext bubble) {
+    final box = bubble.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return;
+    final pos = box.localToGlobal(Offset.zero);
+    final screen = MediaQuery.of(context).size;
+    final top = pos.dy - 58 < 110 ? pos.dy + box.size.height + 6 : pos.dy - 58;
+    final bc = context.bc;
+    _reactBar = OverlayEntry(
+      builder: (_) => Positioned(
+        top: top,
+        left: m.fromMe ? null : 10,
+        right: m.fromMe ? 10 : null,
+        child: Material(
+          color: bc.surface,
+          elevation: 8,
+          borderRadius: BorderRadius.circular(28),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              for (final e in const ['👍', '❤️', '😂', '😮', '😢', '🙏'])
+                InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () {
+                    AppState.instance.react(m, e);
+                    _clearSel();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: m.reaction == e ? context.primary.withOpacity(0.2) : null),
+                    child: Text(e, style: TextStyle(fontSize: screen.width < 360 ? 22 : 26)),
+                  ),
+                ),
+              InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () async {
+                  _hideReactBar();
+                  final e = await showModalBottomSheet<String>(
+                    context: context,
+                    builder: (s) => SafeArea(
+                      child: SizedBox(
+                        height: 320,
+                        child: EmojiPicker(
+                          onEmojiSelected: (_, em) => Navigator.pop(s, em.emoji),
+                          config: Config(
+                            height: 320,
+                            emojiViewConfig: EmojiViewConfig(backgroundColor: bc.bg, columns: 8, emojiSizeMax: 28),
+                            categoryViewConfig: CategoryViewConfig(backgroundColor: bc.surface, indicatorColor: context.primary, iconColorSelected: context.primary),
+                            bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                  if (e != null) AppState.instance.react(m, e);
+                  _clearSel();
+                },
+                child: Padding(padding: const EdgeInsets.all(8), child: Icon(Icons.add_rounded, color: bc.muted)),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_reactBar!);
+  }
+
+  void _startEdit(Message m) {
+    _clearSel();
+    final lines = m.text.split('\n');
+    final body = lines.first.startsWith('↪ ') ? lines.skip(1).join('\n') : m.text;
+    setState(() {
+      _editing = m;
+      _replyTo = null;
+    });
+    _ctrl.text = body;
+    _ctrl.selection = TextSelection.collapsed(offset: body.length);
+    _focus.requestFocus();
+  }
+
+  Future<void> _deleteSelected() async {
+    final ms = _selMsgs;
+    if (ms.isEmpty) return;
+    final everyone = ms.every((m) => m.fromMe && !m.deleted && DateTime.now().difference(m.time).inMinutes < 5);
+    final r = await showDialog<String>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(ms.length == 1 ? 'Delete message?' : 'Delete ${ms.length} messages?'),
+        actions: [
+          if (everyone) TextButton(onPressed: () => Navigator.pop(d, 'all'), child: const Text('Delete for everyone')),
+          TextButton(onPressed: () => Navigator.pop(d, 'me'), child: const Text('Delete for me')),
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
+        ],
+      ),
+    );
+    if (r == null) return;
+    for (final m in ms) {
+      if (r == 'all') {
+        Messenger.instance.deleteForEveryone(chat, m);
+      } else {
+        AppState.instance.deleteMessage(chat, m);
+      }
+    }
+    _clearSel();
+  }
+
+  Future<void> _forwardSelected() async {
+    final ms = _selMsgs.where((m) => !m.deleted).toList();
+    _clearSel();
+    if (ms.length == 1) {
+      await forwardMessage(context, ms.first);
+    } else if (ms.isNotEmpty) {
+      await forwardMany(context, ms);
+    }
+  }
+
+  PreferredSizeWidget _selectionBar() {
+    final ms = _selMsgs;
+    final one = ms.length == 1 ? ms.first : null;
+    final allStarred = ms.isNotEmpty && ms.every((m) => m.starred);
+    return AppBar(
+      leading: IconButton(onPressed: _clearSel, icon: const Icon(Icons.arrow_back_rounded)),
+      title: Text('${ms.length}'),
+      actions: [
+        if (one != null && !one.deleted)
+          IconButton(
+            tooltip: 'Reply',
+            onPressed: () {
+              _clearSel();
+              setState(() {
+                _replyTo = one;
+                _editing = null;
+              });
+              _focus.requestFocus();
+            },
+            icon: const Icon(Icons.reply_rounded),
+          ),
+        if (one != null && _canEdit(one)) IconButton(tooltip: 'Edit', onPressed: () => _startEdit(one), icon: const Icon(Icons.edit_outlined)),
+        IconButton(
+          tooltip: allStarred ? 'Unstar' : 'Star',
+          onPressed: () {
+            for (final m in ms) {
+              if (m.starred == allStarred) AppState.instance.toggleStar(m);
+            }
+            _clearSel();
+          },
+          icon: Icon(allStarred ? Icons.star_rounded : Icons.star_outline_rounded),
+        ),
+        IconButton(tooltip: 'Delete', onPressed: _deleteSelected, icon: const Icon(Icons.delete_outline_rounded)),
+        if (ms.any((m) => !m.deleted)) IconButton(tooltip: 'Forward', onPressed: _forwardSelected, icon: const Icon(Icons.shortcut_rounded)),
+        PopupMenuButton<String>(
+          onSelected: (v) async {
+            switch (v) {
+              case 'copy':
+                await Clipboard.setData(ClipboardData(text: ms.map((m) => m.text).where((t) => t.isNotEmpty).join('\n')));
+                _toast(ms.length == 1 ? 'Message copied' : 'Messages copied');
+              case 'pin':
+                Messenger.instance.pin(chat, chat.pinnedId == one!.id ? null : one);
+              case 'sticker':
+                await StickerStore.instance.load();
+                await StickerStore.instance.add(one!.mediaPath!);
+                _toast('Added to your stickers');
+              case 'select':
+                setState(() => _sel.addAll(chat.messages.where((m) => m.kind != MsgKind.system).map((m) => m.id)));
+                _hideReactBar();
+                return;
+            }
+            _clearSel();
+          },
+          itemBuilder: (_) => [
+            if (ms.any((m) => m.text.trim().isNotEmpty && !m.deleted)) const PopupMenuItem(value: 'copy', child: Text('Copy')),
+            if (one != null && !one.deleted && (!chat.isRealGroup || Messenger.instance.canEditGroup(chat)))
+              PopupMenuItem(value: 'pin', child: Text(chat.pinnedId == one.id ? 'Unpin' : 'Pin')),
+            if (one != null && one.media?['stk'] == true && one.mediaPath != null && File(one.mediaPath!).existsSync())
+              const PopupMenuItem(value: 'sticker', child: Text('Add to my stickers')),
+            const PopupMenuItem(value: 'select', child: Text('Select all')),
+          ],
+        ),
+      ],
+    );
+  }
   Map<String, dynamic>? _lp; // link preview for the text being typed
   String? _lpFor, _lpOff;
   Timer? _lpTimer;
@@ -594,6 +808,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     if (AppState.instance.activeChatId == chat.id) AppState.instance.activeChatId = null;
     Messenger.instance.closeChat(chat);
+    _hideReactBar();
     _recTimer?.cancel();
     _lpTimer?.cancel();
     _ampSub?.cancel();
@@ -607,6 +822,15 @@ class _ChatScreenState extends State<ChatScreen> {
   void _send() {
     final text = _ctrl.text.trim();
     if (text.isEmpty) return;
+    final ed = _editing;
+    if (ed != null) {
+      final lines = ed.text.split('\n');
+      final full = lines.first.startsWith('↪ ') ? '${lines.first}\n$text' : text;
+      _ctrl.clear();
+      setState(() => _editing = null);
+      if (full != ed.text) Messenger.instance.editMessage(chat, ed, full);
+      return;
+    }
     HapticFeedback.lightImpact();
     final full = _replyTo == null ? text : '↪ ${_replyTo!.text.split('\n').first}\n$text';
     final lp = _lp != null && firstUrl(text) == _lp!['u'] ? _lp : null;
@@ -619,132 +843,22 @@ class _ChatScreenState extends State<ChatScreen> {
     AppState.instance.send(chat, full, lp: lp);
   }
 
-  void _msgMenu(Message m) {
-    if (m.kind == MsgKind.system) return;
-    HapticFeedback.selectionClick();
-    final bc = context.bc;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      // Tall enough for every option (Delete for everyone was cut off before).
-      isScrollControlled: true,
-      builder: (sheet) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (final e in ['❤️', '😂', '👍', '😮', '🙏', '😢'])
-                  GestureDetector(
-                    onTap: () {
-                      AppState.instance.react(m, e);
-                      Navigator.pop(sheet);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: m.reaction == e ? context.primary.withOpacity(0.15) : bc.raised,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(e, style: const TextStyle(fontSize: 24)),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.reply_rounded),
-            title: const Text('Reply'),
-            onTap: () {
-              Navigator.pop(sheet);
-              setState(() => _replyTo = m);
-            },
-          ),
-          if (!m.deleted && (!chat.isRealGroup || Messenger.instance.canEditGroup(chat)))
-            ListTile(
-              leading: Icon(chat.pinnedId == m.id ? Icons.push_pin_outlined : Icons.push_pin_rounded),
-              title: Text(chat.pinnedId == m.id ? 'Unpin' : 'Pin'),
-              onTap: () {
-                Navigator.pop(sheet);
-                Messenger.instance.pin(chat, chat.pinnedId == m.id ? null : m);
-              },
-            ),
-          if (!m.deleted)
-            ListTile(
-              leading: const Icon(Icons.shortcut_rounded),
-              title: const Text('Forward'),
-              onTap: () {
-                Navigator.pop(sheet);
-                forwardMessage(context, m);
-              },
-            ),
-          if (!m.deleted && m.media?['stk'] == true && m.mediaPath != null && File(m.mediaPath!).existsSync())
-            ListTile(
-              leading: const Icon(Icons.emoji_emotions_outlined),
-              title: const Text('Add to my stickers'),
-              onTap: () async {
-                Navigator.pop(sheet);
-                await StickerStore.instance.load();
-                await StickerStore.instance.add(m.mediaPath!);
-                _toast('Added to your stickers');
-              },
-            ),
-          ListTile(
-            leading: Icon(m.starred ? Icons.star_rounded : Icons.star_outline_rounded),
-            title: Text(m.starred ? 'Unstar' : 'Star'),
-            onTap: () {
-              AppState.instance.toggleStar(m);
-              Navigator.pop(sheet);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.copy_rounded),
-            title: const Text('Copy'),
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: m.text));
-              Navigator.pop(sheet);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.delete_outline_rounded, color: Theme.of(context).colorScheme.error),
-            title: Text('Delete for me', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            onTap: () {
-              AppState.instance.deleteMessage(chat, m);
-              Navigator.pop(sheet);
-            },
-          ),
-          if (m.fromMe && !m.deleted && DateTime.now().difference(m.time).inMinutes < 5)
-            ListTile(
-              leading: Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
-              title: Text('Delete for everyone', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              onTap: () async {
-                Navigator.pop(sheet);
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (d) => AlertDialog(
-                    title: const Text('Delete message for everyone?'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('No')),
-                      TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Yes, delete', style: TextStyle(color: Color(0xFFB3261E)))),
-                    ],
-                  ),
-                );
-                if (ok == true) Messenger.instance.deleteForEveryone(chat, m);
-              },
-            ),
-        ]),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final bc = context.bc;
-    return Scaffold(
-      appBar: AppBar(
+    return PopScope(
+      canPop: _sel.isEmpty && _editing == null,
+      onPopInvokedWithResult: (did, _) {
+        if (did) return;
+        if (_sel.isNotEmpty) {
+          _clearSel();
+        } else if (_editing != null) {
+          _ctrl.clear();
+          setState(() => _editing = null);
+        }
+      },
+      child: Scaffold(
+      appBar: _sel.isNotEmpty ? _selectionBar() : AppBar(
         titleSpacing: 0,
         title: InkWell(
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
@@ -889,7 +1003,16 @@ class _ChatScreenState extends State<ChatScreen> {
                         setState(() => _replyTo = m);
                         _focus.requestFocus();
                       },
-                      child: _Bubble(key: ValueKey(m.id), m: m, chat: chat, onLongPress: () => _msgMenu(m), onReply: (x) => setState(() => _replyTo = x)),
+                      child: _Bubble(
+                        key: ValueKey(m.id),
+                        m: m,
+                        chat: chat,
+                        selected: _sel.contains(m.id),
+                        selecting: _sel.isNotEmpty,
+                        onLongPress: (ctx) => _onLongPress(m, ctx),
+                        onTap: () => _onTapMsg(m),
+                        onReply: (x) => setState(() => _replyTo = x),
+                      ),
                     );
                   },
                 );
@@ -968,7 +1091,14 @@ class _ChatScreenState extends State<ChatScreen> {
             },
             ctrl: _ctrl,
             replyTo: _replyTo,
-            onCancelReply: () => setState(() => _replyTo = null),
+            editing: _editing,
+            onCancelReply: () {
+              if (_editing != null) _ctrl.clear();
+              setState(() {
+                _replyTo = null;
+                _editing = null;
+              });
+            },
             onSend: _send,
             onChanged: () {
               setState(() {});
@@ -1075,6 +1205,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
         ]),
       ),
+    ),
     );
   }
 }
@@ -1082,9 +1213,20 @@ class _ChatScreenState extends State<ChatScreen> {
 class _Bubble extends StatefulWidget {
   final Message m;
   final Chat chat;
-  final VoidCallback onLongPress;
+  final void Function(BuildContext bubble) onLongPress;
+  final VoidCallback onTap;
+  final bool selected, selecting;
   final void Function(Message m) onReply;
-  const _Bubble({super.key, required this.m, required this.chat, required this.onLongPress, required this.onReply});
+  const _Bubble({
+    super.key,
+    required this.m,
+    required this.chat,
+    required this.onLongPress,
+    required this.onTap,
+    required this.onReply,
+    this.selected = false,
+    this.selecting = false,
+  });
   @override
   State<_Bubble> createState() => _BubbleState();
 }
@@ -1189,8 +1331,9 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
           ),
         if (m.media?['lp'] is Map)
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 300),
+            constraints: const BoxConstraints(maxWidth: 280, minWidth: 280),
             child: LinkPreviewCard(
+              large: true,
               lp: (m.media!['lp'] as Map).cast<String, dynamic>(),
               fg: fg,
               bg: (me ? Colors.black : context.primary).withOpacity(me ? 0.14 : 0.08),
@@ -1205,13 +1348,26 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         ((m.kind == MsgKind.image && m.media?['stk'] == true) || (m.kind == MsgKind.text && isBigEmoji(m.text)));
     if (bare && m.kind == MsgKind.text) content = Text(m.text.trim(), style: const TextStyle(fontSize: 56, height: 1.15));
     final metaFg = bare ? bc.muted : fg;
+    // Photo / video without a caption: time sits on the picture, like WhatsApp.
+    final overlayMeta = !m.deleted &&
+        (m.kind == MsgKind.image || m.kind == MsgKind.video) &&
+        m.media?['once'] != true &&
+        m.media?['stk'] != true &&
+        m.text.trim().isEmpty;
+    Widget metaRow(Color c) => Row(mainAxisSize: MainAxisSize.min, children: [
+          if (m.media?['ed'] == true) ...[Text('Edited ', style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: c.withOpacity(0.7)))],
+          if (m.starred) ...[Icon(Icons.star_rounded, size: 12, color: c.withOpacity(0.8)), const SizedBox(width: 3)],
+          if (m.expiresAt != null) ...[Icon(Icons.timer_outlined, size: 11, color: c.withOpacity(0.8)), const SizedBox(width: 3)],
+          Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: c.withOpacity(0.85))),
+          if (me) ...[const SizedBox(width: 4), Ticks(status: m.status, color: bare ? bc.muted : Colors.white, readColor: kReadBlueOnBubble)],
+        ]);
     final bubble = Container(
       constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
       margin: EdgeInsets.only(top: 4, bottom: m.reaction != null ? 14 : 4),
       padding: bare
           ? const EdgeInsets.fromLTRB(4, 2, 4, 2)
           : (!m.deleted && (m.kind == MsgKind.image || m.kind == MsgKind.video) && m.media?['once'] != true)
-              ? const EdgeInsets.fromLTRB(4, 4, 4, 6)
+              ? EdgeInsets.fromLTRB(3, 3, 3, overlayMeta ? 3 : 6)
               : const EdgeInsets.fromLTRB(14, 10, 12, 8),
       decoration: bare ? null : BoxDecoration(
         color: bg,
@@ -1240,14 +1396,24 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
               ]),
             ),
           ),
-        content,
-        const SizedBox(height: 3),
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          if (m.starred) ...[Icon(Icons.star_rounded, size: 12, color: metaFg.withOpacity(0.7)), const SizedBox(width: 3)],
-          if (m.expiresAt != null) ...[Icon(Icons.timer_outlined, size: 11, color: metaFg.withOpacity(0.7)), const SizedBox(width: 3)],
-          Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: metaFg.withOpacity(0.7))),
-          if (me) ...[const SizedBox(width: 4), Ticks(status: m.status, color: bare ? bc.muted : Colors.white, readColor: kReadBlueOnBubble)],
-        ]),
+        if (overlayMeta)
+          Stack(children: [
+            content,
+            Positioned(
+              right: 8,
+              bottom: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(10)),
+                child: metaRow(Colors.white),
+              ),
+            ),
+          ])
+        else ...[
+          content,
+          const SizedBox(height: 3),
+          metaRow(metaFg),
+        ],
       ]),
     );
 
@@ -1275,9 +1441,24 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
       opacity: _a,
       child: SlideTransition(
         position: Tween(begin: Offset(me ? 0.15 : -0.15, 0.25), end: Offset.zero).animate(CurvedAnimation(parent: _a, curve: Curves.easeOutCubic)),
-        child: Align(
-          alignment: me ? Alignment.centerRight : Alignment.centerLeft,
-          child: GestureDetector(onTap: widget.onLongPress, onLongPress: widget.onLongPress, child: withReaction),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: widget.selecting ? widget.onTap : null,
+          child: Container(
+            // Selected: the whole row is highlighted, like WhatsApp.
+            color: widget.selected ? context.primary.withOpacity(0.22) : Colors.transparent,
+            child: Align(
+              alignment: me ? Alignment.centerRight : Alignment.centerLeft,
+              child: Builder(
+                builder: (bctx) => GestureDetector(
+                  onTap: widget.selecting ? widget.onTap : null,
+                  onLongPress: () => widget.onLongPress(bctx),
+                  // While selecting, taps select instead of opening photos/links.
+                  child: IgnorePointer(ignoring: widget.selecting, child: withReaction),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1287,6 +1468,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
 class _Composer extends StatelessWidget {
   final TextEditingController ctrl;
   final Message? replyTo;
+  final Message? editing;
   final VoidCallback onCancelReply;
   final VoidCallback onSend;
   final VoidCallback onChanged;
@@ -1305,6 +1487,7 @@ class _Composer extends StatelessWidget {
     required this.emojiOpen,
     required this.ctrl,
     required this.replyTo,
+    this.editing,
     required this.onCancelReply,
     required this.onSend,
     required this.onChanged,
@@ -1321,7 +1504,28 @@ class _Composer extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (replyTo != null)
+          if (editing != null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+              decoration: BoxDecoration(
+                color: bc.raised,
+                borderRadius: BorderRadius.circular(12),
+                border: Border(left: BorderSide(color: context.primary, width: 3)),
+              ),
+              child: Row(children: [
+                Icon(Icons.edit_outlined, size: 18, color: context.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Edit message', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.primary)),
+                    Text(editing!.text.split('\n').last, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: bc.muted)),
+                  ]),
+                ),
+                IconButton(onPressed: onCancelReply, icon: Icon(Icons.close_rounded, size: 18, color: bc.muted)),
+              ]),
+            ),
+          if (replyTo != null && editing == null)
             Container(
               margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
               padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
