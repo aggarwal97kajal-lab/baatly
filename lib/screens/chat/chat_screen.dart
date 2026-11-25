@@ -26,6 +26,7 @@ import 'chat_tools.dart';
 import 'location.dart';
 import 'safety_screens.dart';
 import '../../data/calls.dart';
+import '../../data/group_calls.dart';
 import '../../data/media.dart';
 import '../../data/stickers.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -699,11 +700,11 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           IconButton(
-            onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: true) : () => showComingSoon(context, 'Group video call'),
+            onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: true) : () => GroupCallService.instance.start(chat, video: true),
             icon: const Icon(Icons.videocam_outlined),
           ),
           IconButton(
-            onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: false) : () => showComingSoon(context, 'Group call'),
+            onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: false) : () => GroupCallService.instance.start(chat, video: false),
             icon: const Icon(Icons.call_outlined),
           ),
           PopupMenuButton<String>(

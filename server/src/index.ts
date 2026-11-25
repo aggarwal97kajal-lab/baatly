@@ -27,6 +27,7 @@ import { deleteUserStatuses, expireStatuses, statusRoute } from './status';
 import { expireMedia, mediaConfigured, mediaRoute } from './media';
 import { groupRoute } from './groups';
 import { callRoute } from './calls';
+import { groupCallRoute } from './gcalls';
 import { cleanupRateLimits, safetyRoute } from './safety';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
@@ -438,6 +439,11 @@ async function route(c: Ctx): Promise<Response> {
   if (/^\/v1\/(blocks|reports)(\/|$)/.test(p)) {
     const { user } = await requireUser(c);
     const r = await safetyRoute(c, user, m, p);
+    if (r) return r;
+  }
+  if (/^\/v1\/gcalls(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await groupCallRoute(c, user, m, p);
     if (r) return r;
   }
   if (/^\/v1\/calls(\/|$)/.test(p)) {

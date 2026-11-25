@@ -136,7 +136,7 @@ class Notifier {
     try {
       await Api.instance.load();
       final uid = Api.instance.userId;
-      if (uid != null && !knownName) {
+      if (uid != null && !knownName && data['group'] == null) {
         final peers = ((await _localData(uid))['peers'] as Map?)?.cast<String, dynamic>() ?? {};
         final n = (peers[data['from']] as Map?)?['name'] as String?;
         if (n != null && n.isNotEmpty) name = n;
@@ -146,7 +146,9 @@ class Notifier {
     await _plugin.show(
       _idFor('call'),
       name,
-      video ? 'Incoming video call' : 'Incoming voice call',
+      data['group'] != null || (data['callId'] as String? ?? '').startsWith('grp-')
+          ? (video ? 'Incoming group video call' : 'Incoming group voice call')
+          : (video ? 'Incoming video call' : 'Incoming voice call'),
       NotificationDetails(
         android: AndroidNotificationDetails(
           _callChannel.id,
@@ -271,6 +273,7 @@ class Notifier {
     if (call != null) {
       await _plugin.cancel(_idFor('call'));
       if (r.actionId == 'decline_call') {
+        if (call.startsWith('grp-')) return; // others may still be in it
         try {
           await Api.instance.load();
           await Api.instance.request('POST', '/v1/calls/$call/signal', {'action': 'reject'});

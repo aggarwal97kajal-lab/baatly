@@ -19,6 +19,7 @@ import 'models.dart';
 import 'push.dart';
 import 'notifier.dart';
 import 'calls.dart';
+import 'group_calls.dart';
 import 'status_service.dart';
 
 /// Someone we chat with: their public key is cached so we can encrypt.
@@ -433,6 +434,9 @@ class Messenger {
         ok = await _onGroupEvent(ev);
       case 'call':
         CallService.instance.onEvent(ev);
+        ok = false;
+      case 'gcall':
+        GroupCallService.instance.onEvent(ev);
         ok = false;
       case 'profile':
         unawaited(_onProfile(ev['user'] as String));

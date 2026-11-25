@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
 import '../../data/calls.dart';
+import '../../data/group_calls.dart';
 import '../../data/messenger.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
@@ -81,6 +82,11 @@ class CallsTab extends StatelessWidget {
               trailing: IconButton(
                 icon: Icon(c.video ? Icons.videocam_outlined : Icons.call_outlined, color: context.primary),
                 onPressed: () {
+                  if (c.peerId != null && c.peerId!.startsWith('g:')) {
+                    final g = Messenger.instance.chatById(c.peerId!.substring(2));
+                    if (g != null) GroupCallService.instance.start(g, video: c.video);
+                    return;
+                  }
                   final chat = c.peerId == null ? null : Messenger.instance.chatById(c.peerId!);
                   if (chat != null) {
                     CallService.instance.start(chat, video: c.video);

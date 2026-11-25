@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../nav.dart';
 import '../screens/call/call_screen.dart';
 import 'api.dart';
+import 'group_calls.dart';
 import 'app_state.dart';
 import 'messenger.dart';
 import 'models.dart';
@@ -131,7 +132,7 @@ class CallService {
   // ------------------------------------------------------------------ outgoing
   Future<void> start(Chat chat, {required bool video}) async {
     final peer = chat.peerId;
-    if (peer == null || current != null) return;
+    if (peer == null || current != null || GroupCallService.instance.current != null) return;
     final s = CallSession(id: _newId(), peerId: peer, peerName: chat.name, outgoing: true, video: video, state: CallState.calling);
     current = s;
     _open(s);
@@ -156,7 +157,7 @@ class CallService {
     final action = ev['action'] as String?;
     final callId = ev['callId'] as String?;
     if (action == 'offer') {
-      if (current != null) {
+      if (current != null || GroupCallService.instance.current != null) {
         unawaited(Api.instance.request('POST', '/v1/calls/$callId/signal', {'action': 'busy'}).then((_) {}, onError: (_) {}));
         return;
       }
@@ -186,6 +187,7 @@ class CallService {
 
   /// Opened from the incoming-call notification.
   Future<void> openIncoming(String callId) async {
+    if (callId.startsWith('grp-')) return GroupCallService.instance.openIncoming(callId);
     if (current != null) return;
     try {
       final d = await Api.instance.request('GET', '/v1/calls/$callId');
