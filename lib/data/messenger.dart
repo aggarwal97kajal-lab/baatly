@@ -521,7 +521,7 @@ class Messenger {
       if (ts is int) at = DateTime.fromMillisecondsSinceEpoch(ts);
       ttl = (plain['ttl'] as int?) ?? 0;
       md = (plain['md'] as Map?)?.cast<String, dynamic>();
-      for (final k in const ['del', 'opened', 'vote']) {
+      for (final k in const ['del', 'opened', 'vote', 'pin', 'unpin']) {
         if (plain.containsKey(k)) control = {k: plain[k]};
       }
     } catch (_) {
@@ -752,7 +752,7 @@ class Messenger {
           if (p.key != null) bodies[u] = await E2E.instance.seal(payload, p.key!);
         } catch (_) {}
       }
-      await Api.instance.request('POST', '/v1/groups/${chat.groupId}/messages', {'msgId': msgId, 'bodies': bodies, if (silent) 'silent': true});
+      await Api.instance.request('POST', '/v1/groups/${chat.groupId}/messages', {'msgId': msgId, 'bodies': bodies, if (silent) 'silent': true, if (silent) 'control': true});
       return true;
     }
     final to = onlyTo ?? chat.peerId!;
@@ -796,6 +796,11 @@ class Messenger {
     } else if (c['opened'] is String) {
       final m = _find(c['opened'] as String);
       if (m != null && m.fromMe) m.opened = true;
+    } else if (c['pin'] is String || c['unpin'] is String) {
+      final id = (c['pin'] ?? c['unpin']) as String;
+      for (final ch in _s.chats) {
+        if (ch.messages.any((m) => m.id == id)) ch.pinnedId = c['pin'] is String ? id : null;
+      }
     } else if (c['vote'] is Map) {
       final v = (c['vote'] as Map).cast<String, dynamic>();
       final m = _find(v['m'] as String? ?? '');
@@ -925,6 +930,13 @@ class Messenger {
     chat.admins = admins;
     final pv = (g['photo_ver'] as int?) ?? 0;
     if (pv > 0 && pv != chat.photoVer) unawaited(_syncGroupPhoto(chat, pv));
+    if (pv == 0 && chat.photo != null) {
+      chat.photo = null;
+      chat.photoVer = 0;
+    }
+    chat.description = g['about'] as String? ?? chat.description;
+    chat.editInfo = g['edit_info'] as String? ?? chat.editInfo;
+    chat.sendMessages = g['send_messages'] as String? ?? chat.sendMessages;
     chat.left = _uid != null && !members.contains(_uid);
     chat.about = memberLine(chat);
     return chat;
@@ -993,6 +1005,13 @@ class Messenger {
       'photo' => "${_who(actor)} changed this group's icon",
       'admin' => '$names ${targets.contains(_uid) ? 'are' : 'is'} now an admin',
       'unadmin' => '$names ${targets.contains(_uid) ? 'are' : 'is'} no longer an admin',
+      'photo_removed' => "${_who(actor)} deleted this group's icon",
+      'edit_info' => ev['value'] == 'admins'
+          ? "${_who(actor)} changed this group's settings to allow only admins to edit this group's info"
+          : "${_who(actor)} changed this group's settings to allow all members to edit this group's info",
+      'send_messages' => ev['value'] == 'admins'
+          ? "${_who(actor)} changed this group's settings to allow only admins to send messages to this group"
+          : "${_who(actor)} changed this group's settings to allow all members to send messages to this group",
       _ => null,
     };
     if (text != null) {
@@ -1042,8 +1061,64 @@ class Messenger {
 
   Future<void> setGroupPhoto(Chat chat, String path) async {
     final bytes = await File(path).readAsBytes();
-    await Api.instance.request('PUT', '/v1/groups/${chat.groupId}/photo', {'photo': base64Encode(bytes)});
-    await _syncGroupPhoto(chat, -1);
+    // Show it right away; upload in the same step.
+    final dir = Directory('${(await getApplicationDocumentsDirectory()).path}/photos');
+    await dir.create(recursive: true);
+    final local = File('${dir.path}/g_${chat.groupId}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await local.writeAsBytes(bytes, flush: true);
+    final old = chat.photo;
+    chat.photo = local.path;
+    _s.changed();
+    try {
+      final d = await Api.instance.request('PUT', '/v1/groups/${chat.groupId}/photo', {'photo': base64Encode(bytes)});
+      chat.photoVer = (d['ver'] as int?) ?? chat.photoVer + 1;
+      if (old != null && old != local.path) {
+        try {
+          await File(old).delete();
+        } catch (_) {}
+      }
+    } catch (e) {
+      chat.photo = old;
+      _s.changed();
+      rethrow;
+    }
+  }
+
+  Future<void> removeGroupPhoto(Chat chat) async {
+    await Api.instance.request('DELETE', '/v1/groups/${chat.groupId}/photo');
+    chat.photo = null;
+    chat.photoVer = 0;
+    _s.changed();
+  }
+
+  Future<void> setGroupDescription(Chat chat, String text) async {
+    final d = await Api.instance.request('PATCH', '/v1/groups/${chat.groupId}', {'about': text});
+    _upsertGroup((d['group'] as Map).cast<String, dynamic>());
+    _s.changed();
+  }
+
+  Future<void> setGroupSettings(Chat chat, {String? editInfo, String? sendMessages}) async {
+    final d = await Api.instance.request('PATCH', '/v1/groups/${chat.groupId}/settings', {
+      if (editInfo != null) 'editInfo': editInfo,
+      if (sendMessages != null) 'sendMessages': sendMessages,
+    });
+    _upsertGroup((d['group'] as Map).cast<String, dynamic>());
+    _s.changed();
+  }
+
+  /// Can I change this group's name / icon / description / pins?
+  bool canEditGroup(Chat chat) => !chat.left && (chat.editInfo == 'all' || chat.admins.contains(_uid));
+  bool canSendInGroup(Chat chat) => !chat.left && (chat.sendMessages == 'all' || chat.admins.contains(_uid));
+
+  /// Pin / unpin a message for everyone in the chat.
+  Future<void> pin(Chat chat, Message? m) async {
+    final old = chat.pinnedId;
+    chat.pinnedId = m?.id;
+    _s.changed();
+    if (!chat.isReal) return;
+    try {
+      await _sendPayload(chat, _newId(), m == null ? {'unpin': old ?? ''} : {'pin': m.id}, silent: true);
+    } catch (_) {}
   }
 
   Future<void> _syncGroupPhoto(Chat chat, int ver) async {

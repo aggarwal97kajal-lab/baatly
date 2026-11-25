@@ -198,7 +198,7 @@ class Notifier {
         if (key != null) {
           final plain = await E2E.instance.open(body, key);
           // Delete / view-once / poll votes: nothing to show.
-          if (plain.containsKey('del') || plain.containsKey('opened') || plain.containsKey('vote')) return;
+          if (const ['del', 'opened', 'vote', 'pin', 'unpin'].any(plain.containsKey)) return;
           text = _preview(plain);
         }
         final name = (peer?['name'] as String?)?.isNotEmpty == true

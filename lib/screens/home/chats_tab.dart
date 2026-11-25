@@ -187,6 +187,26 @@ class _ChatRow extends StatelessWidget {
               Navigator.pop(context);
             },
           ),
+          if (!chat.isRealGroup || chat.left)
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: Color(0xFFB3261E)),
+              title: Text(chat.isRealGroup ? 'Delete group' : 'Delete chat', style: const TextStyle(color: Color(0xFFB3261E))),
+              onTap: () async {
+                Navigator.pop(context);
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (d) => AlertDialog(
+                    title: Text(chat.isRealGroup ? 'Delete "${chat.name}"?' : 'Delete chat with ${chat.name}?'),
+                    content: const Text('Messages will be removed from this phone.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+                      TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Delete', style: TextStyle(color: Color(0xFFB3261E)))),
+                    ],
+                  ),
+                );
+                if (ok == true) s.deleteChat(chat);
+              },
+            ),
         ]),
       ),
     );

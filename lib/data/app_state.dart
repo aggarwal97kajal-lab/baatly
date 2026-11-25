@@ -329,6 +329,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes a chat (and its messages) from this phone.
+  void deleteChat(Chat c) {
+    chats.remove(c);
+    notifyListeners();
+  }
+
   void deleteMessage(Chat c, Message m) {
     c.messages.remove(m);
     notifyListeners();

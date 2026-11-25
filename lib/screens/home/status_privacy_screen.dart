@@ -118,7 +118,17 @@ class ContactPickerScreen extends StatefulWidget {
   final String title;
   final Set<String> initial;
   final bool excluding;
-  const ContactPickerScreen({super.key, required this.title, required this.initial, this.excluding = false});
+  /// Shown greyed out (e.g. people already in the group).
+  final Set<String> already;
+  final String alreadyLabel;
+  const ContactPickerScreen({
+    super.key,
+    required this.title,
+    required this.initial,
+    this.excluding = false,
+    this.already = const {},
+    this.alreadyLabel = 'Already added',
+  });
   @override
   State<ContactPickerScreen> createState() => _ContactPickerScreenState();
 }
@@ -206,11 +216,12 @@ class _ContactPickerScreenState extends State<ContactPickerScreen> {
                     ),
                   for (final c in list)
                     CheckboxListTile(
-                      value: _sel.contains(c.userId),
+                      enabled: !widget.already.contains(c.userId),
+                      value: widget.already.contains(c.userId) || _sel.contains(c.userId),
                       onChanged: (v) => setState(() => v == true ? _sel.add(c.userId) : _sel.remove(c.userId)),
                       secondary: Avatar(initials: Messenger.initialsOf(c.name), colorIndex: c.userId.codeUnits.fold<int>(0, (a, b) => a + b) % 7, size: 42),
                       title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text(ContactBook.pretty(c.phone)),
+                      subtitle: Text(widget.already.contains(c.userId) ? widget.alreadyLabel : ContactBook.pretty(c.phone)),
                       activeColor: widget.excluding ? const Color(0xFFB3261E) : context.primary,
                     ),
                   const SizedBox(height: 90),

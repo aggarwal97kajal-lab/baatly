@@ -17,7 +17,7 @@ async function memberIds(env: Env, gid: string) {
 }
 
 async function info(env: Env, gid: string) {
-  const g = await env.DB.prepare('SELECT id, name, about, photo_ver, created_by, created_at FROM groups WHERE id = ?').bind(gid).first();
+  const g = await env.DB.prepare('SELECT id, name, about, photo_ver, created_by, created_at, edit_info, send_messages FROM groups WHERE id = ?').bind(gid).first();
   if (!g) return null;
   const m = await env.DB.prepare(
     `SELECT gm.user_id AS id, gm.role, u.name, u.phone, u.photo_ver, k.x25519
@@ -82,10 +82,13 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
   const mine = await membership(env, gid, me.id);
   if (!mine) throw new HttpError(404, 'NOT_IN_GROUP', "You're no longer in this group.");
   const admin = mine.role === 'admin';
+  const settings = (await env.DB.prepare('SELECT edit_info, send_messages FROM groups WHERE id = ?').bind(gid).first<{ edit_info: string; send_messages: string }>())!;
+  const canEdit = admin || settings.edit_info === 'all';
 
   if (m === 'GET' && rest === '') return json({ group: await info(env, gid) });
 
   if (m === 'PATCH' && rest === '') {
+    if (!canEdit) throw new HttpError(403, 'ADMIN_ONLY', 'Only admins can edit this group\'s info.');
     const b = await readJson<{ name?: string; about?: string }>(c.req);
     if (b.name !== undefined) {
       const name = String(b.name).trim().slice(0, 100);
@@ -100,13 +103,36 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     return json({ group: await info(env, gid) });
   }
 
+  if (m === 'PATCH' && rest === '/settings') {
+    if (!admin) throw new HttpError(403, 'ADMIN_ONLY', 'Only admins can change group settings.');
+    const b = await readJson<{ editInfo?: string; sendMessages?: string }>(c.req);
+    if (b.editInfo === 'all' || b.editInfo === 'admins') {
+      await env.DB.prepare('UPDATE groups SET edit_info = ? WHERE id = ?').bind(b.editInfo, gid).run();
+      await groupEvent(env, gid, { action: 'edit_info', actor: me.id, value: b.editInfo });
+    }
+    if (b.sendMessages === 'all' || b.sendMessages === 'admins') {
+      await env.DB.prepare('UPDATE groups SET send_messages = ? WHERE id = ?').bind(b.sendMessages, gid).run();
+      await groupEvent(env, gid, { action: 'send_messages', actor: me.id, value: b.sendMessages });
+    }
+    return json({ group: await info(env, gid) });
+  }
+
+  if (m === 'DELETE' && rest === '/photo') {
+    if (!canEdit) throw new HttpError(403, 'ADMIN_ONLY', 'Only admins can edit this group\'s info.');
+    await env.DB.prepare('UPDATE groups SET photo = NULL, photo_ver = 0 WHERE id = ?').bind(gid).run();
+    await groupEvent(env, gid, { action: 'photo_removed', actor: me.id });
+    return json({ ok: true });
+  }
+
   if (m === 'PUT' && rest === '/photo') {
+    if (!canEdit) throw new HttpError(403, 'ADMIN_ONLY', 'Only admins can edit this group\'s info.');
     const b = await readJson<{ photo: string }>(c.req);
     const photo = String(b.photo ?? '');
     if (photo.length < 100 || photo.length > 1_200_000) throw new HttpError(413, 'PHOTO_TOO_LARGE', 'This photo is too large.');
     await env.DB.prepare('UPDATE groups SET photo = ?, photo_ver = photo_ver + 1 WHERE id = ?').bind(photo, gid).run();
     await groupEvent(env, gid, { action: 'photo', actor: me.id });
-    return json({ ok: true });
+    const v = await env.DB.prepare('SELECT photo_ver FROM groups WHERE id = ?').bind(gid).first<{ photo_ver: number }>();
+    return json({ ok: true, ver: v?.photo_ver ?? 1 });
   }
 
   if (m === 'GET' && rest === '/photo') {
@@ -154,7 +180,11 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
 
   // Encrypted message, one sealed copy per member (fan-out).
   if (m === 'POST' && rest === '/messages') {
-    const b = await readJson<{ msgId: string; bodies: Record<string, string>; silent?: boolean }>(c.req);
+    const b = await readJson<{ msgId: string; bodies: Record<string, string>; silent?: boolean; control?: boolean }>(c.req);
+    // "Only admins can send messages" (control messages like votes/receipts still go through).
+    if (settings.send_messages === 'admins' && !admin && !b.control) {
+      throw new HttpError(403, 'ADMINS_ONLY_MESSAGES', 'Only admins can send messages to this group.');
+    }
     const msgId = String(b.msgId ?? '').slice(0, 64);
     if (!msgId) throw new HttpError(400, 'BAD_MESSAGE');
     const members = new Set(await memberIds(env, gid));

@@ -328,6 +328,15 @@ class _ChatScreenState extends State<ChatScreen> {
               setState(() => _replyTo = m);
             },
           ),
+          if (!m.deleted && (!chat.isRealGroup || Messenger.instance.canEditGroup(chat)))
+            ListTile(
+              leading: Icon(chat.pinnedId == m.id ? Icons.push_pin_outlined : Icons.push_pin_rounded),
+              title: Text(chat.pinnedId == m.id ? 'Unpin' : 'Pin'),
+              onTap: () {
+                Navigator.pop(sheet);
+                Messenger.instance.pin(chat, chat.pinnedId == m.id ? null : m);
+              },
+            ),
           if (!m.deleted)
             ListTile(
               leading: const Icon(Icons.shortcut_rounded),
@@ -440,6 +449,26 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: ChatBackground(
         child: Column(children: [
+          if (chat.pinnedId != null)
+            Builder(builder: (context) {
+              Message? pm;
+              for (final x in chat.messages) {
+                if (x.id == chat.pinnedId) pm = x;
+              }
+              if (pm == null || pm.deleted) return const SizedBox.shrink();
+              final text = pm.text.isNotEmpty ? pm.text : ((pm.media?['name'] ?? pm.media?['q'] ?? pm.media?['title'] ?? 'Media') as String);
+              return Material(
+                color: bc.surface,
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.push_pin_rounded, color: context.primary, size: 20),
+                  title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: bc.text)),
+                  trailing: (!chat.isRealGroup || Messenger.instance.canEditGroup(chat))
+                      ? IconButton(icon: Icon(Icons.close_rounded, size: 18, color: bc.muted), tooltip: 'Unpin', onPressed: () => Messenger.instance.pin(chat, null))
+                      : null,
+                ),
+              );
+            }),
           Expanded(
             child: ListenableBuilder(
               listenable: AppState.instance,
@@ -509,6 +538,13 @@ class _ChatScreenState extends State<ChatScreen> {
               seconds: _recStart == null ? 0 : DateTime.now().difference(_recStart!).inSeconds,
               onCancel: () => _stopRecording(send: false),
               onSend: () => _stopRecording(send: true),
+            )
+          else if (chat.isRealGroup && !chat.left && !Messenger.instance.canSendInGroup(chat))
+            Container(
+              width: double.infinity,
+              color: bc.surface,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Text('Only admins can send messages', textAlign: TextAlign.center, style: TextStyle(color: bc.muted)),
             )
           else if (chat.left)
             Container(

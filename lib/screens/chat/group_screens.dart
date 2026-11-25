@@ -13,6 +13,7 @@ import '../home/status_privacy_screen.dart';
 import 'chat_screen.dart';
 import 'starred_screen.dart';
 import 'chat_tools.dart';
+import '../../widgets/photo_viewer.dart';
 
 /// New group: pick members, then name it.
 Future<void> startNewGroup(BuildContext context) async {
@@ -100,6 +101,7 @@ class GroupInfoScreen extends StatelessWidget {
       builder: (context, _) {
         final me = ms.myId;
         final iAmAdmin = chat.admins.contains(me);
+        final canEdit = ms.canEditGroup(chat);
         final members = [...chat.members]..sort((a, b) {
             if (a == me) return -1;
             if (b == me) return 1;
@@ -122,9 +124,36 @@ class GroupInfoScreen extends StatelessWidget {
             const SizedBox(height: 12),
             Center(
               child: GestureDetector(
-                onTap: chat.left
-                    ? null
+                onTap: !canEdit
+                    ? () => PhotoViewerScreen.open(context, chat.photo, chat.name)
                     : () async {
+                        final choice = await showModalBottomSheet<String>(
+                          context: context,
+                          showDragHandle: true,
+                          builder: (sheet) => SafeArea(
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              if (chat.photo != null)
+                                ListTile(leading: const Icon(Icons.fullscreen_rounded), title: const Text('View icon'), onTap: () => Navigator.pop(sheet, 'view')),
+                              ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Change icon'), onTap: () => Navigator.pop(sheet, 'change')),
+                              if (chat.photo != null)
+                                ListTile(
+                                  leading: const Icon(Icons.delete_outline_rounded, color: Color(0xFFB3261E)),
+                                  title: const Text('Remove icon', style: TextStyle(color: Color(0xFFB3261E))),
+                                  onTap: () => Navigator.pop(sheet, 'remove'),
+                                ),
+                              const SizedBox(height: 8),
+                            ]),
+                          ),
+                        );
+                        if (choice == 'view') {
+                          if (context.mounted) PhotoViewerScreen.open(context, chat.photo, chat.name);
+                          return;
+                        }
+                        if (choice == 'remove') {
+                          await run(() => ms.removeGroupPhoto(chat));
+                          return;
+                        }
+                        if (choice != 'change') return;
                         final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600);
                         if (f == null) return;
                         final c = await ImageCropper().cropImage(
@@ -140,7 +169,7 @@ class GroupInfoScreen extends StatelessWidget {
                       },
                 child: Stack(clipBehavior: Clip.none, children: [
                   Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 96),
-                  if (!chat.left)
+                  if (canEdit)
                     Positioned(
                       right: 0,
                       bottom: 0,
@@ -152,7 +181,7 @@ class GroupInfoScreen extends StatelessWidget {
             const SizedBox(height: 12),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Flexible(child: Text(chat.name, textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: bc.text))),
-              if (!chat.left)
+              if (canEdit)
                 IconButton(
                   icon: Icon(Icons.edit_rounded, size: 20, color: bc.muted),
                   onPressed: () async {
@@ -173,7 +202,51 @@ class GroupInfoScreen extends StatelessWidget {
                 ),
             ]),
             Text('Group · ${chat.members.length} members', textAlign: TextAlign.center, style: TextStyle(color: bc.muted)),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            ListTile(
+              title: Text(chat.description.isEmpty ? (canEdit ? 'Add group description' : 'No description') : chat.description,
+                  style: TextStyle(color: chat.description.isEmpty ? context.primary : bc.text)),
+              subtitle: chat.description.isEmpty ? null : Text('Group description', style: TextStyle(color: bc.muted, fontSize: 12)),
+              trailing: canEdit ? Icon(Icons.edit_outlined, size: 18, color: bc.muted) : null,
+              onTap: !canEdit
+                  ? null
+                  : () async {
+                      final c = TextEditingController(text: chat.description);
+                      final text = await showDialog<String>(
+                        context: context,
+                        builder: (d) => AlertDialog(
+                          title: const Text('Group description'),
+                          content: TextField(controller: c, autofocus: true, maxLength: 500, minLines: 2, maxLines: 6),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
+                            TextButton(onPressed: () => Navigator.pop(d, c.text.trim()), child: const Text('Save')),
+                          ],
+                        ),
+                      );
+                      if (text != null && text != chat.description) await run(() => ms.setGroupDescription(chat, text));
+                    },
+            ),
+            if (iAmAdmin && !chat.left) ...[
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Text('Group settings', style: TextStyle(color: bc.muted, fontWeight: FontWeight.w600)),
+              ),
+              SwitchListTile(
+                secondary: Icon(Icons.edit_note_rounded, color: context.primary),
+                title: const Text('Only admins can edit group info'),
+                subtitle: const Text('Name, icon, description and pinned messages'),
+                value: chat.editInfo == 'admins',
+                onChanged: (v) => run(() => ms.setGroupSettings(chat, editInfo: v ? 'admins' : 'all')),
+              ),
+              SwitchListTile(
+                secondary: Icon(Icons.campaign_outlined, color: context.primary),
+                title: const Text('Only admins can send messages'),
+                value: chat.sendMessages == 'admins',
+                onChanged: (v) => run(() => ms.setGroupSettings(chat, sendMessages: v ? 'admins' : 'all')),
+              ),
+            ],
+            const SizedBox(height: 4),
             ListTile(
               leading: Icon(Icons.notifications_off_outlined, color: context.primary),
               title: const Text('Mute notifications'),
@@ -201,7 +274,9 @@ class GroupInfoScreen extends StatelessWidget {
                 title: const Text('Add members', style: TextStyle(fontWeight: FontWeight.w600)),
                 onTap: () async {
                   final ids = await Navigator.of(context).push<Set<String>>(
-                    MaterialPageRoute(builder: (_) => const ContactPickerScreen(title: 'Add members', initial: {})),
+                    MaterialPageRoute(
+                      builder: (_) => ContactPickerScreen(title: 'Add members', initial: const {}, already: chat.members.toSet(), alreadyLabel: 'Already in this group'),
+                    ),
                   );
                   final add = (ids ?? {}).where((x) => !chat.members.contains(x)).toList();
                   if (add.isNotEmpty) await run(() => ms.addMembers(chat, add));
@@ -277,11 +352,32 @@ class GroupInfoScreen extends StatelessWidget {
                   if (ok == true) await run(() => ms.leaveGroup(chat));
                 },
               )
-            else
+            else ...[
               Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                 child: Text("You're no longer a member of this group.", style: TextStyle(color: bc.muted)),
               ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: Color(0xFFB3261E)),
+                title: const Text('Delete group', style: TextStyle(color: Color(0xFFB3261E), fontWeight: FontWeight.w600)),
+                onTap: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (d) => AlertDialog(
+                      title: Text('Delete "${chat.name}"?'),
+                      content: const Text('The group and its messages will be removed from this phone.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+                        TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Delete', style: TextStyle(color: Color(0xFFB3261E)))),
+                      ],
+                    ),
+                  );
+                  if (ok != true || !context.mounted) return;
+                  AppState.instance.deleteChat(chat);
+                  Navigator.of(context).popUntil((r) => r.isFirst);
+                },
+              ),
+            ],
             const SizedBox(height: 24),
           ]),
         );

@@ -113,6 +113,12 @@ class Chat {
   String? typingName;
   /// Groups: icon version we have.
   int photoVer = 0;
+  /// Groups: description and settings ('all' | 'admins').
+  String description = '';
+  String editInfo = 'admins';
+  String sendMessages = 'all';
+  /// Pinned message (any chat).
+  String? pinnedId;
   String? phone;
   /// Real chats only: "online" / "last seen …" from the server.
   String? presence;
@@ -169,6 +175,10 @@ class Chat {
         if (admins.isNotEmpty) 'adm': admins.toList(),
         if (left) 'left': true,
         if (photoVer > 0) 'pv': photoVer,
+        if (description.isNotEmpty) 'desc': description,
+        'ei': editInfo,
+        'sm': sendMessages,
+        if (pinnedId != null) 'pin': pinnedId,
         'pinned': pinned,
         'archived': archived,
         'unread': unread,
@@ -199,6 +209,10 @@ class Chat {
     c.admins = {for (final x in (j['adm'] as List? ?? [])) x.toString()};
     c.left = j['left'] == true;
     c.photoVer = (j['pv'] as int?) ?? 0;
+    c.description = j['desc'] as String? ?? '';
+    c.editInfo = j['ei'] as String? ?? 'admins';
+    c.sendMessages = j['sm'] as String? ?? 'all';
+    c.pinnedId = j['pin'] as String?;
     c.disappear = (j['dis'] as int?) ?? 0;
     final mute = j['mute'] as int?;
     if (mute != null) c.mutedUntil = DateTime.fromMillisecondsSinceEpoch(mute);
