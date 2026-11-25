@@ -1,49 +1,52 @@
 import 'package:flutter/material.dart';
 
+import 'palettes.dart';
 import 'tokens.dart';
 
 class AppTheme {
   AppTheme._();
 
-  static ThemeData light() {
+  static ThemeData light([Palette p = const Palette('Mitti', Mitti.terracotta, Mitti.terracottaLight)]) {
+    final sf = Surfaces.of(p, false);
     final scheme = ColorScheme.fromSeed(
-      seedColor: Mitti.terracotta,
+      seedColor: p.light,
       brightness: Brightness.light,
     ).copyWith(
-      primary: Mitti.terracotta,
-      onPrimary: Colors.white,
-      surface: Colors.white,
-      onSurface: Mitti.ink,
+      primary: p.light,
+      onPrimary: p.onPrimary,
+      surface: sf.surface,
+      onSurface: sf.text,
       error: Mitti.error,
     );
-    return _base(scheme).copyWith(
-      scaffoldBackgroundColor: Mitti.cream,
-      dividerColor: Mitti.line,
-      extensions: const [BaatlyColors.light],
+    return _base(scheme, sf).copyWith(
+      scaffoldBackgroundColor: sf.bg,
+      dividerColor: sf.line,
+      extensions: [BaatlyColors.from(p, sf, false)],
     );
   }
 
-  static ThemeData dark() {
+  static ThemeData dark([Palette p = const Palette('Mitti', Mitti.terracotta, Mitti.terracottaLight)]) {
+    final sf = Surfaces.of(p, true);
     final scheme = ColorScheme.fromSeed(
-      seedColor: Mitti.terracotta,
+      seedColor: p.light,
       brightness: Brightness.dark,
     ).copyWith(
-      primary: Mitti.terracottaLight,
-      onPrimary: Colors.white,
-      surface: Mitti.nightSurface,
-      onSurface: Mitti.nightText,
+      primary: p.dark,
+      onPrimary: p.onPrimary,
+      surface: sf.surface,
+      onSurface: sf.text,
       error: const Color(0xFFF2B8B5),
     );
-    return _base(scheme).copyWith(
-      scaffoldBackgroundColor: Mitti.night,
-      dividerColor: Mitti.nightLine,
-      extensions: const [BaatlyColors.dark],
+    return _base(scheme, sf).copyWith(
+      scaffoldBackgroundColor: sf.bg,
+      dividerColor: sf.line,
+      extensions: [BaatlyColors.from(p, sf, true)],
     );
   }
 
-  static ThemeData _base(ColorScheme scheme) {
+  static ThemeData _base(ColorScheme scheme, Surfaces sf) {
     final isDark = scheme.brightness == Brightness.dark;
-    final text = isDark ? Mitti.nightText : Mitti.ink;
+    final text = sf.text;
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
@@ -53,7 +56,7 @@ class AppTheme {
     return base.copyWith(
       textTheme: base.textTheme.apply(bodyColor: text, displayColor: text),
       appBarTheme: AppBarTheme(
-        backgroundColor: isDark ? Mitti.nightSurface : Colors.white,
+        backgroundColor: sf.surface,
         foregroundColor: text,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -68,7 +71,7 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: scheme.primary,
-          foregroundColor: Colors.white,
+          foregroundColor: scheme.onPrimary,
           minimumSize: const Size.fromHeight(54),
           shape: const StadiumBorder(),
           textStyle: const TextStyle(
@@ -82,7 +85,7 @@ class AppTheme {
         thumbColor: WidgetStateProperty.all(Colors.white),
         trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected)
             ? scheme.primary
-            : (isDark ? Mitti.nightRaised : const Color(0xFFE3D6C7))),
+            : (isDark ? sf.raised : Color.lerp(sf.raised, Colors.black, 0.06)!)),
         trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
       ),
     );
@@ -101,6 +104,8 @@ class BaatlyColors extends ThemeExtension<BaatlyColors> {
   final Color outBubble;
   final Color onOutBubble;
   final Color inBubble;
+  /// Set for gradient themes: paint out-bubbles / send button with it.
+  final Gradient? accentGradient;
 
   const BaatlyColors({
     required this.bg,
@@ -112,7 +117,21 @@ class BaatlyColors extends ThemeExtension<BaatlyColors> {
     required this.outBubble,
     required this.onOutBubble,
     required this.inBubble,
+    this.accentGradient,
   });
+
+  factory BaatlyColors.from(Palette p, Surfaces sf, bool dark) => BaatlyColors(
+        bg: sf.bg,
+        surface: sf.surface,
+        raised: sf.raised,
+        text: sf.text,
+        muted: sf.muted,
+        line: sf.line,
+        outBubble: p.light,
+        onOutBubble: p.onPrimary,
+        inBubble: dark ? sf.raised : Colors.white,
+        accentGradient: p.linear,
+      );
 
   static const light = BaatlyColors(
     bg: Mitti.cream,

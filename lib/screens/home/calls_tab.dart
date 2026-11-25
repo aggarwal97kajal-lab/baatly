@@ -11,6 +11,7 @@ import '../../data/messenger.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
+import '../../theme/palettes.dart';
 import '../../widgets/common.dart';
 
 class CallsTab extends StatelessWidget {
@@ -284,7 +285,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> with SingleTickerProvid
                   child: Container(
                     width: 150 + 110 * ((_pulse.value + k) % 1),
                     height: 150 + 110 * ((_pulse.value + k) % 1),
-                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Mitti.terracotta, width: 2)),
+                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: brandColor, width: 2)),
                   ),
                 ),
               child!,

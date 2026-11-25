@@ -1370,6 +1370,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
               : const EdgeInsets.fromLTRB(14, 10, 12, 8),
       decoration: bare ? null : BoxDecoration(
         color: bg,
+        gradient: me ? bc.accentGradient : null,
         borderRadius: radius,
         boxShadow: me ? null : const [BoxShadow(color: Color(0x0F000000), blurRadius: 4, offset: Offset(0, 1))],
       ),
@@ -1585,8 +1586,8 @@ class _Composer extends StatelessWidget {
                   child: Container(
                     width: 50,
                     height: 50,
-                    decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle),
-                    child: const Icon(Icons.send_rounded, color: Colors.white),
+                    decoration: BoxDecoration(color: context.primary, gradient: bc.accentGradient, shape: BoxShape.circle),
+                    child: Icon(Icons.send_rounded, color: Theme.of(context).colorScheme.onPrimary),
                   ),
                 )
               else
@@ -1815,8 +1816,8 @@ class _MicButton extends StatelessWidget {
               child: Container(
                 width: 50,
                 height: 50,
-                decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle),
-                child: const Icon(Icons.mic_rounded, color: Colors.white),
+                decoration: BoxDecoration(color: context.primary, gradient: context.bc.accentGradient, shape: BoxShape.circle),
+                child: Icon(Icons.mic_rounded, color: Theme.of(context).colorScheme.onPrimary),
               ),
             ),
           ),

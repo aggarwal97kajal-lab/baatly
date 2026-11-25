@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/palettes.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
 
@@ -15,6 +16,9 @@ class AppearanceScreen extends StatelessWidget {
       listenable: s,
       builder: (context, _) {
         final bc = context.bc;
+        final pal = paletteAt(s.palette);
+        final lightBg = Surfaces.of(pal, false).bg;
+        final darkBg = Surfaces.of(pal, true).bg;
         Widget themeCard(ThemeMode m, String label, Color a, Color b) {
           final sel = s.themeMode == m;
           return Expanded(
@@ -54,10 +58,45 @@ class AppearanceScreen extends StatelessWidget {
           body: ListView(padding: const EdgeInsets.symmetric(horizontal: 14), children: [
             const SectionLabel('Theme'),
             Row(children: [
-              themeCard(ThemeMode.light, 'Light', Mitti.cream, Mitti.cream),
-              themeCard(ThemeMode.dark, 'Dark', Mitti.night, Mitti.night),
-              themeCard(ThemeMode.system, 'System', Mitti.cream, Mitti.night),
+              themeCard(ThemeMode.light, 'Light', lightBg, lightBg),
+              themeCard(ThemeMode.dark, 'Dark', darkBg, darkBg),
+              themeCard(ThemeMode.system, 'System', lightBg, darkBg),
             ]),
+            const SizedBox(height: 18),
+            const SectionLabel('Colour'),
+            GridView.count(
+              crossAxisCount: 5,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 0.78,
+              children: [
+                for (var i = 0; i < palettes.length; i++)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => s.setPalette(i),
+                    child: Column(children: [
+                      AnimatedContainer(
+                        duration: Mitti.fast,
+                        width: 48,
+                        height: 48,
+                        margin: const EdgeInsets.only(top: 6),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: context.isDark ? palettes[i].dark : palettes[i].light,
+                          gradient: palettes[i].linear,
+                          border: s.palette == i ? Border.all(color: bc.text, width: 2.5) : null,
+                        ),
+                        child: s.palette == i ? Icon(Icons.check_rounded, color: palettes[i].onPrimary) : null,
+                      ),
+                      const SizedBox(height: 5),
+                      Text(palettes[i].name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11.5, color: s.palette == i ? bc.text : bc.muted, fontWeight: s.palette == i ? FontWeight.w700 : FontWeight.w400)),
+                    ]),
+                  ),
+              ],
+            ),
             const SizedBox(height: 18),
             Material(
               color: bc.surface,

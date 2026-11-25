@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../theme/tokens.dart';
+import '../../theme/palettes.dart';
 import '../../widgets/common.dart';
 import 'welcome_screen.dart';
 
@@ -42,7 +43,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     final fade = CurvedAnimation(parent: _c, curve: const Interval(0.35, 0.85, curve: Curves.easeOut));
     final halo = CurvedAnimation(parent: _c, curve: const Interval(0.2, 1, curve: Curves.easeOut));
     return Scaffold(
-      backgroundColor: Mitti.terracotta,
+      backgroundColor: brandColor,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

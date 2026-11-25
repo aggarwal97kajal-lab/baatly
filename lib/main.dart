@@ -11,6 +11,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'screens/home/home_shell.dart';
 import 'screens/onboarding/splash_screen.dart';
 import 'theme/app_theme.dart';
+import 'theme/palettes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,8 +41,8 @@ class BaatlyApp extends StatelessWidget {
         navigatorKey: navigatorKey,
         title: 'BAATLY',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
+        theme: AppTheme.light(paletteAt(state.palette)),
+        darkTheme: AppTheme.dark(paletteAt(state.palette)),
         themeMode: state.themeMode,
         builder: (context, child) {
           // Respect the user's "reduce motion" preference everywhere.

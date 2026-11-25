@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
+import '../../theme/palettes.dart';
 
 class WallpaperScreen extends StatelessWidget {
   const WallpaperScreen({super.key});
@@ -44,7 +45,7 @@ class WallpaperScreen extends StatelessWidget {
                               Container(
                                 color: const Color(0xFFF7EFE5),
                                 child: w == Wallpaper.mittiDots
-                                    ? const Center(child: Icon(Icons.more_horiz_rounded, color: Mitti.terracotta))
+                                    ? Center(child: Icon(Icons.more_horiz_rounded, color: brandColor))
                                     : null,
                               ),
                             Positioned(
@@ -55,13 +56,13 @@ class WallpaperScreen extends StatelessWidget {
                             Positioned(
                               right: 8,
                               top: 52,
-                              child: Container(width: 50, height: 14, decoration: BoxDecoration(color: Mitti.terracotta, borderRadius: BorderRadius.circular(7))),
+                              child: Container(width: 50, height: 14, decoration: BoxDecoration(color: brandColor, borderRadius: BorderRadius.circular(7))),
                             ),
                             if (s.wallpaper == w)
-                              const Positioned(
+                              Positioned(
                                 right: 6,
                                 top: 6,
-                                child: CircleAvatar(radius: 11, backgroundColor: Mitti.terracotta, child: Icon(Icons.check_rounded, size: 15, color: Colors.white)),
+                                child: CircleAvatar(radius: 11, backgroundColor: brandColor, child: Icon(Icons.check_rounded, size: 15, color: Colors.white)),
                               ),
                           ]),
                         ),

@@ -11,6 +11,7 @@ import '../../data/app_state.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
+import '../../theme/palettes.dart';
 import '../../widgets/common.dart';
 import 'status_privacy_screen.dart';
 import 'status_audio.dart';
@@ -726,7 +727,7 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
                 ),
                 FloatingActionButton(
                   backgroundColor: Colors.white,
-                  foregroundColor: Mitti.terracotta,
+                  foregroundColor: brandColor,
                   onPressed: _ctrl.text.trim().isEmpty
                       ? null
                       : () {
@@ -825,7 +826,7 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
             toolbarWidgetColor: Colors.white,
             statusBarLight: false,
             backgroundColor: Colors.black,
-            activeControlsWidgetColor: Mitti.terracotta,
+            activeControlsWidgetColor: brandColor,
             lockAspectRatio: false,
             freeStyleCropEnabled: true,
             hideBottomControls: false,
@@ -862,7 +863,7 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
         title: const Text('Photo status'),
         actions: [
           IconButton(
-            icon: Icon(_song == null ? Icons.music_note_outlined : Icons.music_note_rounded, color: _song == null ? Colors.white : Mitti.terracotta),
+            icon: Icon(_song == null ? Icons.music_note_outlined : Icons.music_note_rounded, color: _song == null ? Colors.white : brandColor),
             tooltip: 'Add music',
             onPressed: () async {
               final r = await pickStatusAudio(context);
@@ -897,7 +898,7 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
               const SizedBox(width: 10),
               FloatingActionButton(
                 heroTag: 'st-send',
-                backgroundColor: Mitti.terracotta,
+                backgroundColor: brandColor,
                 foregroundColor: Colors.white,
                 onPressed: () {
                   final st = StatusSlide.photo(_path, caption: _caption.text.trim());

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import '../theme/palettes.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'messenger.dart';
@@ -39,6 +41,8 @@ class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
 
   ThemeMode themeMode = ThemeMode.system;
+  /// Index into [palettes] (0 = Mitti).
+  int palette = 0;
   Wallpaper wallpaper = Wallpaper.desi;
   bool reduceMotion = false;
   bool readReceipts = true;
@@ -150,6 +154,8 @@ class AppState extends ChangeNotifier {
       hasPasskey = p.getBool('hasPasskey') ?? false;
       themeMode = ThemeMode.values[(p.getInt('theme') ?? ThemeMode.system.index).clamp(0, ThemeMode.values.length - 1)];
       wallpaper = Wallpaper.values[(p.getInt('wallpaper') ?? Wallpaper.desi.index).clamp(0, Wallpaper.values.length - 1)];
+      palette = p.getInt('palette') ?? 0;
+      brandColor = paletteAt(palette).light;
       reduceMotion = p.getBool('reduceMotion') ?? false;
       readReceipts = p.getBool('readReceipts') ?? true;
       appLock = p.getBool('appLock') ?? false;
@@ -198,6 +204,7 @@ class AppState extends ChangeNotifier {
     p.setString('lastPhone', lastPhone);
     p.setBool('hasPasskey', hasPasskey);
     p.setInt('theme', themeMode.index);
+    p.setInt('palette', palette);
     p.setInt('wallpaper', wallpaper.index);
     p.setBool('reduceMotion', reduceMotion);
     p.setBool('readReceipts', readReceipts);
@@ -246,6 +253,13 @@ class AppState extends ChangeNotifier {
 
   void setPasskey(bool v) {
     hasPasskey = v;
+    _save();
+    notifyListeners();
+  }
+
+  void setPalette(int i) {
+    palette = i;
+    brandColor = paletteAt(i).light;
     _save();
     notifyListeners();
   }

@@ -11,6 +11,7 @@ import '../../data/app_state.dart';
 import '../../data/messenger.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
+import '../../theme/palettes.dart';
 
 /// Take / choose / remove the profile photo (square crop, uploaded small).
 Future<void> changeProfilePhoto(BuildContext context) async {
@@ -84,7 +85,7 @@ Future<void> changeProfilePhoto(BuildContext context) async {
           toolbarWidgetColor: Colors.white,
           statusBarLight: false,
           backgroundColor: Colors.black,
-          activeControlsWidgetColor: Mitti.terracotta,
+          activeControlsWidgetColor: brandColor,
           lockAspectRatio: true,
           hideBottomControls: true,
           cropStyle: CropStyle.circle,
