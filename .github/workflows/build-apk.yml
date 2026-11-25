@@ -92,6 +92,12 @@ jobs:
       - name: Run tests
         run: flutter test
 
+      - name: Accept Android SDK licences (NDK for on-phone speech-to-text)
+        run: |
+          SDKM=$(ls $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager | head -1)
+          yes | $SDKM --licenses > /dev/null || true
+          yes | $SDKM --install "ndk;29.0.13113456" > /dev/null || true
+
       - name: Build release APK
         run: flutter build apk --release --build-number=${{ github.run_number }} $DART_DEFINES
 
