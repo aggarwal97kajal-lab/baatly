@@ -1218,7 +1218,14 @@ class Messenger {
   /// Sends a photo / voice note / document. The file is encrypted on this
   /// phone with a fresh key; the key goes inside the E2E message.
   void sendMedia(Chat chat,
-      {required String path, required MsgKind kind, String caption = '', String? name, int seconds = 0, bool once = false, bool forwarded = false}) {
+      {required String path,
+      required MsgKind kind,
+      String caption = '',
+      String? name,
+      int seconds = 0,
+      bool once = false,
+      bool forwarded = false,
+      Map<String, dynamic>? extra}) {
     final fileName = name ?? path.split('/').last;
     final m = Message(
       id: _newId(),
@@ -1236,6 +1243,7 @@ class Messenger {
         if (seconds > 0) 'dur': seconds,
         if (once) 'once': true,
         if (forwarded) 'fw': true,
+        ...?extra,
       },
       expiresAt: chat.disappear > 0 ? DateTime.now().add(Duration(seconds: chat.disappear)) : null,
     );

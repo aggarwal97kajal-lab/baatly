@@ -13,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
 import 'status_privacy_screen.dart';
+import 'status_audio.dart';
 import '../../data/status_service.dart';
 import '../../data/messenger.dart';
 
@@ -336,14 +337,43 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
   int _i = 0;
   final _reply = TextEditingController();
 
+  final _audio = StatusAudioPlayer();
+
   @override
   void initState() {
     super.initState();
     _c.addStatusListener((s) {
       if (s == AnimationStatus.completed) _next();
     });
-    _c.forward();
+    _restart();
     _markSeen();
+  }
+
+  /// Starts the current slide; slides with a song last as long as the clip.
+  Future<void> _restart() async {
+    if (_i >= widget.item.slides.length) return;
+    final slide = widget.item.slides[_i];
+    final a = slide.audio;
+    _c.duration = Duration(milliseconds: a == null ? 5000 : ((a['dur'] as int?) ?? 15000).clamp(5000, 30000));
+    _c.forward(from: 0);
+    if (a == null) {
+      await _audio.stop();
+      return;
+    }
+    final path = await StatusService.instance.audioFile(slide);
+    if (path != null && mounted && widget.item.slides[_i] == slide) {
+      await _audio.play(path, (a['start'] as int?) ?? 0, (a['dur'] as int?) ?? 15000);
+    }
+  }
+
+  void _pause() {
+    _c.stop();
+    _audio.pause();
+  }
+
+  void _resume() {
+    _c.forward();
+    _audio.resume();
   }
 
   void _markSeen() {
@@ -357,7 +387,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
 
   Future<void> _showViews() async {
     final slide = widget.item.slides[_i];
-    _c.stop();
+    _pause();
     unawaited(StatusService.instance.loadViewers(slide));
     await showModalBottomSheet<void>(
       context: context,
@@ -394,13 +424,13 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
         },
       ),
     );
-    if (mounted) _c.forward();
+    if (mounted) _resume();
   }
 
   void _next() {
     if (_i < widget.item.slides.length - 1) {
       setState(() => _i++);
-      _c.forward(from: 0);
+      _restart();
       _markSeen();
     } else {
       if (!widget.mine) {
@@ -414,14 +444,14 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
   void _prev() {
     if (_i > 0) {
       setState(() => _i--);
-      _c.forward(from: 0);
+      _restart();
     } else {
-      _c.forward(from: 0); // first story: just restart it
+      _restart(); // first story: just restart it
     }
   }
 
   Future<void> _delete() async {
-    _c.stop();
+    _pause();
     final slide = widget.item.slides[_i];
     final ok = await showDialog<bool>(
       context: context,
@@ -436,7 +466,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
     );
     if (!mounted) return;
     if (ok != true) {
-      _c.forward();
+      _resume();
       return;
     }
     AppState.instance.deleteMyStatus(slide);
@@ -445,11 +475,12 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
       return;
     }
     setState(() => _i = _i.clamp(0, widget.item.slides.length - 1));
-    _c.forward(from: 0);
+    _restart();
   }
 
   @override
   void dispose() {
+    _audio.dispose();
     _c.dispose();
     _reply.dispose();
     super.dispose();
@@ -465,8 +496,8 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapUp: (d) => d.globalPosition.dx < MediaQuery.of(context).size.width * 0.35 ? _prev() : _next(),
-        onLongPressStart: (_) => _c.stop(),
-        onLongPressEnd: (_) => _c.forward(),
+        onLongPressStart: (_) => _pause(),
+        onLongPressEnd: (_) => _resume(),
         child: SafeArea(
           child: Column(children: [
             Padding(
@@ -495,7 +526,12 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
             ListTile(
               leading: Avatar(initials: it.initials, colorIndex: it.colorIndex, size: 40, photo: widget.mine ? AppState.instance.myPhoto : ownerPhoto(it)),
               title: Text(it.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-              subtitle: Text(widget.mine ? statusAgo(slide.at) : it.when, style: const TextStyle(color: Colors.white70)),
+              subtitle: Text(
+                '${widget.mine ? statusAgo(slide.at) : it.when}${slide.audio != null ? '  ·  🎵 ${slide.audio!['name'] ?? 'Song'}' : ''}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white70),
+              ),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (widget.mine)
                   IconButton(onPressed: _delete, tooltip: 'Delete', icon: const Icon(Icons.delete_outline_rounded, color: Colors.white)),
@@ -553,7 +589,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                 Expanded(
                   child: TextField(
                     controller: _reply,
-                    onTap: () => _c.stop(),
+                    onTap: () => _pause(),
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
                       hintText: 'Reply…',
@@ -577,7 +613,7 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reply sent (demo)')));
                     }
-                    _c.forward();
+                    _resume();
                   },
                   icon: const Icon(Icons.send_rounded, color: Colors.white),
                 ),
@@ -600,6 +636,7 @@ class TextStatusScreen extends StatefulWidget {
 class _TextStatusScreenState extends State<TextStatusScreen> {
   final _ctrl = TextEditingController();
   int _color = 0;
+  Map<String, dynamic>? _song;
   static const _colors = [0xFFC8553D, 0xFF2A211C, 0xFF3E7C5A, 0xFF2E3A59, 0xFFB5651D, 0xFF7A5BA6];
 
   @override
@@ -619,9 +656,25 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
           backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
           leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
+          actions: [
+            IconButton(
+              tooltip: 'Add music',
+              icon: Icon(_song == null ? Icons.music_note_outlined : Icons.music_note_rounded),
+              onPressed: () async {
+                final r = await pickStatusAudio(context);
+                if (r != null) setState(() => _song = r);
+              },
+            ),
+          ],
         ),
         body: SafeArea(
           child: Column(children: [
+            if (_song != null)
+              InputChip(
+                avatar: const Icon(Icons.music_note_rounded, size: 18),
+                label: Text('${_song!['name']}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                onDeleted: () => setState(() => _song = null),
+              ),
             Expanded(
               child: Center(
                 child: Padding(
@@ -677,7 +730,12 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
                   onPressed: _ctrl.text.trim().isEmpty
                       ? null
                       : () {
-                          AppState.instance.addMyStatus(StatusSlide.text(_ctrl.text.trim(), _colors[_color]));
+                          final st = StatusSlide.text(_ctrl.text.trim(), _colors[_color]);
+                          if (_song != null) {
+                            st.audioPath = _song!['path'] as String;
+                            st.audio = {'start': _song!['start'], 'dur': _song!['dur'], 'name': _song!['name']};
+                          }
+                          AppState.instance.addMyStatus(st);
                           Navigator.pop(context);
                         },
                   child: const Icon(Icons.send_rounded),
@@ -743,6 +801,7 @@ class PhotoStatusScreen extends StatefulWidget {
 
 class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
   final _caption = TextEditingController();
+  Map<String, dynamic>? _song;
   late String _path = widget.path;
 
   @override
@@ -802,6 +861,14 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
         leading: IconButton(icon: const Icon(Icons.close_rounded), tooltip: 'Discard', onPressed: () => Navigator.pop(context)),
         title: const Text('Photo status'),
         actions: [
+          IconButton(
+            icon: Icon(_song == null ? Icons.music_note_outlined : Icons.music_note_rounded, color: _song == null ? Colors.white : Mitti.terracotta),
+            tooltip: 'Add music',
+            onPressed: () async {
+              final r = await pickStatusAudio(context);
+              if (r != null) setState(() => _song = r);
+            },
+          ),
           IconButton(icon: const Icon(Icons.crop_rotate_rounded), tooltip: 'Crop & rotate', onPressed: _crop),
         ],
       ),
@@ -833,13 +900,27 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
                 backgroundColor: Mitti.terracotta,
                 foregroundColor: Colors.white,
                 onPressed: () {
-                  AppState.instance.addMyStatus(StatusSlide.photo(_path, caption: _caption.text.trim()));
+                  final st = StatusSlide.photo(_path, caption: _caption.text.trim());
+                  if (_song != null) {
+                    st.audioPath = _song!['path'] as String;
+                    st.audio = {'start': _song!['start'], 'dur': _song!['dur'], 'name': _song!['name']};
+                  }
+                  AppState.instance.addMyStatus(st);
                   Navigator.pop(context);
                 },
                 child: const Icon(Icons.send_rounded),
               ),
             ]),
           ),
+          if (_song != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: InputChip(
+                avatar: const Icon(Icons.music_note_rounded, size: 18),
+                label: Text('${_song!['name']}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                onDeleted: () => setState(() => _song = null),
+              ),
+            ),
           const Padding(
             padding: EdgeInsets.only(bottom: 8),
             child: Text('Visible to my contacts · 24 hours', style: TextStyle(color: Colors.white60, fontSize: 12)),

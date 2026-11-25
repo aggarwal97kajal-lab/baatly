@@ -8,6 +8,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
+import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../data/app_state.dart';
@@ -103,8 +104,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     if (f == null) return;
     final size = await File(f.path).length();
-    if (size > 64 * 1024 * 1024) {
-      _toast('Videos up to 64 MB can be sent');
+    if (size > 500 * 1024 * 1024) {
+      _toast('This video is too large');
       return;
     }
     int secs = 0;
@@ -114,8 +115,37 @@ class _ChatScreenState extends State<ChatScreen> {
       secs = c.value.duration.inSeconds;
       await c.dispose();
     } catch (_) {}
-    final kept = await _keep(f.path, f.name.isEmpty ? 'video.mp4' : f.name);
-    _sendMedia(kept, MsgKind.video, name: f.name.isEmpty ? 'video.mp4' : f.name, seconds: secs);
+    // Compress like WhatsApp (~720p) and grab a preview frame.
+    var src = f.path;
+    String? thumb;
+    if (mounted) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(content: Row(children: [CircularProgressIndicator(), SizedBox(width: 18), Text('Preparing video…')])),
+      );
+    }
+    try {
+      final frame = await VideoCompress.getByteThumbnail(f.path, quality: 60, position: -1);
+      if (frame != null) thumb = await MediaFiles.thumbFromBytes(frame);
+      final info = await VideoCompress.compressVideo(f.path, quality: VideoQuality.Res1280x720Quality, deleteOrigin: false, includeAudio: true);
+      if (info?.path != null && (info!.filesize ?? size) < size) src = info.path!;
+    } catch (_) {
+      // Fall back to the original file.
+    }
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    final finalSize = await File(src).length();
+    if (finalSize > 64 * 1024 * 1024) {
+      _toast('Videos up to 64 MB can be sent');
+      return;
+    }
+    final name = f.name.isEmpty ? 'video.mp4' : f.name;
+    final kept = await _keep(src, name.toLowerCase().endsWith('.mp4') ? name : '$name.mp4');
+    if (chat.isReal) {
+      Messenger.instance.sendMedia(chat, path: kept, kind: MsgKind.video, name: name, seconds: secs, extra: {if (thumb != null) 'thumb': thumb});
+    } else {
+      _sendMedia(kept, MsgKind.video, name: name, seconds: secs);
+    }
   }
 
   Future<void> _pickDoc() async {

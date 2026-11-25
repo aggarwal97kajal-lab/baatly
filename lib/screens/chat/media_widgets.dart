@@ -335,6 +335,8 @@ class VideoContent extends StatelessWidget {
           height: w * 9 / 16,
           decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF2B2B2B), Color(0xFF111111)])),
           child: Stack(children: [
+            if (md['thumb'] is String)
+              Positioned.fill(child: Image.memory(base64Decode(md['thumb'] as String), fit: BoxFit.cover, gaplessPlayback: true)),
             Center(
               child: Container(
                 padding: const EdgeInsets.all(12),

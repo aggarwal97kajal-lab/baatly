@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:path_provider/path_provider.dart';
@@ -54,6 +55,18 @@ class MediaFiles {
       small.image.dispose();
       if (png == null) return null;
       return (base64Encode(png.buffer.asUint8List()), w, h);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Tiny preview from image bytes (e.g. a video frame).
+  static Future<String?> thumbFromBytes(List<int> bytes) async {
+    try {
+      final small = await (await ui.instantiateImageCodec(Uint8List.fromList(bytes), targetWidth: 48)).getNextFrame();
+      final png = await small.image.toByteData(format: ui.ImageByteFormat.png);
+      small.image.dispose();
+      return png == null ? null : base64Encode(png.buffer.asUint8List());
     } catch (_) {
       return null;
     }

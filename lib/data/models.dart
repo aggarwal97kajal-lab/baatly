@@ -270,6 +270,9 @@ class StatusSlide {
 
   /// Server id once uploaded (real statuses).
   String? remoteId;
+  /// Song / audio clip on the status: {start, dur (ms), name, id?, k?}.
+  Map<String, dynamic>? audio;
+  String? audioPath;
   bool uploading = false;
   bool failed = false;
   int views = 0;
