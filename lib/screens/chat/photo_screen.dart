@@ -23,7 +23,6 @@ class ChatPhotoScreen extends StatefulWidget {
   const ChatPhotoScreen({super.key, required this.chat, required this.start, required this.onReply});
 
   static void open(BuildContext context, Chat chat, Message m, {required void Function(Message m) onReply}) {
-    HapticFeedback.selectionClick();
     Navigator.of(context).push(PageRouteBuilder<void>(
       opaque: false,
       barrierColor: Colors.black,
@@ -240,7 +239,6 @@ class _ChatPhotoScreenState extends State<ChatPhotoScreen> {
   }
 
   void _react(String e) {
-    HapticFeedback.selectionClick();
     AppState.instance.react(_m, e);
     setState(() {});
     _toast('Reacted $e');

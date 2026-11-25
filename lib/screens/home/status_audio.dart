@@ -1,14 +1,21 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 
 import '../../data/media.dart';
 
-/// Pick a song / audio file from the phone and choose a 30-second part.
-/// Returns {path, start (ms), dur (ms), name}.
-Future<Map<String, dynamic>?> pickStatusAudio(BuildContext context) async {
+/// Pick a song for a status, like WhatsApp's music: search a big song
+/// library (Apple Music previews) or use a file from the phone, then choose
+/// the part to play. Returns {path, start (ms), dur (ms), name}.
+Future<Map<String, dynamic>?> pickStatusAudio(BuildContext context) =>
+    Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(builder: (_) => const _MusicScreen()));
+
+Future<Map<String, dynamic>?> _pickFromPhone(BuildContext context) async {
   FilePickerResult? r;
   try {
     r = await FilePicker.platform.pickFiles(type: FileType.audio);
@@ -20,16 +27,222 @@ Future<Map<String, dynamic>?> pickStatusAudio(BuildContext context) async {
   return Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(builder: (_) => _ClipScreen(path: f!.path!, name: f.name)));
 }
 
+class _Song {
+  final String title, artist, art, preview;
+  _Song(Map<String, dynamic> j)
+      : title = j['trackName'] as String? ?? '',
+        artist = j['artistName'] as String? ?? '',
+        art = (j['artworkUrl100'] as String? ?? '').replaceAll('100x100', '200x200'),
+        preview = j['previewUrl'] as String? ?? '';
+}
+
+class _MusicScreen extends StatefulWidget {
+  const _MusicScreen();
+  @override
+  State<_MusicScreen> createState() => _MusicScreenState();
+}
+
+class _MusicScreenState extends State<_MusicScreen> {
+  final _q = TextEditingController();
+  final _player = AudioPlayer();
+  List<_Song> _songs = [];
+  bool _loading = true;
+  String? _error;
+  String? _playing;
+  String? _busy;
+  Timer? _debounce;
+  int _gen = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _trending();
+    _player.playerStateStream.listen((s) {
+      if (s.processingState == ProcessingState.completed && mounted) setState(() => _playing = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _player.dispose();
+    _q.dispose();
+    super.dispose();
+  }
+
+  Future<void> _trending() async {
+    final g = ++_gen;
+    setState(() => _loading = true);
+    try {
+      // Most played in India right now, then their previews.
+      final rss = await http.get(Uri.parse('https://rss.applemarketingtools.com/api/v2/in/music/most-played/50/songs.json')).timeout(const Duration(seconds: 10));
+      final ids = [for (final r in ((jsonDecode(rss.body)['feed'] as Map)['results'] as List)) (r as Map)['id']].join(',');
+      final r = await http.get(Uri.parse('https://itunes.apple.com/lookup?country=in&id=$ids')).timeout(const Duration(seconds: 10));
+      _show(g, r.body);
+    } catch (_) {
+      await _search('bollywood hits', g: g);
+    }
+  }
+
+  Future<void> _search(String q, {int? g}) async {
+    final gen = g ?? ++_gen;
+    setState(() => _loading = true);
+    try {
+      final r = await http
+          .get(Uri.parse('https://itunes.apple.com/search?media=music&entity=song&country=in&limit=50&term=${Uri.encodeQueryComponent(q)}'))
+          .timeout(const Duration(seconds: 10));
+      _show(gen, r.body);
+    } catch (_) {
+      if (mounted && gen == _gen) {
+        setState(() {
+          _loading = false;
+          _error = "Couldn't load songs. Check your internet.";
+        });
+      }
+    }
+  }
+
+  void _show(int gen, String body) {
+    if (!mounted || gen != _gen) return;
+    final list = [
+      for (final x in ((jsonDecode(body) as Map)['results'] as List? ?? []))
+        if ((x as Map)['previewUrl'] != null && x['wrapperType'] == 'track') _Song(x.cast<String, dynamic>())
+    ];
+    setState(() {
+      _songs = list;
+      _loading = false;
+      _error = list.isEmpty ? 'No songs found' : null;
+    });
+  }
+
+  Future<void> _toggle(_Song s) async {
+    if (_playing == s.preview) {
+      await _player.stop();
+      setState(() => _playing = null);
+      return;
+    }
+    setState(() => _playing = s.preview);
+    try {
+      await _player.setUrl(s.preview);
+      await _player.play();
+    } catch (_) {
+      if (mounted) setState(() => _playing = null);
+    }
+  }
+
+  Future<void> _pick(_Song s) async {
+    await _player.stop();
+    setState(() {
+      _busy = s.preview;
+      _playing = null;
+    });
+    try {
+      final r = await http.get(Uri.parse(s.preview)).timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) throw Exception();
+      final dir = await MediaFiles.dir();
+      final f = File('${dir.path}/song_${DateTime.now().millisecondsSinceEpoch}.m4a');
+      await f.writeAsBytes(r.bodyBytes);
+      if (!mounted) return;
+      final res = await Navigator.of(context).push<Map<String, dynamic>>(
+          MaterialPageRoute(builder: (_) => _ClipScreen(path: f.path, name: '${s.title} · ${s.artist}', art: s.art)));
+      if (res != null && mounted) Navigator.pop(context, res);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't get this song")));
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Music')),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+          child: TextField(
+            controller: _q,
+            textInputAction: TextInputAction.search,
+            onChanged: (v) {
+              _debounce?.cancel();
+              _debounce = Timer(const Duration(milliseconds: 450), () => v.trim().isEmpty ? _trending() : _search(v.trim()));
+            },
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              prefixIcon: const Icon(Icons.search_rounded),
+              hintText: 'Search songs or artists',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+            ),
+          ),
+        ),
+        ListTile(
+          leading: CircleAvatar(backgroundColor: cs.primary.withOpacity(0.15), child: Icon(Icons.folder_open_rounded, color: cs.primary)),
+          title: const Text('From your phone'),
+          onTap: () async {
+            await _player.stop();
+            if (!context.mounted) return;
+            final r = await _pickFromPhone(context);
+            if (r != null && context.mounted) Navigator.pop(context, r);
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(_q.text.trim().isEmpty ? 'Trending in India' : 'Results',
+                style: TextStyle(fontWeight: FontWeight.w700, color: cs.onSurface.withOpacity(0.7))),
+          ),
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(child: Text(_error!))
+                  : ListView.builder(
+                      itemCount: _songs.length,
+                      itemBuilder: (_, i) {
+                        final s = _songs[i];
+                        final on = _playing == s.preview;
+                        return ListTile(
+                          onTap: _busy == null ? () => _pick(s) : null,
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(s.art, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 50, height: 50, child: Icon(Icons.music_note_rounded))),
+                          ),
+                          title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          trailing: _busy == s.preview
+                              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
+                              : IconButton(
+                                  onPressed: () => _toggle(s),
+                                  icon: Icon(on ? Icons.pause_circle_filled_rounded : Icons.play_circle_outline_rounded, size: 32, color: cs.primary),
+                                ),
+                        );
+                      },
+                    ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text('Song previews from Apple Music', style: TextStyle(fontSize: 11, color: Colors.grey)),
+        ),
+      ]),
+    );
+  }
+}
+
 class _ClipScreen extends StatefulWidget {
   final String path;
   final String name;
-  const _ClipScreen({required this.path, required this.name});
+  final String? art;
+  const _ClipScreen({required this.path, required this.name, this.art});
   @override
   State<_ClipScreen> createState() => _ClipScreenState();
 }
 
 class _ClipScreenState extends State<_ClipScreen> {
-  static const clipMs = 30000;
+  static const clipMs = 15000; // like WhatsApp status music
   final _p = AudioPlayer();
   Duration? _total;
   double _start = 0; // ms

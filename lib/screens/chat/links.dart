@@ -84,7 +84,6 @@ class _LinkTextState extends State<LinkText> {
       if (m.start > last) spans.add(TextSpan(text: t.substring(last, m.start)));
       final rec = TapGestureRecognizer()
         ..onTap = () {
-          HapticFeedback.selectionClick();
           openLink(context, link);
         };
       _recognizers.add(rec);

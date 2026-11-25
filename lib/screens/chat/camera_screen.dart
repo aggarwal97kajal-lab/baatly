@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../data/media.dart';
 import '../../data/messenger.dart';
@@ -51,7 +52,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Timer? _tick;
   String? _error;
   List<AssetEntity> _recent = [];
+  List<AssetPathEntity> _albums = [];
+  AssetPathEntity? _album;
   bool _gallery = false;
+  // Photo mode: tap = photo, hold = video.
+  Timer? _holdTimer;
+  bool _pressing = false, _startingRec = false, _stopWhenStarted = false;
 
   @override
   void initState() {
@@ -65,6 +71,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
+    _holdTimer?.cancel();
     _c?.dispose();
     super.dispose();
   }
@@ -116,11 +123,74 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       final ps = await PhotoManager.requestPermissionExtend();
       if (!ps.hasAccess) return;
-      final paths = await PhotoManager.getAssetPathList(onlyAll: true, type: RequestType.common);
+      final paths = await PhotoManager.getAssetPathList(type: RequestType.common);
       if (paths.isEmpty) return;
-      final list = await paths.first.getAssetListPaged(page: 0, size: 120);
-      if (mounted) setState(() => _recent = list);
+      final all = paths.firstWhere((p) => p.isAll, orElse: () => paths.first);
+      final list = await all.getAssetListPaged(page: 0, size: 300);
+      if (mounted) {
+        setState(() {
+          _albums = paths;
+          _album = all;
+          _recent = list;
+        });
+      }
     } catch (_) {}
+  }
+
+  Future<void> _openAlbum(AssetPathEntity a) async {
+    final list = await a.getAssetListPaged(page: 0, size: 300);
+    if (mounted) {
+      setState(() {
+        _album = a;
+        _recent = list;
+      });
+    }
+  }
+
+  Future<void> _chooseAlbum() async {
+    final picked = await showModalBottomSheet<AssetPathEntity>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (s) => SafeArea(
+        child: ListView(shrinkWrap: true, children: [
+          for (final a in _albums)
+            FutureBuilder<int>(
+              future: a.assetCountAsync,
+              builder: (_, n) => ListTile(
+                leading: Icon(a.isAll ? Icons.photo_library_outlined : Icons.folder_outlined, color: Colors.white70),
+                title: Text(a.isAll ? 'Recents' : a.name, style: const TextStyle(color: Colors.white)),
+                subtitle: Text('${n.data ?? ''} items', style: const TextStyle(color: Colors.white54)),
+                trailing: a.id == _album?.id ? const Icon(Icons.check_rounded, color: Colors.white) : null,
+                onTap: () => Navigator.pop(s, a),
+              ),
+            ),
+        ]),
+      ),
+    );
+    if (picked != null) await _openAlbum(picked);
+  }
+
+  void _shutterDown() {
+    if (_mode != _Mode.photo || _recording) return;
+    _pressing = true;
+    _holdTimer?.cancel();
+    _holdTimer = Timer(const Duration(milliseconds: 350), () {
+      if (_pressing) _startRec();
+    });
+  }
+
+  void _shutterUp() {
+    if (_mode != _Mode.photo) return;
+    final wasPressing = _pressing;
+    _pressing = false;
+    _holdTimer?.cancel();
+    if (_startingRec) {
+      _stopWhenStarted = true;
+    } else if (_recording) {
+      _stopRec();
+    } else if (wasPressing) {
+      _photo();
+    }
   }
 
   void _flip() {
@@ -138,7 +208,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _photo() async {
     final c = _c;
     if (c == null || c.value.isTakingPicture) return;
-    HapticFeedback.mediumImpact();
     try {
       final f = await c.takePicture();
       await _review(f.path, video: false);
@@ -147,16 +216,25 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Future<void> _startRec() async {
     final c = _c;
-    if (c == null || _recording) return;
+    if (c == null || _recording || _startingRec) return;
+    _startingRec = true;
     try {
-      HapticFeedback.heavyImpact();
+      await c.prepareForVideoRecording();
       await c.startVideoRecording();
       setState(() {
         _recording = true;
         _recAt = DateTime.now();
       });
       _tick = Timer.periodic(const Duration(milliseconds: 500), (_) => mounted ? setState(() {}) : null);
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't start video. Allow microphone access.")));
+    } finally {
+      _startingRec = false;
+    }
+    if (_stopWhenStarted) {
+      _stopWhenStarted = false;
+      await _stopRec();
+    }
   }
 
   Future<void> _stopRec() async {
@@ -176,7 +254,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _review(String path, {required bool video}) async {
     if (video) {
       if (!mounted) return;
-      Navigator.pop(context, [CameraShot(path, video: true, note: _mode == _Mode.note)]);
+      if (_mode == _Mode.note) {
+        Navigator.pop(context, [CameraShot(path, video: true, note: true)]);
+        return;
+      }
+      final shot = await Navigator.of(context).push<CameraShot>(MaterialPageRoute(builder: (_) => VideoReviewScreen(path: path, to: widget.to)));
+      if (shot != null && mounted) Navigator.pop(context, [shot]);
       return;
     }
     final shot = await Navigator.of(context).push<CameraShot>(MaterialPageRoute(builder: (_) => PhotoEditScreen(path: path, to: widget.to)));
@@ -187,7 +270,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     final f = await a.file;
     if (f == null) return;
     if (a.type == AssetType.video) {
-      if (mounted) Navigator.pop(context, [CameraShot(f.path, video: true)]);
+      if (!mounted) return;
+      final shot = await Navigator.of(context).push<CameraShot>(MaterialPageRoute(builder: (_) => VideoReviewScreen(path: f.path, to: widget.to)));
+      if (shot != null && mounted) Navigator.pop(context, [shot]);
     } else {
       await _review(f.path, video: false);
     }
@@ -308,17 +393,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
                   _round(Icons.photo_library_outlined, _recording ? null : () => setState(() => _gallery = true)),
                   GestureDetector(
-                    onTap: () {
-                      if (_mode == _Mode.photo) {
-                        _photo();
-                      } else if (_recording) {
-                        _stopRec();
-                      } else {
-                        _startRec();
-                      }
-                    },
-                    onLongPressStart: _mode == _Mode.photo ? (_) => _startRec() : null,
-                    onLongPressEnd: _mode == _Mode.photo ? (_) => _stopRec() : null,
+                    // Video / Video note: tap to start, tap to stop.
+                    onTap: _mode == _Mode.photo
+                        ? null
+                        : () {
+                            if (_recording) {
+                              _stopRec();
+                            } else {
+                              _startRec();
+                            }
+                          },
+                    child: Listener(
+                    // Photo: tap = photo, hold = video until you let go.
+                    onPointerDown: (_) => _shutterDown(),
+                    onPointerUp: (_) => _shutterUp(),
+                    onPointerCancel: (_) => _shutterUp(),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       width: _recording ? 88 : 76,
@@ -334,6 +423,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                         margin: _recording ? const EdgeInsets.all(18) : EdgeInsets.zero,
                       ),
                     ),
+                  ),
                   ),
                   _round(Icons.cameraswitch_rounded, _recording ? null : _flip),
                 ]),
@@ -376,14 +466,24 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 child: Column(children: [
                   Row(children: [
                     IconButton(onPressed: () => setState(() => _gallery = false), icon: const Icon(Icons.close_rounded, color: Colors.white)),
-                    const Expanded(child: Text('Recents', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600))),
+                    Expanded(
+                      child: Center(
+                        child: TextButton.icon(
+                          onPressed: _albums.isEmpty ? null : _chooseAlbum,
+                          iconAlignment: IconAlignment.end,
+                          icon: const Icon(Icons.arrow_drop_down_rounded, color: Colors.white),
+                          label: Text(_album == null || _album!.isAll ? 'Recents' : _album!.name,
+                              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ),
                     const SizedBox(width: 48),
                   ]),
                   Expanded(
                     child: _recent.isEmpty
                         ? const Center(child: Text('Allow photos access to see your gallery', style: TextStyle(color: Colors.white60)))
                         : GridView.builder(
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 2, crossAxisSpacing: 2),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 2, crossAxisSpacing: 2),
                             itemCount: _recent.length,
                             itemBuilder: (_, i) => _thumb(_recent[i], 100),
                           ),
@@ -406,6 +506,89 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           child: Padding(padding: const EdgeInsets.all(12), child: Icon(i, color: Colors.white, size: 26)),
         ),
       );
+}
+
+// ======================================================================= video review
+class VideoReviewScreen extends StatefulWidget {
+  final String path;
+  final String to;
+  const VideoReviewScreen({super.key, required this.path, required this.to});
+  @override
+  State<VideoReviewScreen> createState() => _VideoReviewScreenState();
+}
+
+class _VideoReviewScreenState extends State<VideoReviewScreen> {
+  late final VideoPlayerController _v = VideoPlayerController.file(File(widget.path));
+  final _caption = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _v.initialize().then((_) {
+      if (!mounted) return;
+      setState(() {});
+      _v.setLooping(true);
+      _v.play();
+    });
+    _v.addListener(() => mounted ? setState(() {}) : null);
+  }
+
+  @override
+  void dispose() {
+    _v.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(children: [
+          Row(children: [
+            IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: Colors.white)),
+            const Spacer(),
+          ]),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _v.value.isPlaying ? _v.pause() : _v.play(),
+              child: Center(
+                child: _v.value.isInitialized
+                    ? Stack(alignment: Alignment.center, children: [
+                        AspectRatio(aspectRatio: _v.value.aspectRatio, child: VideoPlayer(_v)),
+                        if (!_v.value.isPlaying) const Icon(Icons.play_circle_fill_rounded, size: 72, color: Colors.white70),
+                      ])
+                    : const CircularProgressIndicator(color: Colors.white),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+            child: Row(children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(color: const Color(0xFF2A2A2A), borderRadius: BorderRadius.circular(26)),
+                  child: TextField(
+                    controller: _caption,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(border: InputBorder.none, hintText: 'Add a caption…', hintStyle: TextStyle(color: Colors.white54)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FloatingActionButton(
+                heroTag: 'vid-send',
+                onPressed: () => Navigator.pop(context, CameraShot(widget.path, video: true, caption: _caption.text.trim())),
+                child: const Icon(Icons.send_rounded),
+              ),
+            ]),
+          ),
+          Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(widget.to, style: const TextStyle(color: Colors.white60, fontSize: 12.5))),
+        ]),
+      ),
+    );
+  }
 }
 
 // ======================================================================= edit + send

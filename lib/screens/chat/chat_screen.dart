@@ -463,7 +463,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (shots == null) return;
     for (final s in shots) {
       if (s.video) {
-        await _sendVideoPath(s.path, 'video.mp4', note: s.note);
+        await _sendVideoPath(s.path, 'video.mp4', note: s.note, caption: s.caption);
       } else {
         final kept = await _keep(s.path, s.path.toLowerCase().endsWith('.png') ? 'photo.png' : 'photo.jpg');
         _sendMedia(kept, MsgKind.image, caption: s.caption, name: 'photo.jpg', once: s.once);
@@ -471,7 +471,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _sendVideoPath(String path, String pickedName, {bool note = false}) async {
+  Future<void> _sendVideoPath(String path, String pickedName, {bool note = false, String caption = ''}) async {
     final f = XFile(path, name: pickedName);
     final size = await File(f.path).length();
     if (size > 500 * 1024 * 1024) {
@@ -512,7 +512,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final name = f.name.isEmpty ? 'video.mp4' : f.name;
     final kept = await _keep(src, name.toLowerCase().endsWith('.mp4') ? name : '$name.mp4');
     if (chat.isReal) {
-      Messenger.instance.sendMedia(chat, path: kept, kind: MsgKind.video, name: name, seconds: secs, extra: {if (thumb != null) 'thumb': thumb, if (note) 'note': true});
+      Messenger.instance.sendMedia(chat, path: kept, kind: MsgKind.video, caption: caption, name: name, seconds: secs, extra: {if (thumb != null) 'thumb': thumb, if (note) 'note': true});
     } else {
       _sendMedia(kept, MsgKind.video, name: name, seconds: secs);
     }
@@ -831,7 +831,6 @@ class _ChatScreenState extends State<ChatScreen> {
       if (full != ed.text) Messenger.instance.editMessage(chat, ed, full);
       return;
     }
-    HapticFeedback.lightImpact();
     final full = _replyTo == null ? text : '↪ ${_replyTo!.text.split('\n').first}\n$text';
     final lp = _lp != null && firstUrl(text) == _lp!['u'] ? _lp : null;
     _ctrl.clear();
@@ -1056,7 +1055,7 @@ class _ChatScreenState extends State<ChatScreen> {
           else ...[
           if (_lp != null && !_recording)
             Container(
-              color: bc.surface,
+              color: Colors.transparent,
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
               child: LinkPreviewCard(lp: _lp!, fg: bc.text, bg: bc.raised, onClose: () => setState(() {
                 _lpOff = _lp!['u'] as String?;
@@ -1499,8 +1498,9 @@ class _Composer extends StatelessWidget {
   Widget build(BuildContext context) {
     final bc = context.bc;
     final hasText = ctrl.text.trim().isNotEmpty;
+    // No strip behind the typing box: the chat wallpaper shows, like WhatsApp.
     return Container(
-      color: bc.surface,
+      color: Colors.transparent,
       child: SafeArea(
         top: false,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -2011,7 +2011,6 @@ class _SwipeToReplyState extends State<_SwipeToReply> with SingleTickerProviderS
         setState(() => _dx = (_dx + d.delta.dx).clamp(0.0, 96.0));
         if (!_fired && _dx >= _trigger) {
           _fired = true;
-          HapticFeedback.lightImpact();
         }
       },
       onHorizontalDragEnd: (_) {
