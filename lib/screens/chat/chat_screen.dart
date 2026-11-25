@@ -40,9 +40,17 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   Message? _replyTo;
   final _rec = AudioRecorder();
-  bool _recording = false;
-  DateTime? _recStart;
+  bool _recording = false; // mic is live (holding or locked)
+  bool _recLocked = false; // slid up: hands-free
+  bool _recPaused = false;
+  bool _holding = false; // finger is still on the mic
+  Offset _drag = Offset.zero; // finger travel while holding
+  DateTime? _recStart; // start of the current (unpaused) stretch
+  Duration _recAccum = Duration.zero; // time recorded before the last pause
+  Future<void>? _recStarting;
   Timer? _recTimer;
+  StreamSubscription<Amplitude>? _ampSub;
+  final List<double> _amps = [];
   String? _recPath;
   bool _emoji = false;
   final _focus = FocusNode();
@@ -294,44 +302,137 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Duration get _recElapsed =>
+      _recAccum + (_recStart == null || _recPaused ? Duration.zero : DateTime.now().difference(_recStart!));
+
+  // Finger goes down on the mic: start straight away, like WhatsApp.
+  void _micDown() {
+    if (_recording || _recStarting != null) return;
+    _holding = true;
+    _drag = Offset.zero;
+    _recStarting = _startRecording().whenComplete(() => _recStarting = null);
+  }
+
+  void _micMove(Offset delta) {
+    if (!_holding || _recLocked) return;
+    _drag += delta;
+    if (_drag.dx < -110) {
+      _holding = false;
+      HapticFeedback.lightImpact();
+      _stopRecording(send: false);
+      return;
+    }
+    if (_drag.dy < -90) {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _recLocked = true;
+        _holding = false;
+        _drag = Offset.zero;
+      });
+      return;
+    }
+    setState(() {});
+  }
+
+  Future<void> _micUp({bool cancelled = false}) async {
+    if (!_holding) return;
+    _holding = false;
+    await _recStarting;
+    if (!_recording || _recLocked) return;
+    if (cancelled) {
+      _stopRecording(send: false);
+    } else if (_recElapsed.inMilliseconds < 700) {
+      _stopRecording(send: false);
+      _toast('Hold to record, release to send');
+    } else {
+      _stopRecording(send: true);
+    }
+  }
+
   Future<void> _startRecording() async {
     try {
       if (!await _rec.hasPermission()) {
+        _holding = false;
         _toast('Allow microphone to record voice notes');
         return;
       }
+      if (!_holding) return; // let go while the permission box was up
       final dir = await MediaFiles.dir();
       _recPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      await _rec.start(const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 64000, sampleRate: 44100), path: _recPath!);
+      // Mono speech quality: a quarter of the old size, so it uploads much faster.
+      await _rec.start(
+          const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 32000, sampleRate: 22050, numChannels: 1),
+          path: _recPath!);
       HapticFeedback.mediumImpact();
+      _amps.clear();
+      _ampSub = _rec.onAmplitudeChanged(const Duration(milliseconds: 90)).listen((a) {
+        if (_recPaused) return;
+        final v = ((a.current + 50) / 50).clamp(0.06, 1.0).toDouble();
+        _amps.add(v);
+        if (_amps.length > 200) _amps.removeAt(0);
+        if (mounted) setState(() {});
+      });
       setState(() {
         _recording = true;
+        _recLocked = false;
+        _recPaused = false;
+        _recAccum = Duration.zero;
         _recStart = DateTime.now();
       });
-      _recTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => mounted ? setState(() {}) : null);
+      _recTimer = Timer.periodic(const Duration(milliseconds: 250), (_) => mounted ? setState(() {}) : null);
     } catch (e) {
+      _holding = false;
       _toast("Couldn't start recording ($e)");
     }
   }
 
+  Future<void> _togglePause() async {
+    try {
+      if (_recPaused) {
+        await _rec.resume();
+        setState(() {
+          _recPaused = false;
+          _recStart = DateTime.now();
+        });
+      } else {
+        await _rec.pause();
+        setState(() {
+          _recAccum = _recElapsed;
+          _recPaused = true;
+        });
+      }
+    } catch (_) {}
+  }
+
   Future<void> _stopRecording({required bool send}) async {
     _recTimer?.cancel();
-    final secs = _recStart == null ? 0 : DateTime.now().difference(_recStart!).inSeconds;
+    _ampSub?.cancel();
+    _ampSub = null;
+    final secs = _recElapsed.inMilliseconds / 1000;
     String? path;
     try {
       path = await _rec.stop();
     } catch (_) {}
-    setState(() => _recording = false);
+    if (mounted) {
+      setState(() {
+        _recording = false;
+        _recLocked = false;
+        _recPaused = false;
+        _holding = false;
+        _drag = Offset.zero;
+        _recStart = null;
+        _recAccum = Duration.zero;
+      });
+    }
     path ??= _recPath;
     if (path == null) return;
-    if (!send || secs < 1) {
+    if (!send || secs < 0.7) {
       try {
         await File(path).delete();
       } catch (_) {}
-      if (send) _toast('Hold on a bit longer to record');
       return;
     }
-    _sendMedia(path, MsgKind.voice, name: 'voice.m4a', seconds: secs);
+    _sendMedia(path, MsgKind.voice, name: 'voice.m4a', seconds: secs.round().clamp(1, 1 << 30));
   }
 
   @override
@@ -348,6 +449,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (AppState.instance.activeChatId == chat.id) AppState.instance.activeChatId = null;
     Messenger.instance.closeChat(chat);
     _recTimer?.cancel();
+    _ampSub?.cancel();
     _rec.dispose();
     _focus.dispose();
     _ctrl.dispose();
@@ -631,10 +733,13 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
-          if (_recording)
+          if (_recording && _recLocked)
             _RecordingBar(
-              seconds: _recStart == null ? 0 : DateTime.now().difference(_recStart!).inSeconds,
+              elapsed: _recElapsed,
+              amps: _amps,
+              paused: _recPaused,
               onCancel: () => _stopRecording(send: false),
+              onPause: _togglePause,
               onSend: () => _stopRecording(send: true),
             )
           else if (Messenger.instance.isBlocked(chat.peerId))
@@ -665,7 +770,15 @@ class _ChatScreenState extends State<ChatScreen> {
           else
           _Composer(
             onAttach: _attach,
-            onMic: _startRecording,
+            mic: _MicState(
+              recording: _recording && !_recLocked,
+              elapsed: _recElapsed,
+              drag: _drag,
+              onDown: _micDown,
+              onMove: _micMove,
+              onUp: () => _micUp(),
+              onCancel: () => _micUp(cancelled: true),
+            ),
             onCamera: () => _pickImage(ImageSource.camera),
             focus: _focus,
             emojiOpen: _emoji,
@@ -906,7 +1019,7 @@ class _Composer extends StatelessWidget {
   final VoidCallback onSend;
   final VoidCallback onChanged;
   final VoidCallback onAttach;
-  final VoidCallback onMic;
+  final _MicState mic;
   final VoidCallback onCamera;
   final VoidCallback onEmoji;
   final VoidCallback onFieldTap;
@@ -924,7 +1037,7 @@ class _Composer extends StatelessWidget {
     required this.onSend,
     required this.onChanged,
     required this.onAttach,
-    required this.onMic,
+    required this.mic,
   });
 
   @override
@@ -960,7 +1073,9 @@ class _Composer extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Expanded(
-                child: Container(
+                child: mic.recording
+                    ? _HoldingStrip(elapsed: mic.elapsed, dragX: mic.drag.dx)
+                    : Container(
                   decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(24)),
                   child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                     IconButton(onPressed: onEmoji, icon: Icon(emojiOpen ? Icons.keyboard_rounded : Icons.emoji_emotions_outlined, color: bc.muted)),
@@ -988,20 +1103,18 @@ class _Composer extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: hasText ? onSend : onMic,
-                child: AnimatedContainer(
-                  duration: Mitti.fast,
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle),
-                  child: AnimatedSwitcher(
-                    duration: Mitti.fast,
-                    transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
-                    child: Icon(hasText ? Icons.send_rounded : Icons.mic_rounded, key: ValueKey(hasText), color: Colors.white),
+              if (hasText)
+                GestureDetector(
+                  onTap: onSend,
+                  child: Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle),
+                    child: const Icon(Icons.send_rounded, color: Colors.white),
                   ),
-                ),
-              ),
+                )
+              else
+                _MicButton(mic: mic),
             ]),
           ),
         ]),
@@ -1011,12 +1124,145 @@ class _Composer extends StatelessWidget {
 }
 
 
-/// Shown instead of the text box while a voice note is recording.
+/// Everything the composer needs to draw the hold-to-record mic.
+class _MicState {
+  final bool recording;
+  final Duration elapsed;
+  final Offset drag;
+  final VoidCallback onDown, onUp, onCancel;
+  final void Function(Offset delta) onMove;
+  const _MicState({
+    required this.recording,
+    required this.elapsed,
+    required this.drag,
+    required this.onDown,
+    required this.onMove,
+    required this.onUp,
+    required this.onCancel,
+  });
+}
+
+String _fmtRec(Duration d) {
+  final m = d.inMinutes;
+  final s = d.inSeconds % 60;
+  return '$m:${s.toString().padLeft(2, '0')}';
+}
+
+/// Hold to record, slide left to cancel, slide up to lock.
+class _MicButton extends StatelessWidget {
+  final _MicState mic;
+  const _MicButton({required this.mic});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    final rec = mic.recording;
+    final dx = rec ? mic.drag.dx.clamp(-110.0, 0.0) : 0.0;
+    final dy = rec ? mic.drag.dy.clamp(-90.0, 0.0) : 0.0;
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => mic.onDown(),
+      onPointerMove: (e) => mic.onMove(e.delta),
+      onPointerUp: (_) => mic.onUp(),
+      onPointerCancel: (_) => mic.onCancel(),
+      child: SizedBox(
+        width: 50,
+        height: 50,
+        child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
+          if (rec)
+            Positioned(
+              bottom: 74 + (-dy * 0.5),
+              child: Opacity(
+                opacity: (1 + dy / 90).clamp(0.3, 1.0),
+                child: Container(
+                  width: 40,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: bc.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+                  ),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.lock_open_rounded, size: 20, color: bc.muted),
+                    const SizedBox(height: 4),
+                    Icon(Icons.keyboard_arrow_up_rounded, size: 20, color: bc.muted),
+                  ]),
+                ),
+              ),
+            ),
+          Transform.translate(
+            offset: Offset(dx, dy),
+            child: AnimatedScale(
+              scale: rec ? 1.5 : 1,
+              duration: Mitti.fast,
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle),
+                child: const Icon(Icons.mic_rounded, color: Colors.white),
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Replaces the text box while the finger is holding the mic.
+class _HoldingStrip extends StatelessWidget {
+  final Duration elapsed;
+  final double dragX;
+  const _HoldingStrip({required this.elapsed, required this.dragX});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    final blink = (elapsed.inMilliseconds ~/ 500).isEven;
+    final pull = dragX.clamp(-110.0, 0.0);
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(24)),
+      child: Row(children: [
+        AnimatedOpacity(
+          opacity: blink ? 1 : 0.25,
+          duration: const Duration(milliseconds: 250),
+          child: const Icon(Icons.mic_rounded, color: Color(0xFFE53935), size: 22),
+        ),
+        const SizedBox(width: 8),
+        Text(_fmtRec(elapsed), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: bc.text)),
+        Expanded(
+          child: Transform.translate(
+            offset: Offset(pull * 0.6, 0),
+            child: Opacity(
+              opacity: (1 + pull / 110).clamp(0.2, 1.0),
+              child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                Icon(Icons.chevron_left_rounded, color: bc.muted, size: 20),
+                Text('Slide to cancel', style: TextStyle(color: bc.muted, fontSize: 14)),
+                const SizedBox(width: 6),
+              ]),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Hands-free recording (after sliding up to lock): timer, live waveform,
+/// delete, pause/resume and send.
 class _RecordingBar extends StatelessWidget {
-  final int seconds;
-  final VoidCallback onCancel;
-  final VoidCallback onSend;
-  const _RecordingBar({required this.seconds, required this.onCancel, required this.onSend});
+  final Duration elapsed;
+  final List<double> amps;
+  final bool paused;
+  final VoidCallback onCancel, onPause, onSend;
+  const _RecordingBar({
+    required this.elapsed,
+    required this.amps,
+    required this.paused,
+    required this.onCancel,
+    required this.onPause,
+    required this.onSend,
+  });
   @override
   Widget build(BuildContext context) {
     final bc = context.bc;
@@ -1025,29 +1271,75 @@ class _RecordingBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-          child: Row(children: [
-            IconButton(onPressed: onCancel, tooltip: 'Delete', icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFB3261E))),
-            const SizedBox(width: 4),
-            const Icon(Icons.fiber_manual_record_rounded, color: Color(0xFFE53935), size: 16),
-            const SizedBox(width: 8),
-            Text(MediaFiles.fmtDur(seconds), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: bc.text)),
-            const SizedBox(width: 10),
-            Expanded(child: Text('Recording…', style: TextStyle(color: bc.muted))),
-            GestureDetector(
-              onTap: onSend,
-              child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle),
-                child: const Icon(Icons.send_rounded, color: Colors.white),
+          padding: const EdgeInsets.fromLTRB(16, 12, 12, 10),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              Text(_fmtRec(elapsed), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: bc.text)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 32,
+                  child: CustomPaint(painter: _WavePainter(amps, paused ? bc.muted : context.primary)),
+                ),
               ),
-            ),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              IconButton(
+                onPressed: onCancel,
+                tooltip: 'Delete',
+                icon: Icon(Icons.delete_outline_rounded, color: bc.muted, size: 26),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onPause,
+                icon: Icon(paused ? Icons.mic_rounded : Icons.pause_rounded, color: const Color(0xFFE53935)),
+                label: Text(paused ? 'Resume' : 'Pause', style: const TextStyle(color: Color(0xFFE53935), fontWeight: FontWeight.w600)),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: onSend,
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle),
+                  child: const Icon(Icons.send_rounded, color: Colors.white),
+                ),
+              ),
+            ]),
           ]),
         ),
       ),
     );
   }
+}
+
+/// Live bars from the mic level, newest on the right.
+class _WavePainter extends CustomPainter {
+  final List<double> amps;
+  final Color color;
+  _WavePainter(this.amps, this.color);
+  @override
+  void paint(Canvas canvas, Size size) {
+    const step = 4.0;
+    final n = (size.width / step).floor();
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    final start = amps.length > n ? amps.length - n : 0;
+    final mid = size.height / 2;
+    for (var i = 0; i < n; i++) {
+      final j = start + i;
+      final v = j < amps.length ? amps[j] : 0.06;
+      final x = i * step + 1.5;
+      final h = (v * size.height / 2).clamp(1.5, size.height / 2);
+      canvas.drawLine(Offset(x, mid - h), Offset(x, mid + h), paint..color = j < amps.length ? color : color.withOpacity(0.25));
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WavePainter old) => true;
 }
 
 

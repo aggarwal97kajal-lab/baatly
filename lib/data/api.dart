@@ -72,7 +72,7 @@ class Api {
 
   /// Uploads encrypted bytes (with real network progress 0..1); returns the media id.
   Future<String> upload(List<int> bytes, {void Function(double)? onProgress}) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
+    final client = _uploader;
     try {
       final req = await client.postUrl(Uri.parse('$kApiBase/v1/media'));
       req.headers.set('content-type', 'application/octet-stream');
@@ -97,10 +97,15 @@ class Api {
       rethrow;
     } catch (_) {
       throw ApiException(0, 'NETWORK', "Couldn't upload. Check your internet.");
-    } finally {
-      client.close();
     }
   }
+
+  // One shared connection pool: reusing the TLS connection saves a
+  // full handshake (often 300-800 ms on mobile) on every request.
+  static final http.Client _http = http.Client();
+  static final HttpClient _uploader = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 20)
+    ..idleTimeout = const Duration(seconds: 60);
 
   /// Downloads encrypted media bytes (with progress 0..1).
   Future<List<int>> download(String id, {void Function(double)? onProgress}) async {
@@ -108,7 +113,7 @@ class Api {
     if (_token != null) req.headers['authorization'] = 'Bearer $_token';
     http.StreamedResponse r;
     try {
-      r = await http.Client().send(req).timeout(const Duration(minutes: 1));
+      r = await _http.send(req).timeout(const Duration(minutes: 1));
     } catch (_) {
       throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
     }
@@ -176,7 +181,7 @@ class Api {
     try {
       final req = http.Request(method, uri)..headers.addAll(headers);
       if (body != null) req.body = jsonEncode(body);
-      r = await http.Response.fromStream(await req.send().timeout(const Duration(seconds: 20)));
+      r = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 20)));
     } catch (_) {
       throw ApiException(0, 'NETWORK', 'Can\'t reach the server. Check your internet and try again.');
     }
