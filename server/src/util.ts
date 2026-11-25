@@ -13,6 +13,8 @@ export interface Env {
   FCM_SERVICE_ACCOUNT?: string;
   TURN_KEY_ID?: string; // Cloudflare Realtime TURN (optional)
   KLIPY_KEY?: string; // KLIPY GIF/sticker search (optional)
+  RESEND_KEY?: string; // e-mail for in-app support (optional)
+  RESEND_FROM?: string;
   TURN_KEY_TOKEN?: string; // Firebase service-account JSON (secret) // "true" only while Message Central is not configured
 }
 

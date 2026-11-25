@@ -30,6 +30,7 @@ import { callRoute } from './calls';
 import { groupCallRoute } from './gcalls';
 import { communityRoute } from './groups';
 import { gifRoute } from './gifs';
+import { supportRoute } from './support';
 import { cleanupRateLimits, safetyRoute } from './safety';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
@@ -441,6 +442,11 @@ async function route(c: Ctx): Promise<Response> {
   if (/^\/v1\/(blocks|reports)(\/|$)/.test(p)) {
     const { user } = await requireUser(c);
     const r = await safetyRoute(c, user, m, p);
+    if (r) return r;
+  }
+  if (p === '/v1/support') {
+    const { user } = await requireUser(c);
+    const r = await supportRoute(c, user, m, p);
     if (r) return r;
   }
   if (p === '/v1/gifs') {

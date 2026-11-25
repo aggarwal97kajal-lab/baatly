@@ -105,6 +105,19 @@ jobs:
           else
             echo "::notice::TURN_KEY_ID / TURN_KEY_TOKEN not set - calls use STUN only (may fail on some mobile networks)"
           fi
+      - name: Set support e-mail (RESEND) secret
+        if: steps.cf.outputs.ok == 'true'
+        env:
+          RESEND_KEY: ${{ secrets.RESEND_KEY }}
+        run: |
+          if [ -n "$RESEND_KEY" ]; then
+            node -e 'console.log(JSON.stringify({RESEND_KEY:process.env.RESEND_KEY}))' > /tmp/r.json
+            npx wrangler secret bulk /tmp/r.json
+            rm /tmp/r.json
+            echo "RESEND configured"
+          else
+            echo "::notice::RESEND_KEY not set - support messages are stored but not e-mailed"
+          fi
       - name: Set GIF search (KLIPY) secret
         if: steps.cf.outputs.ok == 'true'
         env:

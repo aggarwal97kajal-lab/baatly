@@ -6,6 +6,7 @@ import 'data/app_state.dart';
 import 'data/notifier.dart';
 import 'widgets/app_lock.dart';
 import 'nav.dart';
+import 'widgets/haptics.dart';
 import 'config.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'screens/home/home_shell.dart';
@@ -14,6 +15,7 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  TapHaptics.install();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarColor: Colors.transparent));
   await AppState.instance.load();
   await Api.instance.load();

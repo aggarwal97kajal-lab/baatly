@@ -57,6 +57,7 @@ class Api {
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'session_token';
   static String _device = 'Android phone';
+  static String get deviceName => _device;
 
   /// "OnePlus CPH2609" etc., shown in Linked devices.
   static Future<void> _loadDeviceName() async {

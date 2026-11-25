@@ -1,9 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../data/api.dart';
 import '../../data/app_state.dart';
@@ -11,8 +12,6 @@ import '../../data/media.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../onboarding/splash_screen.dart';
-
-const kSupportEmail = 'aggarwal97kajal@gmail.com';
 
 String _bytes(int b) {
   if (b < 1024) return '$b B';
@@ -526,15 +525,9 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
 
-  Future<void> _mail(BuildContext context, String subject) async {
-    final uri = Uri(scheme: 'mailto', path: kSupportEmail, queryParameters: {'subject': subject});
-    if (!await launchUrl(uri) && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Write to us at $kSupportEmail')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    void go(Widget w) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => w));
     return Scaffold(
       appBar: AppBar(title: const Text('Help')),
       body: ListView(children: [
@@ -542,23 +535,24 @@ class HelpScreen extends StatelessWidget {
           leading: const Icon(Icons.help_outline_rounded),
           title: const Text('Help centre'),
           subtitle: const Text('Answers to common questions'),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _FaqScreen())),
+          onTap: () => go(const _FaqScreen()),
         ),
         ListTile(
-          leading: const Icon(Icons.mail_outline_rounded),
+          leading: const Icon(Icons.chat_bubble_outline_rounded),
           title: const Text('Contact us'),
           subtitle: const Text('Questions or something not working'),
-          onTap: () => _mail(context, 'BAATLY help'),
+          onTap: () => go(const SupportScreen(kind: 'help')),
         ),
         ListTile(
           leading: const Icon(Icons.bug_report_outlined),
-          title: const Text('Report a problem'),
-          onTap: () => _mail(context, 'BAATLY problem report'),
+          title: const Text('Send feedback'),
+          subtitle: const Text('Report a technical problem'),
+          onTap: () => go(const SupportScreen(kind: 'problem')),
         ),
         ListTile(
           leading: const Icon(Icons.description_outlined),
           title: const Text('Terms and Privacy Policy'),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _PolicyScreen())),
+          onTap: () => go(const _PolicyScreen()),
         ),
         ListTile(
           leading: const Icon(Icons.info_outline_rounded),
@@ -571,6 +565,137 @@ class HelpScreen extends StatelessWidget {
           ),
         ),
       ]),
+    );
+  }
+}
+
+/// "Contact us" / "Send feedback": a message (and screenshots) straight to
+/// the BAATLY team from inside the app.
+class SupportScreen extends StatefulWidget {
+  final String kind; // help | problem
+  const SupportScreen({super.key, required this.kind});
+  @override
+  State<SupportScreen> createState() => _SupportScreenState();
+}
+
+class _SupportScreenState extends State<SupportScreen> {
+  final _text = TextEditingController();
+  final _shots = <String>[];
+  bool _sending = false;
+
+  Future<void> _addShot() async {
+    if (_shots.length >= 3) return;
+    try {
+      final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1280, imageQuality: 70);
+      if (f != null) setState(() => _shots.add(f.path));
+    } catch (_) {}
+  }
+
+  Future<void> _send() async {
+    final t = _text.text.trim();
+    if (t.length < 3) return;
+    setState(() => _sending = true);
+    try {
+      final shots = <String>[for (final p in _shots) base64Encode(await File(p).readAsBytes())];
+      await Api.instance.request('POST', '/v1/support', {
+        'text': t,
+        'kind': widget.kind,
+        'device': Api.deviceName,
+        'version': '0.1.0',
+        'shots': shots,
+      });
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: const Text('Thanks!'),
+          content: const Text("We got your message and will look into it. We'll reply in BAATLY if we need more details."),
+          actions: [TextButton(onPressed: () => Navigator.pop(d), child: const Text('OK'))],
+        ),
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : "Couldn't send. Check your internet.")));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    final problem = widget.kind == 'problem';
+    return Scaffold(
+      appBar: AppBar(title: Text(problem ? 'Send feedback' : 'Contact us')),
+      body: SafeArea(
+        child: Column(children: [
+          Expanded(
+            child: ListView(padding: const EdgeInsets.all(16), children: [
+              Text(
+                problem ? 'Tell us what went wrong. Screenshots help us fix it faster.' : 'How can we help? Write your question below.',
+                style: TextStyle(color: bc.muted),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _text,
+                minLines: 5,
+                maxLines: 10,
+                maxLength: 5000,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: problem ? 'Describe the technical issue' : 'Write your message',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text('Screenshots (optional)', style: TextStyle(fontWeight: FontWeight.w600, color: bc.text)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 10, runSpacing: 10, children: [
+                for (final p in _shots)
+                  Stack(clipBehavior: Clip.none, children: [
+                    ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(p), width: 96, height: 120, fit: BoxFit.cover)),
+                    Positioned(
+                      right: -8,
+                      top: -8,
+                      child: IconButton.filled(
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 16,
+                        onPressed: () => setState(() => _shots.remove(p)),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ),
+                  ]),
+                if (_shots.length < 3)
+                  InkWell(
+                    onTap: _addShot,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 96,
+                      height: 120,
+                      decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(12)),
+                      child: Icon(Icons.add_photo_alternate_outlined, color: bc.muted),
+                    ),
+                  ),
+              ]),
+              const SizedBox(height: 16),
+              Text('Your phone model and app version are sent with your message so we can help.', style: TextStyle(fontSize: 12.5, color: bc.muted)),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: FilledButton(
+                onPressed: _sending || _text.text.trim().length < 3 ? null : _send,
+                child: _sending ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)) : const Text('Send'),
+              ),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -636,7 +761,7 @@ class _PolicyScreen extends StatelessWidget {
         h('Using BAATLY fairly'),
         p('Don\'t use BAATLY to send spam, harass people, or share illegal content. Accounts that are reported and found doing this can be limited or removed.'),
         const SizedBox(height: 18),
-        p('Questions? Write to $kSupportEmail'),
+        p('Questions? Go to You → Help → Contact us.'),
       ]),
     );
   }
