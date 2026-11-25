@@ -24,7 +24,7 @@ class CallsTab extends StatelessWidget {
 
   Future<void> _action(BuildContext context, String what) async {
     final s = AppState.instance;
-    final people = s.chats.where((c) => c.peerId != null && c.isReal).toList();
+    final people = s.chats.where((c) => c.peerId != null && c.isReal && !c.isNotes).toList();
     final groups = s.chats.where((c) => c.isRealGroup && !c.left).toList();
     Widget sheet(String title, List<Chat> list, Widget Function(BuildContext, Chat) trailing, {String empty = 'No chats yet'}) => SafeArea(
           child: ConstrainedBox(

@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { chatRoute } from './chat';
+import { notify, pushConfigured } from './fcm';
 import { groupRoute } from './groups';
 import { presenceFor } from './privacy';
 import { HttpError } from './util';
@@ -65,7 +66,88 @@ export class UserHub extends DurableObject<Env> {
       await this.ctx.storage.put('watchers', w);
       return Response.json({ ok: true });
     }
+    const sr = url.pathname.match(/^\/(scheduled|reminders)(?:\/([\w-]+))?$/);
+    if (sr) return this.timed(req, sr[1] === 'scheduled' ? 's:' : 'r:', sr[2]);
     return new Response('not found', { status: 404 });
+  }
+
+  // ------------------------------------------------------------ scheduled messages / reminders
+  private async timed(req: Request, prefix: 's:' | 'r:', id?: string): Promise<Response> {
+    if (req.method === 'GET') {
+      const all = await this.ctx.storage.list<{ id: string; at: number }>({ prefix });
+      return Response.json({ items: [...all.values()].map((v) => ({ id: v.id, at: v.at, chat: (v as { chat?: string }).chat ?? null })) });
+    }
+    if (req.method === 'DELETE' && id) {
+      const existed = await this.ctx.storage.delete(prefix + id);
+      await this.armTimers();
+      return Response.json({ ok: true, existed });
+    }
+    if (req.method === 'POST') {
+      const b = (await req.json()) as { id?: string; at?: number; path?: string; body?: unknown; chat?: string; msgId?: string };
+      const tid = String(b.id ?? '').slice(0, 80);
+      const at = Number(b.at ?? 0);
+      const t = Date.now();
+      if (!/^[\w-]{4,80}$/.test(tid) || !(at > t - 60_000) || at > t + 366 * 86400_000) return Response.json({ error: 'BAD_TIME' }, { status: 400 });
+      const count = (await this.ctx.storage.list({ prefix })).size;
+      if (count >= 200) return Response.json({ error: 'TOO_MANY' }, { status: 429 });
+      if (prefix === 's:') {
+        const path = String(b.path ?? '');
+        if (path !== '/v1/messages' && !/^\/v1\/groups\/[\w-]+\/messages$/.test(path)) return Response.json({ error: 'BAD_PATH' }, { status: 400 });
+        await this.ctx.storage.put(prefix + tid, { id: tid, at, path, body: b.body, chat: String(b.chat ?? '') });
+      } else {
+        await this.ctx.storage.put(prefix + tid, { id: tid, at, chat: String(b.chat ?? ''), msgId: String(b.msgId ?? '') });
+      }
+      await this.armTimers();
+      return Response.json({ ok: true });
+    }
+    return new Response('not found', { status: 404 });
+  }
+
+  /** Alarm at the earliest of: pending retries, scheduled messages, reminders. */
+  private async armTimers() {
+    let next = Infinity;
+    for (const prefix of ['s:', 'r:']) {
+      const all = await this.ctx.storage.list<{ at: number }>({ prefix });
+      for (const v of all.values()) next = Math.min(next, v.at);
+    }
+    if ((await this.ctx.storage.list({ prefix: 'q:', limit: 1 })).size > 0) next = Math.min(next, Date.now() + 5_000);
+    if (next === Infinity) return;
+    const cur = await this.ctx.storage.getAlarm();
+    if (!cur || cur > next || cur < Date.now()) await this.ctx.storage.setAlarm(Math.max(next, Date.now() + 500));
+  }
+
+  private toSockets(obj: unknown) {
+    const out = JSON.stringify(obj);
+    for (const w of this.openSockets()) {
+      try {
+        w.send(out);
+      } catch {}
+    }
+  }
+
+  private async fireDue() {
+    const t = Date.now();
+    const sched = await this.ctx.storage.list<{ id: string; at: number; path: string; body: unknown; chat: string }>({ prefix: 's:' });
+    for (const [key, v] of sched) {
+      if (v.at > t) continue;
+      const qk = `q:${t}:sch-${v.id}`;
+      await this.ctx.storage.put(qk, { rid: `sch-${v.id}`, path: v.path, body: v.body, tries: 0 });
+      await this.ctx.storage.delete(key);
+      await this.run(qk);
+      this.toSockets({ type: 'sched_sent', msgId: v.id, chat: v.chat });
+    }
+    const rem = await this.ctx.storage.list<{ id: string; at: number; chat: string; msgId: string }>({ prefix: 'r:' });
+    const uid = await this.ctx.storage.get<string>('uid');
+    for (const [key, v] of rem) {
+      if (v.at > t) continue;
+      await this.ctx.storage.delete(key);
+      this.toSockets({ type: 'reminder', id: v.id, chat: v.chat, msgId: v.msgId });
+      if (uid && pushConfigured(this.env)) {
+        try {
+          await notify(this.env, uid, 'Reminder', 'Reminder', { type: 'reminder', id: v.id, rchat: v.chat, msgId: v.msgId });
+        } catch {}
+      }
+    }
   }
 
   private async tellWatchers(online: boolean) {
@@ -156,8 +238,10 @@ export class UserHub extends DurableObject<Env> {
   }
 
   async alarm() {
+    await this.fireDue();
     const pending = await this.ctx.storage.list({ prefix: 'q:' });
     for (const key of pending.keys()) await this.run(key);
+    await this.armTimers();
   }
 
   async webSocketClose(ws: WebSocket, code: number) {

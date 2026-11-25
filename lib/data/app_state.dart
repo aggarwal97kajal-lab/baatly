@@ -43,6 +43,8 @@ class AppState extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   /// Index into [palettes] (0 = Mitti).
   int palette = 0;
+  /// My chat lists (filters on the chat list), in order.
+  List<String> chatLists = [];
   Wallpaper wallpaper = Wallpaper.desi;
   bool reduceMotion = false;
   bool readReceipts = true;
@@ -155,6 +157,7 @@ class AppState extends ChangeNotifier {
       themeMode = ThemeMode.values[(p.getInt('theme') ?? ThemeMode.system.index).clamp(0, ThemeMode.values.length - 1)];
       wallpaper = Wallpaper.values[(p.getInt('wallpaper') ?? Wallpaper.desi.index).clamp(0, Wallpaper.values.length - 1)];
       palette = p.getInt('palette') ?? 0;
+      chatLists = p.getStringList('chatLists') ?? [];
       brandColor = paletteAt(palette).light;
       reduceMotion = p.getBool('reduceMotion') ?? false;
       readReceipts = p.getBool('readReceipts') ?? true;
@@ -205,6 +208,7 @@ class AppState extends ChangeNotifier {
     p.setBool('hasPasskey', hasPasskey);
     p.setInt('theme', themeMode.index);
     p.setInt('palette', palette);
+    p.setStringList('chatLists', chatLists);
     p.setInt('wallpaper', wallpaper.index);
     p.setBool('reduceMotion', reduceMotion);
     p.setBool('readReceipts', readReceipts);
@@ -253,6 +257,33 @@ class AppState extends ChangeNotifier {
 
   void setPasskey(bool v) {
     hasPasskey = v;
+    _save();
+    notifyListeners();
+  }
+
+  /// Creates or renames a list and sets which chats are in it.
+  void saveList(String? oldName, String name, Set<String> chatIds) {
+    name = name.trim();
+    if (name.isEmpty) return;
+    if (oldName != null && oldName != name) {
+      final i = chatLists.indexOf(oldName);
+      if (i >= 0) chatLists[i] = name;
+    } else if (!chatLists.contains(name)) {
+      chatLists.add(name);
+    }
+    for (final c in chats) {
+      c.lists.remove(oldName ?? name);
+      if (chatIds.contains(c.id)) c.lists.add(name);
+    }
+    _save();
+    notifyListeners();
+  }
+
+  void deleteList(String name) {
+    chatLists.remove(name);
+    for (final c in chats) {
+      c.lists.remove(name);
+    }
     _save();
     notifyListeners();
   }

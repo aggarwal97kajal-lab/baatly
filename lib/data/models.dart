@@ -19,6 +19,8 @@ class Message {
   /// Groups: members who received / read my message.
   final Set<String> deliveredBy = {};
   final Set<String> readBy = {};
+  /// Message info: when it was delivered / read ('d', 'r' for 1:1; 'd:<uid>', 'r:<uid>' in groups), ms.
+  final Map<String, int> receiptAt = {};
   final int voiceSeconds;
   String? reaction;
   /// Real chats: we already told the sender this message was read.
@@ -70,6 +72,7 @@ class Message {
         if (opened) 'op': true,
         if (deliveredBy.isNotEmpty) 'db': deliveredBy.toList(),
         if (readBy.isNotEmpty) 'rb': readBy.toList(),
+        if (receiptAt.isNotEmpty) 'ra': receiptAt,
       };
 
   factory Message.fromJson(Map<String, dynamic> j) => _fromJson(j)
@@ -77,7 +80,8 @@ class Message {
     ..deleted = j['dl'] == true
     ..opened = j['op'] == true
     ..deliveredBy.addAll([for (final x in (j['db'] as List? ?? [])) x.toString()])
-    ..readBy.addAll([for (final x in (j['rb'] as List? ?? [])) x.toString()]);
+    ..readBy.addAll([for (final x in (j['rb'] as List? ?? [])) x.toString()])
+    ..receiptAt.addAll({for (final e in ((j['ra'] as Map?) ?? {}).entries) e.key.toString(): (e.value as num).toInt()});
 
   static Message _fromJson(Map<String, dynamic> j) => Message(
         id: j['id'] as String,
@@ -125,6 +129,11 @@ class Chat {
   bool locked = false;
   /// In "Favourites" (chats filter + quick calls).
   bool favourite = false;
+  /// Own colour / wallpaper for just this chat (null = app theme).
+  int? themePalette;
+  int? themeWallpaper;
+  /// My chat lists ("Family", "Office"…) this chat is in.
+  Set<String> lists = {};
   String? phone;
   /// Real chats only: "online" / "last seen …" from the server.
   String? presence;
@@ -165,6 +174,8 @@ class Chat {
   Message? get last => messages.isEmpty ? null : messages.last;
 
   bool get isReal => peerId != null || groupId != null;
+  /// "Notes (You)": private chat with yourself, never leaves this phone (except your backup).
+  bool get isNotes => id == 'notes';
   bool get isRealGroup => groupId != null;
 
   Map<String, dynamic> toJson() => {
@@ -186,6 +197,9 @@ class Chat {
         'sm': sendMessages,
         if (pinnedId != null) 'pin': pinnedId,
         if (favourite) 'fav': true,
+        if (themePalette != null) 'tp': themePalette,
+        if (themeWallpaper != null) 'tw': themeWallpaper,
+        if (lists.isNotEmpty) 'ls': lists.toList(),
         if (locked) 'lk': true,
         'pinned': pinned,
         'archived': archived,
@@ -222,6 +236,9 @@ class Chat {
     c.sendMessages = j['sm'] as String? ?? 'all';
     c.pinnedId = j['pin'] as String?;
     c.locked = j['lk'] == true;
+    c.themePalette = j['tp'] as int?;
+    c.themeWallpaper = j['tw'] as int?;
+    c.lists = {for (final x in (j['ls'] as List? ?? [])) x.toString()};
     c.favourite = j['fav'] == true;
     c.disappear = (j['dis'] as int?) ?? 0;
     final mute = j['mute'] as int?;

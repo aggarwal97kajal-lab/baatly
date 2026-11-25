@@ -192,10 +192,12 @@ class VoiceWave extends StatelessWidget {
 /// Chat background: Mitti dots, a doodle image, or plain.
 class ChatBackground extends StatelessWidget {
   final Widget child;
-  const ChatBackground({super.key, required this.child});
+  /// This chat's own wallpaper (Chat theme), if set.
+  final Wallpaper? wallpaper;
+  const ChatBackground({super.key, required this.child, this.wallpaper});
   @override
   Widget build(BuildContext context) {
-    final w = AppState.instance.wallpaper;
+    final w = wallpaper ?? AppState.instance.wallpaper;
     final dark = context.isDark;
     Widget bg;
     String? asset = w.asset;
@@ -208,7 +210,7 @@ class ChatBackground extends StatelessWidget {
       bg = const SizedBox.expand();
     }
     return Container(
-      color: dark ? Mitti.night : const Color(0xFFF7EFE5),
+      color: dark ? context.bc.bg : Color.lerp(context.bc.bg, context.bc.raised, 0.4),
       child: Stack(children: [Positioned.fill(child: bg), Positioned.fill(child: child)]),
     );
   }

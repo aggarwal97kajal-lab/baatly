@@ -222,7 +222,7 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     const status = b.status === 'read' ? 'read' : 'delivered';
     const ids = (Array.isArray(b.msgIds) ? b.msgIds : []).map(String).slice(0, 500);
     if (!ids.length || !(await userExists(env, String(b.to ?? '')))) return json({ ok: true });
-    await deliver(env, b.to, { type: 'receipt', from: me.id, msgIds: ids, status, ...(b.group ? { group: String(b.group) } : {}) });
+    await deliver(env, b.to, { type: 'receipt', from: me.id, msgIds: ids, status, at: Date.now(), ...(b.group ? { group: String(b.group) } : {}) });
     return json({ ok: true });
   }
 
@@ -267,6 +267,17 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     const req = new Request(c.req);
     req.headers.set('x-user', me.id);
     // The hub sends messages for this user straight from the socket.
+    req.headers.set('x-me', encodeURIComponent(JSON.stringify({ id: me.id, phone: me.phone, name: me.name, username: me.username, about: me.about })));
+    return hub(env, me.id).fetch(req);
+  }
+
+  // Scheduled messages and message reminders live in the user's hub (alarm fires them).
+  const sch = p.match(/^\/v1\/(scheduled|reminders)(?:\/([\w-]{1,80}))?$/);
+  if (sch) {
+    const body = m === 'POST' ? await c.req.text() : undefined;
+    if (body && body.length > 400_000) throw new HttpError(413, 'TOO_BIG');
+    const req = new Request(`https://hub/${sch[1]}${sch[2] ? `/${sch[2]}` : ''}`, { method: m, body });
+    req.headers.set('x-user', me.id);
     req.headers.set('x-me', encodeURIComponent(JSON.stringify({ id: me.id, phone: me.phone, name: me.name, username: me.username, about: me.about })));
     return hub(env, me.id).fetch(req);
   }

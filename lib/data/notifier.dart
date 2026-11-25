@@ -167,6 +167,28 @@ class Notifier {
     );
   }
 
+  /// "Remind me" on a message: rings at the chosen time.
+  Future<void> showReminder(String chatId, String chatName, String line, String msgId) async {
+    await init();
+    await _plugin.show(
+      _idFor('rem_$msgId'),
+      '⏰ Reminder · $chatName',
+      line,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channel.id,
+          _channel.name,
+          channelDescription: _channel.description,
+          importance: Importance.high,
+          priority: Priority.high,
+          category: AndroidNotificationCategory.reminder,
+          styleInformation: BigTextStyleInformation(line),
+        ),
+      ),
+      payload: jsonEncode({'chat': chatId}),
+    );
+  }
+
   /// "Call back" tapped on a missed-call notification.
   ({String peer, bool video})? pendingCallBack;
   void Function(String peer, bool video)? onCallBack;
@@ -223,6 +245,33 @@ class Notifier {
 
   /// Decrypts the pushed message on this phone and shows it.
   Future<void> showFromPush(Map<String, dynamic> data) async {
+    if (data['type'] == 'reminder') {
+      var chatName = 'BAATLY';
+      var line = 'Tap to see the message';
+      final chatId = data['rchat'] as String? ?? '';
+      final msgId = data['msgId'] as String? ?? '';
+      try {
+        await Api.instance.load();
+        final uid = Api.instance.userId;
+        if (uid != null) {
+          for (final c in ((await _localData(uid))['chats'] as List? ?? [])) {
+            final m = (c as Map).cast<String, dynamic>();
+            if (m['id'] != chatId) continue;
+            chatName = m['name'] as String? ?? chatName;
+            if (m['lk'] == true) break; // locked chat: don't show the text
+            for (final x in (m['msgs'] as List? ?? [])) {
+              final mm = (x as Map).cast<String, dynamic>();
+              if (mm['id'] == msgId) {
+                final t = (mm['t'] as String? ?? '').trim();
+                line = t.isEmpty ? 'Media message' : t;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      await showReminder(chatId, chatName, line, msgId);
+      return;
+    }
     if (data['type'] == 'missed_call') {
       await showMissedCall(data['callId'] as String? ?? '', data['from'] as String? ?? '', data['title'] as String? ?? '', data['video'] == '1');
       return;

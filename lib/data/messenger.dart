@@ -115,6 +115,9 @@ class Messenger {
     _resumeLive();
     unawaited(_loadBlocks());
     unawaited(CallService.instance.loadLog());
+    unawaited(_loadReminders());
+    _ensureNotes();
+    unawaited(_syncScheduled());
     // Keeps "My contacts" privacy and contact names up to date.
     unawaited(ContactBook.instance.load().then((_) {}, onError: (_) {}));
     unawaited(_refreshPeers());
@@ -205,7 +208,7 @@ class Messenger {
   }
 
   Future<void> _refreshPeers() async {
-    for (final c in _s.chats.where((c) => c.peerId != null).toList()) {
+    for (final c in _s.chats.where((c) => c.peerId != null && !c.isNotes).toList()) {
       try {
         await _peer(c.peerId!, refresh: true);
       } catch (_) {}
@@ -501,6 +504,12 @@ class Messenger {
       case 'status':
         StatusService.instance.refreshSoon();
         ok = false;
+      case 'sched_sent':
+        _schedSent(ev['msgId'] as String? ?? '');
+        ok = false;
+      case 'reminder':
+        _onReminder(ev);
+        ok = false;
       case 'status_view':
         StatusService.instance.onView(ev['statusId'] as String, ev['viewer'] as String, ev['at'] as int);
         ok = false;
@@ -770,8 +779,13 @@ class Messenger {
         final others = c.members.where((u) => u != _uid).toSet();
         for (final m in c.messages) {
           if (!m.fromMe || !ids.contains(m.id)) continue;
+          final at = (ev['at'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch;
           m.deliveredBy.add(from);
-          if (read) m.readBy.add(from);
+          m.receiptAt.putIfAbsent('d:$from', () => at);
+          if (read) {
+            m.readBy.add(from);
+            m.receiptAt.putIfAbsent('r:$from', () => at);
+          }
           if (others.isNotEmpty && others.every(m.readBy.contains) && _s.readReceipts) {
             m.status = MsgStatus.read;
           } else if (others.isNotEmpty && others.every(m.deliveredBy.contains) && m.status.index < MsgStatus.delivered.index) {
@@ -788,7 +802,11 @@ class Messenger {
     for (final c in _s.chats) {
       if (c.peerId != from) continue;
       for (final m in c.messages) {
-        if (m.fromMe && ids.contains(m.id) && m.status.index < status.index) m.status = status;
+        if (!m.fromMe || !ids.contains(m.id)) continue;
+        final at = (ev['at'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch;
+        m.receiptAt.putIfAbsent('d', () => at);
+        if (status == MsgStatus.read) m.receiptAt.putIfAbsent('r', () => at);
+        if (m.status.index < status.index) m.status = status;
       }
     }
     _s.changed();
@@ -892,6 +910,11 @@ class Messenger {
   static const _fileKinds = {MsgKind.image, MsgKind.voice, MsgKind.doc, MsgKind.video};
 
   Future<void> _deliver(Chat chat, Message m) async {
+    if (chat.isNotes) {
+      m.status = MsgStatus.read;
+      _s.changed();
+      return;
+    }
     try {
       if (_fileKinds.contains(m.kind) && m.media?['id'] == null) {
         await _uploadMedia(m);
@@ -913,8 +936,17 @@ class Messenger {
 
   /// Encrypts [payload] for the chat (each group member separately) and sends it.
   Future<bool> _sendPayload(Chat chat, String msgId, Map<String, dynamic> payload, {bool silent = false, String? onlyTo}) async {
+    if (chat.isNotes) return true;
+    final r = await _seal(chat, msgId, payload, silent: silent, onlyTo: onlyTo);
+    if (r == null) return false;
+    await _post(r.$1, r.$2);
+    return true;
+  }
+
+  /// Builds the encrypted request (path + body) for a payload, without sending it.
+  Future<(String, Map<String, dynamic>)?> _seal(Chat chat, String msgId, Map<String, dynamic> payload, {bool silent = false, String? onlyTo}) async {
     if (chat.groupId != null && onlyTo == null) {
-      if (chat.left) return false;
+      if (chat.left) return null;
       final bodies = <String, String>{};
       for (final u in chat.members) {
         if (u == _uid) continue;
@@ -924,17 +956,140 @@ class Messenger {
           if (p.key != null) bodies[u] = await E2E.instance.seal(payload, p.key!);
         } catch (_) {}
       }
-      await _post('/v1/groups/${chat.groupId}/messages', {'msgId': msgId, 'bodies': bodies, if (silent) 'silent': true, if (silent) 'control': true});
-      return true;
+      return ('/v1/groups/${chat.groupId}/messages', {'msgId': msgId, 'bodies': bodies, if (silent) 'silent': true, if (silent) 'control': true});
     }
     final to = onlyTo ?? chat.peerId!;
     var peer = await _peer(to);
     if (peer.key == null) peer = await _peer(to, refresh: true);
-    if (peer.key == null) return false; // they haven't opened the new app yet; retried on next sync
+    if (peer.key == null) return null; // they haven't opened the new app yet; retried on next sync
     final body = await E2E.instance.seal(payload, peer.key!);
-    await _post('/v1/messages', {'to': to, 'msgId': msgId, 'body': body, if (silent) 'silent': true});
-    return true;
+    return ('/v1/messages', {'to': to, 'msgId': msgId, 'body': body, if (silent) 'silent': true});
   }
+
+  // ------------------------------------------------------------------ scheduled messages
+  /// "Send at": encrypted now, kept by the server and sent at [at] (even if this phone is off).
+  Future<void> scheduleText(Chat chat, String text, DateTime at) async {
+    final m = Message(id: _newId(), text: text, fromMe: true, time: at, status: MsgStatus.sent, media: {'sched': at.millisecondsSinceEpoch});
+    final ttl = chat.disappear;
+    final r = await _seal(chat, m.id, {'t': text, 'ts': at.millisecondsSinceEpoch, if (ttl > 0) 'ttl': ttl});
+    if (r == null) throw ApiException(0, 'NO_KEY', "Couldn't schedule this message");
+    await Api.instance.request('POST', '/v1/scheduled', {'id': m.id, 'at': at.millisecondsSinceEpoch, 'path': r.$1, 'body': r.$2, 'chat': chat.id});
+    chat.messages.add(m);
+    _s.changed();
+    await _saveNow();
+  }
+
+  List<Message> scheduledIn(Chat chat) => [for (final m in chat.messages) if (m.fromMe && m.media?['sched'] != null) m]
+    ..sort((a, b) => a.time.compareTo(b.time));
+
+  Future<void> cancelScheduled(Chat chat, Message m) async {
+    await Api.instance.request('DELETE', '/v1/scheduled/${m.id}');
+    chat.messages.remove(m);
+    _s.changed();
+    await _saveNow();
+  }
+
+  Future<void> sendScheduledNow(Chat chat, Message m) async {
+    await Api.instance.request('DELETE', '/v1/scheduled/${m.id}');
+    chat.messages.remove(m);
+    _s.changed();
+    send(chat, m.text);
+  }
+
+  Future<void> reschedule(Chat chat, Message m, DateTime at) async {
+    await Api.instance.request('DELETE', '/v1/scheduled/${m.id}');
+    chat.messages.remove(m);
+    await scheduleText(chat, m.text, at);
+  }
+
+  void _schedSent(String msgId) {
+    for (final c in _s.chats) {
+      final i = c.messages.indexWhere((m) => m.id == msgId);
+      if (i < 0) continue;
+      final m = c.messages.removeAt(i);
+      m.media?.remove('sched');
+      if (m.media?.isEmpty == true) m.media = null;
+      m.status = MsgStatus.sent;
+      c.messages.add(m);
+      _s.changed();
+      unawaited(_saveNow());
+    }
+  }
+
+  /// After being offline: anything the server no longer holds was sent.
+  Future<void> _syncScheduled() async {
+    final mine = [for (final c in _s.chats) for (final m in c.messages) if (m.fromMe && m.media?['sched'] != null) m];
+    if (mine.isEmpty) return;
+    try {
+      final d = await Api.instance.request('GET', '/v1/scheduled');
+      final pending = {for (final x in (d['items'] as List? ?? [])) (x as Map)['id'] as String};
+      for (final m in mine) {
+        if (!pending.contains(m.id)) _schedSent(m.id);
+      }
+    } catch (_) {}
+  }
+
+  // ------------------------------------------------------------------ notes
+  void _ensureNotes() {
+    if (_s.chats.any((c) => c.isNotes)) return;
+    _s.chats.add(Chat(id: 'notes', name: 'Notes (You)', initials: '✎', colorIndex: 0, pinned: true, about: 'Only you can see this', peerId: _uid, phone: _s.phone));
+    _s.changed();
+  }
+
+  // ------------------------------------------------------------------ reminders
+  /// Message id → reminder time (ms). Only on this phone; the server just rings at that time.
+  final Map<String, int> reminders = {};
+
+  Future<void> _loadReminders() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final raw = p.getString('reminders_$_uid');
+      reminders
+        ..clear()
+        ..addAll({for (final e in ((raw == null ? {} : jsonDecode(raw)) as Map).entries) e.key.toString(): (e.value as num).toInt()});
+      final now = DateTime.now().millisecondsSinceEpoch;
+      reminders.removeWhere((_, at) => at < now - 86400000);
+    } catch (_) {}
+  }
+
+  Future<void> _saveReminders() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString('reminders_$_uid', jsonEncode(reminders));
+  }
+
+  Future<void> setReminder(Chat chat, Message m, DateTime at) async {
+    await Api.instance.request('POST', '/v1/reminders', {'id': 'rem-${m.id}', 'at': at.millisecondsSinceEpoch, 'chat': chat.id, 'msgId': m.id});
+    reminders[m.id] = at.millisecondsSinceEpoch;
+    _s.changed();
+    await _saveReminders();
+  }
+
+  Future<void> clearReminder(Message m) async {
+    try {
+      await Api.instance.request('DELETE', '/v1/reminders/rem-${m.id}');
+    } catch (_) {}
+    reminders.remove(m.id);
+    _s.changed();
+    await _saveReminders();
+  }
+
+  void _onReminder(Map<String, dynamic> ev) {
+    final msgId = ev['msgId'] as String? ?? '';
+    final chat = chatById(ev['chat'] as String? ?? '');
+    final m = _find(msgId);
+    reminders.remove(msgId);
+    unawaited(_saveReminders());
+    _s.changed();
+    unawaited(Notifier.instance.showReminder(ev['chat'] as String? ?? '', chat?.name ?? 'BAATLY', m == null ? 'Tap to see the message' : _plainPreview(m), msgId));
+  }
+
+  static String _plainPreview(Message m) => switch (m.kind) {
+        MsgKind.image => 'Photo${m.text.trim().isEmpty ? '' : ': ${m.text.trim()}'}',
+        MsgKind.video => 'Video',
+        MsgKind.voice => 'Voice message',
+        MsgKind.doc => (m.media?['name'] as String?) ?? 'Document',
+        _ => m.text.trim().isEmpty ? 'Message' : m.text.trim(),
+      };
 
   // ------------------------------------------------------------------ control messages
   static MsgKind kindOf(String? type) => switch (type) {
@@ -1577,7 +1732,7 @@ class Messenger {
 
   /// Called while the user types (throttled).
   void typing(Chat chat) {
-    if (!chat.isReal || chat.left) return;
+    if (!chat.isReal || chat.left || chat.isNotes) return;
     final now = DateTime.now();
     if (now.difference(_lastTypingSent).inSeconds < 4) return;
     _lastTypingSent = now;
@@ -1590,7 +1745,7 @@ class Messenger {
 
   // ------------------------------------------------------------------ open chat
   void openChat(Chat chat) {
-    if (!chat.isReal) return;
+    if (!chat.isReal || chat.isNotes) return;
     unawaited(Notifier.instance.clear(chat.groupId ?? chat.peerId!));
     chat.unread = 0;
     markRead(chat);

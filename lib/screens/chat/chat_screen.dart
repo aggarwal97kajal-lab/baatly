@@ -16,6 +16,7 @@ import '../../data/app_state.dart';
 import '../../data/messenger.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/palettes.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
 import 'chat_info_screen.dart';
@@ -29,6 +30,7 @@ import 'links.dart';
 import 'photo_screen.dart';
 import 'camera_screen.dart';
 import 'safety_screens.dart';
+import 'message_tools.dart';
 import '../../data/calls.dart';
 import '../../data/group_calls.dart';
 import '../../data/media.dart';
@@ -241,6 +243,16 @@ class _ChatScreenState extends State<ChatScreen> {
                 await StickerStore.instance.load();
                 await StickerStore.instance.add(one!.mediaPath!);
                 _toast('Added to your stickers');
+              case 'info':
+                _clearSel();
+                await Navigator.of(context).push(MaterialPageRoute(builder: (_) => MessageInfoScreen(chat: chat, m: one!, bubble: _InfoBubble(m: one))));
+                return;
+              case 'remind':
+                _clearSel();
+                await remindMe(context, chat, one!);
+                return;
+              case 'unremind':
+                await Messenger.instance.clearReminder(one!);
               case 'select':
                 setState(() => _sel.addAll(chat.messages.where((m) => m.kind != MsgKind.system && m.kind != MsgKind.call).map((m) => m.id)));
                 _hideReactBar();
@@ -254,6 +266,12 @@ class _ChatScreenState extends State<ChatScreen> {
               PopupMenuItem(value: 'pin', child: Text(chat.pinnedId == one.id ? 'Unpin' : 'Pin')),
             if (one != null && one.media?['stk'] == true && one.mediaPath != null && File(one.mediaPath!).existsSync())
               const PopupMenuItem(value: 'sticker', child: Text('Add to my stickers')),
+            if (one != null && one.fromMe && !one.deleted && chat.isReal && one.media?['sched'] == null)
+              const PopupMenuItem(value: 'info', child: Text('Info')),
+            if (one != null && !one.deleted && chat.isReal && one.media?['sched'] == null)
+              Messenger.instance.reminders.containsKey(one.id)
+                  ? const PopupMenuItem(value: 'unremind', child: Text('Remove reminder'))
+                  : const PopupMenuItem(value: 'remind', child: Text('Remind me')),
             const PopupMenuItem(value: 'select', child: Text('Select all')),
           ],
         ),
@@ -844,6 +862,106 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tp = chat.themePalette;
+    if (tp == null) return _build(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Theme(data: dark ? AppTheme.dark(paletteAt(tp)) : AppTheme.light(paletteAt(tp)), child: Builder(builder: _build));
+  }
+
+  Future<void> _chatTheme() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sh) => StatefulBuilder(
+        builder: (ctx, set) {
+          final bc = ctx.bc;
+          void apply(VoidCallback f) {
+            f();
+            set(() {});
+            setState(() {});
+            AppState.instance.changed();
+          }
+          return SafeArea(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Padding(padding: EdgeInsets.fromLTRB(22, 0, 22, 4), child: Text('Chat theme', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+              Padding(padding: const EdgeInsets.fromLTRB(22, 0, 22, 10), child: Text('Only for this chat, only on your phone', style: TextStyle(fontSize: 12.5, color: bc.muted))),
+              Padding(padding: const EdgeInsets.fromLTRB(22, 4, 22, 8), child: Text('Colour', style: TextStyle(color: bc.muted, fontSize: 13))),
+              SizedBox(
+                height: 62,
+                child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
+                  for (var i = 0; i < palettes.length; i++)
+                    GestureDetector(
+                      onTap: () => apply(() => chat.themePalette = i),
+                      child: Container(
+                        width: 46,
+                        height: 46,
+                        margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: ctx.isDark ? palettes[i].dark : palettes[i].light,
+                          gradient: palettes[i].linear,
+                          border: chat.themePalette == i ? Border.all(color: bc.text, width: 2.5) : null,
+                        ),
+                        child: chat.themePalette == i ? Icon(Icons.check_rounded, color: palettes[i].onPrimary) : null,
+                      ),
+                    ),
+                ]),
+              ),
+              Padding(padding: const EdgeInsets.fromLTRB(22, 12, 22, 8), child: Text('Wallpaper', style: TextStyle(color: bc.muted, fontSize: 13))),
+              SizedBox(
+                height: 120,
+                child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
+                  for (final w in Wallpaper.values)
+                    GestureDetector(
+                      onTap: () => apply(() => chat.themeWallpaper = w.index),
+                      child: Container(
+                        width: 70,
+                        margin: const EdgeInsets.symmetric(horizontal: 5),
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: bc.raised,
+                          border: Border.all(color: chat.themeWallpaper == w.index ? bc.text : bc.line, width: chat.themeWallpaper == w.index ? 2.5 : 1),
+                        ),
+                        child: Stack(fit: StackFit.expand, children: [
+                          if (w.asset != null) Image.asset(w.asset!, fit: BoxFit.cover),
+                          Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Container(
+                              width: double.infinity,
+                              color: Colors.black45,
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: Text(w.label, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10.5)),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                ]),
+              ),
+              const SizedBox(height: 6),
+              ListTile(
+                leading: const Icon(Icons.restart_alt_rounded),
+                title: const Text('Use app theme'),
+                subtitle: const Text('Remove this chat\'s own colour and wallpaper'),
+                onTap: () {
+                  apply(() {
+                    chat.themePalette = null;
+                    chat.themeWallpaper = null;
+                  });
+                  Navigator.pop(sh);
+                },
+              ),
+              const SizedBox(height: 8),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     final bc = context.bc;
     return PopScope(
       canPop: _sel.isEmpty && _editing == null,
@@ -860,7 +978,7 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: _sel.isNotEmpty ? _selectionBar() : AppBar(
         titleSpacing: 0,
         title: InkWell(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          onTap: chat.isNotes ? null : () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => chat.isRealGroup ? GroupInfoScreen(chat: chat) : ChatInfoScreen(chat: chat))),
           child: Row(children: [
             Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 38)),
@@ -875,7 +993,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         ? (chat.typingName != null ? '${chat.typingName} is typing…' : 'typing…')
                         : chat.isRealGroup
                             ? (chat.left ? "You're no longer a member" : Messenger.instance.memberLine(chat))
-                            : chat.isReal
+                            : chat.isNotes
+                                ? 'Only you can see this'
+                                : chat.isReal
                                 ? (chat.presence ?? '')
                                 : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen today'));
                     return AnimatedSize(
@@ -904,31 +1024,36 @@ class _ChatScreenState extends State<ChatScreen> {
           ]),
         ),
         actions: [
-          IconButton(
-            onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: true) : () => GroupCallService.instance.start(chat, video: true),
-            icon: const Icon(Icons.videocam_outlined),
-          ),
-          IconButton(
-            onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: false) : () => GroupCallService.instance.start(chat, video: false),
-            icon: const Icon(Icons.call_outlined),
-          ),
+          if (!chat.isNotes) ...[
+            IconButton(
+              onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: true) : () => GroupCallService.instance.start(chat, video: true),
+              icon: const Icon(Icons.videocam_outlined),
+            ),
+            IconButton(
+              onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: false) : () => GroupCallService.instance.start(chat, video: false),
+              icon: const Icon(Icons.call_outlined),
+            ),
+          ],
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'search') Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatSearchScreen(chat: chat)));
               if (v == 'media') Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatMediaScreen(chat: chat)));
+              if (v == 'theme') _chatTheme();
               if (v == 'info') {
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => chat.isRealGroup ? GroupInfoScreen(chat: chat) : ChatInfoScreen(chat: chat)));
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'info', child: Text('View info')),
-              PopupMenuItem(value: 'search', child: Text('Search')),
-              PopupMenuItem(value: 'media', child: Text('Media, links and docs')),
+            itemBuilder: (_) => [
+              if (!chat.isNotes) const PopupMenuItem(value: 'info', child: Text('View info')),
+              const PopupMenuItem(value: 'search', child: Text('Search')),
+              const PopupMenuItem(value: 'media', child: Text('Media, links and docs')),
+              const PopupMenuItem(value: 'theme', child: Text('Chat theme')),
             ],
           ),
         ],
       ),
       body: ChatBackground(
+        wallpaper: chat.themeWallpaper == null ? null : Wallpaper.values[chat.themeWallpaper!.clamp(0, Wallpaper.values.length - 1)],
         child: Column(children: [
           if (chat.pinnedId != null)
             Builder(builder: (context) {
@@ -950,6 +1075,28 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               );
             }),
+          ListenableBuilder(
+            listenable: AppState.instance,
+            builder: (context, _) {
+              final n = Messenger.instance.scheduledIn(chat).length;
+              if (n == 0) return const SizedBox.shrink();
+              return Material(
+                color: bc.raised,
+                child: InkWell(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ScheduledScreen(chat: chat))),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                    child: Row(children: [
+                      Icon(Icons.schedule_rounded, size: 18, color: context.primary),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('$n scheduled message${n == 1 ? '' : 's'}', style: TextStyle(color: context.primary, fontSize: 13.5))),
+                      Text('View', style: TextStyle(color: context.primary, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                    ]),
+                  ),
+                ),
+              );
+            },
+          ),
           Expanded(
             child: ListenableBuilder(
               listenable: AppState.instance,
@@ -1024,7 +1171,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         selected: _sel.contains(m.id),
                         selecting: _sel.isNotEmpty,
                         onLongPress: (ctx) => _onLongPress(m, ctx),
-                        onTap: () => _onTapMsg(m),
+                        onTap: () => m.media?['sched'] != null ? scheduledOptions(context, chat, m) : _onTapMsg(m),
                         onReply: (x) => setState(() => _replyTo = x),
                       ),
                     );
@@ -1114,6 +1261,15 @@ class _ChatScreenState extends State<ChatScreen> {
               });
             },
             onSend: _send,
+            onScheduleSend: chat.isReal
+                ? () async {
+                    final text = _ctrl.text;
+                    if (await scheduleFromComposer(context, chat, text) && mounted) {
+                      _ctrl.clear();
+                      setState(() => _replyTo = null);
+                    }
+                  }
+                : null,
             onChanged: () {
               setState(() {});
               if (_ctrl.text.isNotEmpty) Messenger.instance.typing(chat);
@@ -1372,7 +1528,9 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
           if (m.media?['ed'] == true) ...[Text('Edited ', style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: c.withOpacity(0.7)))],
           if (m.starred) ...[Icon(Icons.star_rounded, size: 12, color: c.withOpacity(0.8)), const SizedBox(width: 3)],
           if (m.expiresAt != null) ...[Icon(Icons.timer_outlined, size: 11, color: c.withOpacity(0.8)), const SizedBox(width: 3)],
-          Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: c.withOpacity(0.85))),
+          if (Messenger.instance.reminders.containsKey(m.id)) ...[Icon(Icons.notifications_active_outlined, size: 12, color: c.withOpacity(0.85)), const SizedBox(width: 3)],
+          if (m.media?['sched'] != null) ...[Icon(Icons.schedule_rounded, size: 12, color: c.withOpacity(0.85)), const SizedBox(width: 3)],
+          Text(m.media?['sched'] != null ? dayTime(m.time) : hhmm(m.time), style: TextStyle(fontSize: 10.5, color: c.withOpacity(0.85))),
           if (me) ...[const SizedBox(width: 4), Ticks(status: m.status, color: bare ? bc.muted : Colors.white, readColor: kReadBlueOnBubble)],
         ]);
     final bubble = Container(
@@ -1486,6 +1644,7 @@ class _Composer extends StatelessWidget {
   final Message? editing;
   final VoidCallback onCancelReply;
   final VoidCallback onSend;
+  final VoidCallback? onScheduleSend;
   final VoidCallback onChanged;
   final VoidCallback onAttach;
   final _MicState mic;
@@ -1505,6 +1664,7 @@ class _Composer extends StatelessWidget {
     this.editing,
     required this.onCancelReply,
     required this.onSend,
+    this.onScheduleSend,
     required this.onChanged,
     required this.onAttach,
     required this.mic,
@@ -1598,6 +1758,7 @@ class _Composer extends StatelessWidget {
               if (hasText)
                 GestureDetector(
                   onTap: onSend,
+                  onLongPress: editing == null ? onScheduleSend : null,
                   child: Container(
                     width: 50,
                     height: 50,
@@ -2103,6 +2264,45 @@ class _HeaderSubtitleState extends State<_HeaderSubtitle> {
               physics: const NeverScrollableScrollPhysics(),
               child: Text(widget.text, maxLines: 1, style: widget.style),
             ),
+    );
+  }
+}
+
+/// Simple copy of a message for the Message info screen.
+class _InfoBubble extends StatelessWidget {
+  final Message m;
+  const _InfoBubble({required this.m});
+
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    final label = switch (m.kind) {
+      MsgKind.image => m.text.trim().isEmpty ? '📷 Photo' : '📷 ${m.text}',
+      MsgKind.video => m.text.trim().isEmpty ? '🎥 Video' : '🎥 ${m.text}',
+      MsgKind.voice => '🎤 Voice message',
+      MsgKind.doc => '📄 ${(m.media?['name'] as String?) ?? 'Document'}',
+      MsgKind.location => '📍 Location',
+      MsgKind.contact => '👤 ${(m.media?['name'] as String?) ?? 'Contact'}',
+      MsgKind.poll => '📊 ${(m.media?['q'] as String?) ?? 'Poll'}',
+      MsgKind.event => '📅 ${(m.media?['title'] as String?) ?? 'Event'}',
+      _ => m.text,
+    };
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+        padding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
+        decoration: BoxDecoration(
+          color: bc.outBubble,
+          gradient: bc.accentGradient,
+          borderRadius: const BorderRadius.only(topLeft: Radius.circular(18), topRight: Radius.circular(18), bottomLeft: Radius.circular(18), bottomRight: Radius.circular(4)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+          Text(label, style: TextStyle(fontSize: 15, color: bc.onOutBubble, height: 1.35)),
+          const SizedBox(height: 2),
+          Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: bc.onOutBubble.withOpacity(0.8))),
+        ]),
+      ),
     );
   }
 }

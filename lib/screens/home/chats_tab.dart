@@ -21,6 +21,8 @@ class ChatsTab extends StatefulWidget {
 
 class _ChatsTabState extends State<ChatsTab> {
   int _filter = 0;
+
+  void _setFilter(int i) => setState(() => _filter = i);
   String _q = '';
   bool _showArchived = false;
 
@@ -33,12 +35,21 @@ class _ChatsTabState extends State<ChatsTab> {
       builder: (context, _) {
         // A chat opened but never used (no messages) doesn't show, like WhatsApp.
         var list = s.chats
-            .where((c) => c.archived == _showArchived && !c.locked && (c.isGroup || c.messages.isNotEmpty || c.pinned || _filter == 3))
+            .where((c) => c.archived == _showArchived && !c.locked && (c.isGroup || c.messages.isNotEmpty || c.pinned || _filter >= 3))
             .toList();
         final lockedCount = s.chats.where((c) => c.locked).length;
         if (_filter == 1) list = list.where((c) => c.unread > 0).toList();
         if (_filter == 2) list = list.where((c) => c.isGroup).toList();
         if (_filter == 3) list = list.where((c) => c.favourite).toList();
+        if (_filter >= 4) {
+          final i = _filter - 4;
+          if (i >= s.chatLists.length) {
+            _filter = 0;
+          } else {
+            final name = s.chatLists[i];
+            list = list.where((c) => c.lists.contains(name)).toList();
+          }
+        }
         if (_q.isNotEmpty) {
           final q = _q.toLowerCase();
           list = list.where((c) => c.name.toLowerCase().contains(q) || c.messages.any((m) => m.text.toLowerCase().contains(q))).toList();
@@ -111,6 +122,31 @@ class _ChatsTabState extends State<ChatsTab> {
                             padding: const EdgeInsets.only(right: 8),
                             child: Pill(label: label, selected: _filter == i, onTap: () => setState(() => _filter = i)),
                           ),
+                        for (final (i, name) in s.chatLists.indexed)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: GestureDetector(
+                              onLongPress: () => _listMenu(context, name),
+                              child: Pill(
+                                label: () {
+                                  final n = s.chats.where((c) => c.lists.contains(name) && c.unread > 0).length;
+                                  return n > 0 ? '$name $n' : name;
+                                }(),
+                                selected: _filter == 4 + i,
+                                onTap: () => setState(() => _filter = 4 + i),
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Pill(
+                            label: '+',
+                            onTap: () async {
+                              final saved = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ChatListEditor()));
+                              if (saved != null && mounted) setState(() => _filter = 4 + s.chatLists.indexOf(saved));
+                            },
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -159,6 +195,114 @@ class _ChatsTabState extends State<ChatsTab> {
           ),
         );
       },
+    );
+  }
+}
+
+extension _Lists on _ChatsTabState {
+  Future<void> _listMenu(BuildContext context, String name) async {
+    final v = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sh) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(leading: const Icon(Icons.edit_outlined), title: Text('Edit "$name"'), onTap: () => Navigator.pop(sh, 'edit')),
+          ListTile(leading: const Icon(Icons.arrow_back_rounded), title: const Text('Move left'), onTap: () => Navigator.pop(sh, 'left')),
+          ListTile(
+            leading: const Icon(Icons.delete_outline_rounded, color: Color(0xFFE5484D)),
+            title: const Text('Delete list', style: TextStyle(color: Color(0xFFE5484D))),
+            subtitle: const Text('Chats stay, only the list goes'),
+            onTap: () => Navigator.pop(sh, 'del'),
+          ),
+        ]),
+      ),
+    );
+    final s = AppState.instance;
+    if (v == 'edit' && context.mounted) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatListEditor(name: name)));
+    } else if (v == 'del') {
+      s.deleteList(name);
+      _setFilter(0);
+    } else if (v == 'left') {
+      final i = s.chatLists.indexOf(name);
+      if (i > 0) {
+        s.chatLists
+          ..removeAt(i)
+          ..insert(i - 1, name);
+        s.saveList(name, name, {for (final c in s.chats) if (c.lists.contains(name)) c.id});
+        _setFilter(4 + i - 1);
+      }
+    }
+  }
+}
+
+/// Create / edit one of my chat lists: name + which chats are in it.
+class ChatListEditor extends StatefulWidget {
+  final String? name;
+  const ChatListEditor({super.key, this.name});
+
+  @override
+  State<ChatListEditor> createState() => _ChatListEditorState();
+}
+
+class _ChatListEditorState extends State<ChatListEditor> {
+  late final _name = TextEditingController(text: widget.name ?? '');
+  late final Set<String> _picked = {
+    for (final c in AppState.instance.chats)
+      if (widget.name != null && c.lists.contains(widget.name)) c.id,
+  };
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final n = _name.text.trim();
+    if (n.isEmpty) return;
+    final s = AppState.instance;
+    if (n != widget.name && s.chatLists.contains(n)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You already have a list with this name')));
+      return;
+    }
+    s.saveList(widget.name, n, _picked);
+    Navigator.pop(context, n);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    final chats = AppState.instance.chats.where((c) => !c.locked && (c.isGroup || c.messages.isNotEmpty || c.isNotes)).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return Scaffold(
+      backgroundColor: bc.bg,
+      appBar: AppBar(
+        title: Text(widget.name == null ? 'New list' : 'Edit list'),
+        actions: [TextButton(onPressed: _save, child: const Text('Save'))],
+      ),
+      body: ListView(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+          child: TextField(
+            controller: _name,
+            autofocus: widget.name == null,
+            maxLength: 24,
+            decoration: const InputDecoration(labelText: 'List name', hintText: 'e.g. Family, Office, Dosto'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+          child: Text('Included chats · ${_picked.length}', style: TextStyle(color: context.primary, fontWeight: FontWeight.w600)),
+        ),
+        for (final c in chats)
+          CheckboxListTile(
+            value: _picked.contains(c.id),
+            onChanged: (v) => setState(() => v == true ? _picked.add(c.id) : _picked.remove(c.id)),
+            secondary: Avatar(initials: c.initials, colorIndex: c.colorIndex, photo: c.photo, size: 42),
+            title: Text(c.name, style: TextStyle(color: bc.text)),
+          ),
+      ]),
     );
   }
 }

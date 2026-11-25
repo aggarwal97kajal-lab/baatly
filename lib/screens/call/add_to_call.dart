@@ -10,7 +10,7 @@ import '../../widgets/common.dart';
 /// "Add person" on a 1:1 call: pick up to 2 more people. The call becomes a small
 /// group call (up to 4 people); the person you're talking to moves over by itself.
 Future<void> addPersonToCall(BuildContext context, CallSession call) async {
-  final people = AppState.instance.chats.where((c) => c.peerId != null && c.isReal && c.peerId != call.peerId).toList();
+  final people = AppState.instance.chats.where((c) => c.peerId != null && c.isReal && !c.isNotes && c.peerId != call.peerId).toList();
   final picked = <String>{};
   final ok = await showModalBottomSheet<bool>(
     context: context,
