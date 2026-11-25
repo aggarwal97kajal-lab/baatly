@@ -13,6 +13,7 @@ import '../chat/starred_screen.dart';
 import 'profile_photo.dart';
 import 'wallpaper_screen.dart';
 import 'more_settings.dart';
+import 'chats_settings.dart';
 
 class YouTab extends StatelessWidget {
   const YouTab({super.key});
@@ -249,33 +250,3 @@ class _PopBack extends StatelessWidget {
 }
 
 
-class ChatsSettingsScreen extends StatelessWidget {
-  const ChatsSettingsScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final s = AppState.instance;
-    return ListenableBuilder(
-      listenable: s,
-      builder: (context, _) => Scaffold(
-        appBar: AppBar(title: const Text('Chats')),
-        body: ListView(children: [
-          SwitchListTile(
-            title: const Text('Keep chats archived'),
-            subtitle: const Text('Archived chats will remain archived when you receive a new message'),
-            value: s.keepArchived,
-            onChanged: (v) => s.toggle(() => s.keepArchived = v),
-          ),
-          ListTile(
-            title: const Text('Chat wallpaper'),
-            subtitle: Text(s.wallpaper.label),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const WallpaperScreen())),
-          ),
-          ListTile(
-            title: const Text('Theme'),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppearanceScreen())),
-          ),
-        ]),
-      ),
-    );
-  }
-}

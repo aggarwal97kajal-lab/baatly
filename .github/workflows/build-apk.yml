@@ -104,6 +104,8 @@ jobs:
             BT=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
             $BT/apksigner sign --ks /tmp/release.jks --ks-key-alias baatly --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out baatly.apk $IN
             $BT/apksigner verify --print-certs baatly.apk | grep -i "SHA-256"
+            # Public signing fingerprints (needed for Google sign-in / Drive backup setup).
+            keytool -list -v -keystore /tmp/release.jks -alias baatly -storepass "$KEYSTORE_PASSWORD" | grep -E "SHA1:|SHA256:" | sed 's/^/::notice::Release key /' || true
             rm -f /tmp/release.jks
           fi
           ls -lh baatly.apk

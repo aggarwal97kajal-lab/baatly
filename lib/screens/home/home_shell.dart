@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../config.dart';
 import '../../data/api.dart';
+import '../../data/backup.dart';
 import '../../data/app_state.dart';
 import '../../data/messenger.dart';
 import '../../data/status_service.dart';
@@ -42,7 +44,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       CallService.instance.openIncoming(id);
     };
     if (kHasBackend && Api.instance.loggedIn) {
-      Messenger.instance.start().then((_) {
+      Messenger.instance.start().then((_) async {
+        await BackupService.instance.load();
+        unawaited(BackupService.instance.maybeAuto());
         final p = Notifier.instance.pendingChat;
         if (p != null) _openFromNotification(p);
         final call = Notifier.instance.pendingCall;
@@ -75,7 +79,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!Messenger.instance.active) return;
     if (state == AppLifecycleState.paused) Messenger.instance.pause();
-    if (state == AppLifecycleState.resumed) Messenger.instance.resume();
+    if (state == AppLifecycleState.resumed) {
+      Messenger.instance.resume();
+      unawaited(BackupService.instance.maybeAuto());
+    }
   }
 
   static const _items = [

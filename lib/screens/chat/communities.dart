@@ -45,7 +45,9 @@ void _openGroup(BuildContext context, String gid) {
 
 /// List of communities you're in, plus "New community".
 class CommunitiesScreen extends StatefulWidget {
-  const CommunitiesScreen({super.key});
+  /// Shown as the home "Community" tab (no back arrow).
+  final bool tab;
+  const CommunitiesScreen({super.key, this.tab = false});
   @override
   State<CommunitiesScreen> createState() => _CommunitiesScreenState();
 }
@@ -77,7 +79,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
   Widget build(BuildContext context) {
     final bc = context.bc;
     return Scaffold(
-      appBar: AppBar(title: const Text('Communities')),
+      appBar: AppBar(automaticallyImplyLeading: !widget.tab, title: const Text('Communities')),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(children: [

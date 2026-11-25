@@ -302,6 +302,15 @@ class Messenger {
     _s.useRealChats(chats);
   }
 
+  /// Writes chats to disk right now (before a backup).
+  Future<void> flushLocal() => _saveNow();
+
+  /// Reloads chats from disk (after restoring a backup).
+  Future<void> reloadLocal() async {
+    final uid = _uid;
+    if (uid != null) await _loadLocal(uid);
+  }
+
   void _scheduleSave() {
     if (_uid == null) return;
     _saveTimer?.cancel();
