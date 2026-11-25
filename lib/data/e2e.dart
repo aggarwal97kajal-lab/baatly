@@ -38,6 +38,17 @@ class E2E {
 
   String get publicKey => _b64(_myPub!);
 
+  /// The identity key seed, for an end-to-end encrypted backup.
+  Future<String?> exportSeed(String userId) => _storage.read(key: 'e2e_x25519_$userId');
+
+  /// Puts back the identity key from a backup.
+  Future<void> importSeed(String userId, String seed) async {
+    await _storage.write(key: 'e2e_x25519_$userId', value: seed);
+    _forUser = null;
+    _identity = null;
+    await load(userId);
+  }
+
   /// Loads (or creates) the identity key for [userId].
   Future<void> load(String userId) async {
     if (_forUser == userId && _identity != null) return;

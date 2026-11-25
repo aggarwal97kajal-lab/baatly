@@ -19,6 +19,7 @@ import 'chats_tab.dart';
 import 'community_tab.dart';
 import 'status_tab.dart';
 import '../settings/you_tab.dart';
+import '../settings/chats_settings.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -50,6 +51,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         await BackupService.instance.load();
         unawaited(BackupService.instance.maybeAuto());
         _listenLinks();
+        if (mounted) unawaited(offerRestore(context));
         final p = Notifier.instance.pendingChat;
         if (p != null) _openFromNotification(p);
         final call = Notifier.instance.pendingCall;

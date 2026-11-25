@@ -253,6 +253,12 @@ class Messenger {
     if (changed) _s.changed();
   }
 
+  /// After restoring a backup with the old key: tell the server again.
+  Future<void> republishKey() async {
+    final uid = _uid;
+    if (uid != null) await _publishKey(uid);
+  }
+
   Future<void> _publishKey(String uid) async {
     try {
       final p = await SharedPreferences.getInstance();

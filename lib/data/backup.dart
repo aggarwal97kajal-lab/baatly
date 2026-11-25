@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'e2e.dart';
 import 'messenger.dart';
 
 /// Chat backup to the user's own Google Drive (hidden app folder, only
@@ -34,6 +35,9 @@ class BackupService extends ChangeNotifier {
   bool encrypted = false;
   DateTime? lastAt;
   int lastSize = 0;
+  /// Last automatic/manual backup problem shown as "Status: …" (null = fine).
+  String? lastProblem;
+  bool outOfStorage = false;
 
   // Live state
   bool busy = false;
@@ -54,6 +58,8 @@ class BackupService extends ChangeNotifier {
     final l = p.getInt('bk_last');
     lastAt = l == null ? null : DateTime.fromMillisecondsSinceEpoch(l);
     lastSize = p.getInt('bk_size') ?? 0;
+    lastProblem = p.getString('bk_problem');
+    outOfStorage = p.getBool('bk_full') ?? false;
     notifyListeners();
   }
 
@@ -70,6 +76,12 @@ class BackupService extends ChangeNotifier {
     await p.setBool('bk_e2e', encrypted);
     if (lastAt != null) await p.setInt('bk_last', lastAt!.millisecondsSinceEpoch);
     await p.setInt('bk_size', lastSize);
+    if (lastProblem == null) {
+      await p.remove('bk_problem');
+    } else {
+      await p.setString('bk_problem', lastProblem!);
+    }
+    await p.setBool('bk_full', outOfStorage);
   }
 
   void set(void Function() f) {
@@ -148,6 +160,52 @@ class BackupService extends ChangeNotifier {
     );
   }
 
+  /// Google Drive space: used / total bytes.
+  Future<({int used, int limit})?> quota() async {
+    try {
+      final t = await _token(interactive: false);
+      if (t == null) return null;
+      final r = await http.get(Uri.parse('https://www.googleapis.com/drive/v3/about?fields=storageQuota'), headers: {'authorization': 'Bearer $t'});
+      if (r.statusCode != 200) return null;
+      final q = (jsonDecode(r.body)['storageQuota'] as Map).cast<String, dynamic>();
+      return (used: int.tryParse('${q['usage']}') ?? 0, limit: int.tryParse('${q['limit']}') ?? 0);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Deletes the backup from Google Drive.
+  Future<bool> deleteRemote() async {
+    try {
+      final t = await _token(interactive: true);
+      if (t == null) return false;
+      final f = await _find(t);
+      if (f == null) return true;
+      final r = await http.delete(Uri.parse('https://www.googleapis.com/drive/v3/files/${f['id']}'), headers: {'authorization': 'Bearer $t'});
+      if (r.statusCode < 300) {
+        lastAt = null;
+        lastSize = 0;
+        await _persist();
+        notifyListeners();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// Size of videos on this phone (shown next to "Include videos").
+  static Future<int> videoBytes() async {
+    var n = 0;
+    try {
+      final media = Directory('${(await getApplicationDocumentsDirectory()).path}/media');
+      if (!await media.exists()) return 0;
+      await for (final e in media.list(recursive: true, followLinks: false)) {
+        if (e is File && const {'mp4', 'mov', '3gp', 'mkv', 'webm'}.contains(e.path.split('.').last.toLowerCase())) n += await e.length();
+      }
+    } catch (_) {}
+    return n;
+  }
+
   // ------------------------------------------------------------------ back up
   Future<bool> backup({String? password, bool interactive = true}) async {
     if (busy) return false;
@@ -182,6 +240,17 @@ class BackupService extends ChangeNotifier {
 
       final chats = File('${docs.path}/chats_$uid.json');
       if (await chats.exists()) await add('chats.json', chats);
+      // Password-protected backups also carry this phone's encryption key, so
+      // messages that arrive while BAATLY is reinstalled can still be opened.
+      if (encrypted) {
+        final seed = await E2E.instance.exportSeed(uid);
+        if (seed != null) {
+          final kf = File('${(await getTemporaryDirectory()).path}/bk_key');
+          await kf.writeAsString(seed);
+          await add('key.seed', kf);
+          await kf.delete();
+        }
+      }
       final media = Directory('${docs.path}/media');
       if (await media.exists()) {
         await for (final e in media.list(recursive: true, followLinks: false)) {
@@ -258,20 +327,33 @@ class BackupService extends ChangeNotifier {
           }
         }
         final res = await put.close();
-        await res.drain<void>();
-        if (res.statusCode >= 300) throw Exception('upload ${res.statusCode}');
+        final body = await res.transform(utf8.decoder).join();
+        if (res.statusCode >= 300) {
+          if (body.contains('storageQuotaExceeded') || body.contains('quotaExceeded')) throw _Full();
+          throw Exception('upload ${res.statusCode}');
+        }
       } finally {
         hc.close();
       }
       lastAt = DateTime.now();
       lastSize = size;
+      lastProblem = null;
+      outOfStorage = false;
       await _persist();
       return true;
+    } on _Full {
+      outOfStorage = true;
+      lastProblem = 'Stopped (out of Google storage)';
+      error = "Couldn't back up your chats. You're out of Google storage. Free up space or get more.";
+      await _persist();
+      return false;
     } on _Msg catch (e) {
       error = e.m;
       return false;
     } catch (e) {
+      lastProblem = 'Failed (check internet)';
       error = "Couldn't back up. Check your internet and try again.";
+      await _persist();
       return false;
     } finally {
       try {
@@ -368,6 +450,7 @@ class BackupService extends ChangeNotifier {
       progress = null;
       notifyListeners();
       final docs = await getApplicationDocumentsDirectory();
+      var restoredKey = false;
       final r = await plain.open();
       final len = await r.length();
       var pos = 0;
@@ -377,6 +460,20 @@ class BackupService extends ChangeNotifier {
         final dl = _readU64(await r.read(8));
         pos += 4 + nl + 8;
         if (name.contains('..')) throw _Msg('This backup is damaged.');
+        if (name == 'key.seed') {
+          final b = BytesBuilder();
+          var left = dl;
+          while (left > 0) {
+            final c = await r.read(left);
+            if (c.isEmpty) break;
+            b.add(c);
+            left -= c.length;
+          }
+          pos += dl;
+          await E2E.instance.importSeed(uid, utf8.decode(b.takeBytes()));
+          restoredKey = true;
+          continue;
+        }
         final dest = File(name == 'chats.json' ? '${docs.path}/chats_$uid.json' : '${docs.path}/$name');
         await dest.parent.create(recursive: true);
         final w = dest.openWrite();
@@ -392,6 +489,7 @@ class BackupService extends ChangeNotifier {
       }
       await r.close();
       await Messenger.instance.reloadLocal();
+      if (restoredKey) await Messenger.instance.republishKey();
       return true;
     } on _Msg catch (e) {
       error = e.m;
@@ -463,6 +561,8 @@ class BackupService extends ChangeNotifier {
   static int _readU32(List<int> b) => ByteData.sublistView(Uint8List.fromList(b)).getUint32(0);
   static int _readU64(List<int> b) => ByteData.sublistView(Uint8List.fromList(b)).getUint64(0);
 }
+
+class _Full implements Exception {}
 
 class _Msg implements Exception {
   final String m;

@@ -80,6 +80,9 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     )
       .bind(me.id, b.x25519, now())
       .run();
+    // Contacts re-read the key, so their next message is readable here.
+    const job = profileChanged(env, me.id).catch(() => {});
+    if (c.later) c.later(job);
     return json({ ok: true });
   }
 

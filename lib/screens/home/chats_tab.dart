@@ -30,7 +30,10 @@ class _ChatsTabState extends State<ChatsTab> {
     return ListenableBuilder(
       listenable: s,
       builder: (context, _) {
-        var list = s.chats.where((c) => c.archived == _showArchived && !c.locked).toList();
+        // A chat opened but never used (no messages) doesn't show, like WhatsApp.
+        var list = s.chats
+            .where((c) => c.archived == _showArchived && !c.locked && (c.isGroup || c.messages.isNotEmpty || c.pinned || _filter == 3))
+            .toList();
         final lockedCount = s.chats.where((c) => c.locked).length;
         if (_filter == 1) list = list.where((c) => c.unread > 0).toList();
         if (_filter == 2) list = list.where((c) => c.isGroup).toList();
