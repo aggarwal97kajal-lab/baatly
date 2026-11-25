@@ -31,6 +31,7 @@ import { groupCallRoute } from './gcalls';
 import { communityRoute } from './groups';
 import { gifRoute } from './gifs';
 import { supportRoute } from './support';
+import { checkPinTicket, needsPin, startPinReset, twoStepRoute } from './twostep';
 import { cleanupRateLimits, safetyRoute } from './safety';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
@@ -119,9 +120,23 @@ async function otpVerify(c: Ctx) {
     await c.env.DB.prepare('INSERT INTO users (id, phone, created_at, updated_at) VALUES (?,?,?,?)').bind(id, r.phone, t, t).run();
     user = (await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<User>())!;
   }
+  if (!isNew) {
+    const pin = await needsPin(c.env, user.id, body.device ?? '');
+    if (pin) return json({ needPin: true, ticket: pin.ticket, resetAt: pin.resetAt });
+  }
   const token = await createSession(c.env, user.id, 'otp', body.device ?? '');
   const pk = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM passkeys WHERE user_id = ?').bind(user.id).first<{ n: number }>();
   return json({ token, isNew, hasPasskey: (pk?.n ?? 0) > 0, user: publicUser(user) });
+}
+
+/** Second step after the SMS code: the user's 6-digit PIN. */
+async function pinVerify(c: Ctx) {
+  const b = await readJson<{ ticket: string; pin: string }>(c.req);
+  const { userId, device } = await checkPinTicket(c.env, String(b.ticket ?? ''), String(b.pin ?? ''));
+  const user = (await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first<User>())!;
+  const token = await createSession(c.env, user.id, 'otp', device);
+  const pk = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM passkeys WHERE user_id = ?').bind(user.id).first<{ n: number }>();
+  return json({ token, isNew: false, hasPasskey: (pk?.n ?? 0) > 0, user: publicUser(user) });
 }
 
 // --------------------------------------------------------------- passkeys
@@ -420,6 +435,12 @@ async function route(c: Ctx): Promise<Response> {
   }
   if (m === 'POST' && p === '/v1/auth/otp/send') return otpSend(c);
   if (m === 'POST' && p === '/v1/auth/otp/verify') return otpVerify(c);
+  if (m === 'POST' && p === '/v1/auth/pin') return pinVerify(c);
+  if (m === 'POST' && p === '/v1/auth/pin/reset') return startPinReset(c.env, c);
+  if (p === '/v1/me/two-step') {
+    const { user } = await requireUser(c);
+    return twoStepRoute(c, user.id, m);
+  }
   if (m === 'POST' && p === '/v1/auth/passkey/register/options') return passkeyRegisterOptions(c);
   if (m === 'POST' && p === '/v1/auth/passkey/register/verify') return passkeyRegisterVerify(c);
   if (m === 'POST' && p === '/v1/auth/passkey/login/options') return passkeyLoginOptions(c);

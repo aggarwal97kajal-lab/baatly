@@ -10,6 +10,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/chat_dialogs.dart';
 import '../../widgets/common.dart';
 import 'search_screen.dart';
+import '../chat/broadcast.dart';
 import '../chat/chat_screen.dart';
 import '../chat/new_chat_screen.dart';
 
@@ -87,6 +88,21 @@ class _ChatsTabState extends State<ChatsTab> {
                     IconButton(
                       onPressed: () => cameraToChats(context),
                       icon: Icon(Icons.photo_camera_outlined, color: bc.text),
+                    ),
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert_rounded, color: bc.text),
+                      onSelected: (v) async {
+                        if (v == 'bc') {
+                          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BroadcastEditor()));
+                        } else if (v == 'list') {
+                          final saved = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ChatListEditor()));
+                          if (saved != null && mounted) setState(() => _filter = 4 + s.chatLists.indexOf(saved));
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'bc', child: Text('New broadcast')),
+                        PopupMenuItem(value: 'list', child: Text('New list')),
+                      ],
                     ),
                   ]),
                 ),
@@ -406,6 +422,9 @@ class _ChatRow extends StatelessWidget {
       preview = m.fromMe ? 'You deleted this message' : 'This message was deleted';
     } else if (m != null && m.kind == MsgKind.system) {
       preview = m.text;
+    } else if (m != null && m.media?['mention'] is Map) {
+      pIcon = Icons.alternate_email_rounded;
+      preview = m.fromMe ? 'You mentioned them in your status' : 'Mentioned you in their status';
     } else if (m != null && m.kind == MsgKind.call) {
       final v = m.media?['v'] == true;
       final missed = m.media?['missed'] == true;

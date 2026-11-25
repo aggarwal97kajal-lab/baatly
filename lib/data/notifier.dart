@@ -88,6 +88,7 @@ class Notifier {
       e164.startsWith('+91') && e164.length == 13 ? '+91 ${e164.substring(3, 8)} ${e164.substring(8)}' : e164;
 
   static String _preview(Map<String, dynamic> plain) {
+    if ((plain['md'] as Map?)?['mention'] != null) return 'Mentioned you in their status';
     final md = (plain['md'] as Map?)?.cast<String, dynamic>();
     final t = (plain['t'] as String? ?? '').trim();
     switch (md?['type']) {

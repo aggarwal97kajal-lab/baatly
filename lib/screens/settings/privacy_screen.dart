@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'two_step.dart';
+
 import '../../config.dart';
 import '../../data/api.dart';
 import '../../data/app_state.dart';
@@ -86,6 +88,42 @@ class PrivacyScreen extends StatelessWidget {
               value: s.appLock,
               onChanged: (v) => s.toggle(() => s.appLock = v),
             ),
+            if (s.appLock)
+              FutureBuilder<bool>(
+                future: AppPin.isSet(),
+                builder: (context, snap) {
+                  final has = snap.data == true;
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
+                    title: Text(has ? 'App lock PIN is set' : 'Also allow a PIN', style: TextStyle(fontSize: 16, color: bc.text)),
+                    subtitle: Text(has ? 'Tap to change or remove' : 'Unlock with a 6-digit BAATLY PIN as well as fingerprint', style: TextStyle(color: bc.muted)),
+                    onTap: () async {
+                      if (has) {
+                        final v = await showModalBottomSheet<String>(
+                          context: context,
+                          builder: (sh) => SafeArea(
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              ListTile(leading: const Icon(Icons.password_rounded), title: const Text('Change PIN'), onTap: () => Navigator.pop(sh, 'c')),
+                              ListTile(leading: const Icon(Icons.delete_outline_rounded), title: const Text('Remove PIN'), onTap: () => Navigator.pop(sh, 'r')),
+                            ]),
+                          ),
+                        );
+                        if (v == 'r') {
+                          await AppPin.clear();
+                          s.changed();
+                          return;
+                        }
+                        if (v != 'c') return;
+                      }
+                      if (!context.mounted) return;
+                      final pin = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const NewPinScreen(title: 'App lock PIN', subtitle: 'Used to unlock BAATLY on this phone')));
+                      if (pin == null) return;
+                      await AppPin.set(pin);
+                      s.changed();
+                    },
+                  );
+                },
+              ),
             const Divider(height: 24),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),

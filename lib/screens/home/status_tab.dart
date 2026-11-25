@@ -583,6 +583,20 @@ class _StatusViewerState extends State<StatusViewer> with SingleTickerProviderSt
                             ),
                           ),
               ),
+            if (!widget.mine && widget.item.ownerId != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                  for (final e in const ['😂', '😮', '😍', '😢', '👏', '🔥'])
+                    GestureDetector(
+                      onTap: () {
+                        StatusService.instance.reply(widget.item, slide, e);
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e sent'), duration: const Duration(seconds: 1)));
+                      },
+                      child: Text(e, style: const TextStyle(fontSize: 30)),
+                    ),
+                ]),
+              ),
             if (!widget.mine)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -638,6 +652,7 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
   final _ctrl = TextEditingController();
   int _color = 0;
   Map<String, dynamic>? _song;
+  Set<String> _mentions = {};
   static const _colors = [0xFFC8553D, 0xFF2A211C, 0xFF3E7C5A, 0xFF2E3A59, 0xFFB5651D, 0xFF7A5BA6];
 
   @override
@@ -659,6 +674,14 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
           leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
           actions: [
             IconButton(
+              tooltip: 'Mention',
+              icon: Icon(Icons.alternate_email_rounded, color: _mentions.isEmpty ? Colors.white : Colors.amberAccent),
+              onPressed: () async {
+                final r = await pickMentions(context, _mentions);
+                if (r != null) setState(() => _mentions = r);
+              },
+            ),
+            IconButton(
               tooltip: 'Add music',
               icon: Icon(_song == null ? Icons.music_note_outlined : Icons.music_note_rounded),
               onPressed: () async {
@@ -676,6 +699,7 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
                 label: Text('${_song!['name']}', maxLines: 1, overflow: TextOverflow.ellipsis),
                 onDeleted: () => setState(() => _song = null),
               ),
+            if (_mentions.isNotEmpty) MentionChips(ids: _mentions, onRemove: (u) => setState(() => _mentions = {..._mentions}..remove(u))),
             Expanded(
               child: Center(
                 child: Padding(
@@ -737,6 +761,7 @@ class _TextStatusScreenState extends State<TextStatusScreen> {
                             st.audio = {'start': _song!['start'], 'dur': _song!['dur'], 'name': _song!['name']};
                           }
                           AppState.instance.addMyStatus(st);
+                          if (_mentions.isNotEmpty) unawaited(StatusService.instance.mention(st, _mentions));
                           Navigator.pop(context);
                         },
                   child: const Icon(Icons.send_rounded),
@@ -803,6 +828,7 @@ class PhotoStatusScreen extends StatefulWidget {
 class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
   final _caption = TextEditingController();
   Map<String, dynamic>? _song;
+  Set<String> _mentions = {};
   late String _path = widget.path;
 
   @override
@@ -863,6 +889,14 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
         title: const Text('Photo status'),
         actions: [
           IconButton(
+            tooltip: 'Mention',
+            icon: Icon(Icons.alternate_email_rounded, color: _mentions.isEmpty ? Colors.white : brandColor),
+            onPressed: () async {
+              final r = await pickMentions(context, _mentions);
+              if (r != null) setState(() => _mentions = r);
+            },
+          ),
+          IconButton(
             icon: Icon(_song == null ? Icons.music_note_outlined : Icons.music_note_rounded, color: _song == null ? Colors.white : brandColor),
             tooltip: 'Add music',
             onPressed: () async {
@@ -907,12 +941,14 @@ class _PhotoStatusScreenState extends State<PhotoStatusScreen> {
                     st.audio = {'start': _song!['start'], 'dur': _song!['dur'], 'name': _song!['name']};
                   }
                   AppState.instance.addMyStatus(st);
+                  if (_mentions.isNotEmpty) unawaited(StatusService.instance.mention(st, _mentions));
                   Navigator.pop(context);
                 },
                 child: const Icon(Icons.send_rounded),
               ),
             ]),
           ),
+          if (_mentions.isNotEmpty) MentionChips(ids: _mentions, onRemove: (u) => setState(() => _mentions = {..._mentions}..remove(u))),
           if (_song != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -1016,4 +1052,69 @@ void showMyUpdates(BuildContext context) {
       },
     ),
   );
+}
+
+
+/// Pick people to @mention in a status. They get a note in their chat with you.
+Future<Set<String>?> pickMentions(BuildContext context, Set<String> current) async {
+  final people = AppState.instance.chats.where((c) => c.peerId != null && c.isReal && !c.isNotes && !c.isBroadcast).toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  final picked = {...current};
+  return showModalBottomSheet<Set<String>>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sh) => StatefulBuilder(
+      builder: (ctx, set) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 2),
+              child: Align(alignment: Alignment.centerLeft, child: Text('Mention people', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+              child: Text("They'll be told in their chat with you", style: TextStyle(fontSize: 12.5, color: ctx.bc.muted)),
+            ),
+            Flexible(
+              child: ListView(shrinkWrap: true, children: [
+                for (final c in people)
+                  CheckboxListTile(
+                    value: picked.contains(c.peerId),
+                    onChanged: (v) => set(() => v == true ? picked.add(c.peerId!) : picked.remove(c.peerId)),
+                    secondary: Avatar(initials: c.initials, colorIndex: c.colorIndex, photo: c.photo, size: 40),
+                    title: Text(c.name),
+                  ),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+              child: FilledButton(onPressed: () => Navigator.pop(sh, picked), child: const Text('Done')),
+            ),
+          ]),
+        ),
+      ),
+    ),
+  );
+}
+
+class MentionChips extends StatelessWidget {
+  final Set<String> ids;
+  final void Function(String) onRemove;
+  const MentionChips({super.key, required this.ids, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Wrap(spacing: 6, runSpacing: 4, alignment: WrapAlignment.center, children: [
+        for (final u in ids)
+          InputChip(
+            avatar: const Icon(Icons.alternate_email_rounded, size: 16),
+            label: Text(Messenger.instance.nameFor(u)),
+            onDeleted: () => onRemove(u),
+          ),
+      ]),
+    );
+  }
 }

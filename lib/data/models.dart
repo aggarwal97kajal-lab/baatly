@@ -173,7 +173,9 @@ class Chat {
 
   Message? get last => messages.isEmpty ? null : messages.last;
 
-  bool get isReal => peerId != null || groupId != null;
+  bool get isReal => peerId != null || groupId != null || isBroadcast;
+  /// Broadcast list: my messages go to each member in their own 1:1 chat.
+  bool get isBroadcast => id.startsWith('bc_');
   /// "Notes (You)": private chat with yourself, never leaves this phone (except your backup).
   bool get isNotes => id == 'notes';
   bool get isRealGroup => groupId != null;

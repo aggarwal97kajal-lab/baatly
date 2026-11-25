@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'two_step.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
@@ -819,6 +821,12 @@ class AccountScreen extends StatelessWidget {
       body: ListView(children: [
         ListTile(leading: const Icon(Icons.phone_outlined), title: const Text('Phone number'), subtitle: Text(s.phone.isEmpty ? '—' : s.phone)),
         if (s.username.isNotEmpty) ListTile(leading: const Icon(Icons.alternate_email_rounded), title: const Text('Username'), subtitle: Text('@${s.username}')),
+        ListTile(
+          leading: const Icon(Icons.password_rounded),
+          title: const Text('Two-step verification'),
+          subtitle: const Text('Ask for a PIN when logging in on a new phone'),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TwoStepScreen())),
+        ),
         ListTile(
           leading: const Icon(Icons.devices_rounded),
           title: const Text('Linked devices'),

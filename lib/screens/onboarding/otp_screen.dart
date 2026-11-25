@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import 'pin_login_screen.dart';
 import 'package:flutter/services.dart';
 
 import '../../config.dart';
@@ -89,19 +91,20 @@ class _OtpScreenState extends State<OtpScreen> {
         _go(const ProfileSetupScreen());
         return;
       }
-      final r = await Api.instance.verifyOtp(_req!.requestId, _ctrl.text);
-      s.phone = r.user.phone;
-      final fp = Api.instance.hasFingerprint;
-      s.setPasskey(fp);
-      if (r.user.name.isEmpty || r.user.username == null) {
-        _go(ProfileSetupScreen(offerPasskey: !fp));
-      } else if (!fp) {
-        s.finishOnboarding(name: r.user.name, username: r.user.username!, about: r.user.about);
-        _go(const PasskeySetupScreen());
-      } else {
-        s.finishOnboarding(name: r.user.name, username: r.user.username!, about: r.user.about);
-        Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeShell()), (_) => false);
+      final AuthResult r;
+      try {
+        r = await Api.instance.verifyOtp(_req!.requestId, _ctrl.text);
+      } on PinRequired catch (p) {
+        if (!mounted) return;
+        final res = await Navigator.of(context).push<AuthResult>(MaterialPageRoute(builder: (_) => PinLoginScreen(ticket: p.ticket, resetAt: p.resetAt)));
+        if (res == null) {
+          setState(() => _ctrl.clear());
+          return;
+        }
+        _afterLogin(res);
+        return;
       }
+      _afterLogin(r);
     } on ApiException catch (e) {
       HapticFeedback.mediumImpact();
       setState(() {
@@ -110,6 +113,22 @@ class _OtpScreenState extends State<OtpScreen> {
       });
     } finally {
       if (mounted) setState(() => _verifying = false);
+    }
+  }
+
+  void _afterLogin(AuthResult r) {
+    final s = AppState.instance;
+    s.phone = r.user.phone;
+    final fp = Api.instance.hasFingerprint;
+    s.setPasskey(fp);
+    if (r.user.name.isEmpty || r.user.username == null) {
+      _go(ProfileSetupScreen(offerPasskey: !fp));
+    } else if (!fp) {
+      s.finishOnboarding(name: r.user.name, username: r.user.username!, about: r.user.about);
+      _go(const PasskeySetupScreen());
+    } else {
+      s.finishOnboarding(name: r.user.name, username: r.user.username!, about: r.user.about);
+      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeShell()), (_) => false);
     }
   }
 

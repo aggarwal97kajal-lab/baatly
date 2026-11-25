@@ -34,6 +34,13 @@ class ApiUser {
         username = j['username'] as String?;
 }
 
+/// The SMS code was right but this account has a two-step PIN.
+class PinRequired implements Exception {
+  final String ticket;
+  final DateTime? resetAt;
+  PinRequired(this.ticket, this.resetAt);
+}
+
 class AuthResult {
   final ApiUser user;
   final bool isNew;
@@ -248,8 +255,23 @@ class Api {
 
   Future<AuthResult> verifyOtp(String requestId, String code) async {
     final d = await _call('POST', '/v1/auth/otp/verify', {'requestId': requestId, 'code': code, 'device': _device});
+    if (d['needPin'] == true) {
+      throw PinRequired(d['ticket'] as String, d['resetAt'] is int ? DateTime.fromMillisecondsSinceEpoch(d['resetAt'] as int) : null);
+    }
     return _session(d);
   }
+
+  Future<AuthResult> verifyPin(String ticket, String pin) async => _session(await _call('POST', '/v1/auth/pin', {'ticket': ticket, 'pin': pin}));
+
+  /// "Forgot PIN": you can log in without it after 7 days.
+  Future<DateTime?> forgotPin(String ticket) async {
+    final d = await _call('POST', '/v1/auth/pin/reset', {'ticket': ticket});
+    return d['resetAt'] is int ? DateTime.fromMillisecondsSinceEpoch(d['resetAt'] as int) : null;
+  }
+
+  Future<bool> twoStepEnabled() async => (await _call('GET', '/v1/me/two-step'))['enabled'] == true;
+  Future<void> setTwoStep(String pin) async => _call('PUT', '/v1/me/two-step', {'pin': pin});
+  Future<void> offTwoStep() async => _call('DELETE', '/v1/me/two-step');
 
   Future<AuthResult> _session(Map<String, dynamic> d) async {
     await _setToken(d['token'] as String);

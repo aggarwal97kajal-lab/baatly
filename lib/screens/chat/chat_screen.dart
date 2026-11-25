@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -31,6 +32,7 @@ import 'photo_screen.dart';
 import 'camera_screen.dart';
 import 'safety_screens.dart';
 import 'message_tools.dart';
+import 'broadcast.dart';
 import '../../data/calls.dart';
 import '../../data/group_calls.dart';
 import '../../data/media.dart';
@@ -266,7 +268,7 @@ class _ChatScreenState extends State<ChatScreen> {
               PopupMenuItem(value: 'pin', child: Text(chat.pinnedId == one.id ? 'Unpin' : 'Pin')),
             if (one != null && one.media?['stk'] == true && one.mediaPath != null && File(one.mediaPath!).existsSync())
               const PopupMenuItem(value: 'sticker', child: Text('Add to my stickers')),
-            if (one != null && one.fromMe && !one.deleted && chat.isReal && one.media?['sched'] == null)
+            if (one != null && one.fromMe && !one.deleted && chat.isReal && !chat.isNotes && !chat.isBroadcast && one.media?['sched'] == null)
               const PopupMenuItem(value: 'info', child: Text('Info')),
             if (one != null && !one.deleted && chat.isReal && one.media?['sched'] == null)
               Messenger.instance.reminders.containsKey(one.id)
@@ -978,7 +980,11 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: _sel.isNotEmpty ? _selectionBar() : AppBar(
         titleSpacing: 0,
         title: InkWell(
-          onTap: chat.isNotes ? null : () => Navigator.of(context).push(MaterialPageRoute(
+          onTap: chat.isNotes
+              ? null
+              : chat.isBroadcast
+                  ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => BroadcastEditor(existing: chat)))
+                  : () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => chat.isRealGroup ? GroupInfoScreen(chat: chat) : ChatInfoScreen(chat: chat))),
           child: Row(children: [
             Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 38)),
@@ -995,6 +1001,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             ? (chat.left ? "You're no longer a member" : Messenger.instance.memberLine(chat))
                             : chat.isNotes
                                 ? 'Only you can see this'
+                                : chat.isBroadcast
+                                ? chat.about
                                 : chat.isReal
                                 ? (chat.presence ?? '')
                                 : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen today'));
@@ -1024,7 +1032,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ]),
         ),
         actions: [
-          if (!chat.isNotes) ...[
+          if (!chat.isNotes && !chat.isBroadcast) ...[
             IconButton(
               onPressed: chat.peerId != null ? () => CallService.instance.start(chat, video: true) : () => GroupCallService.instance.start(chat, video: true),
               icon: const Icon(Icons.videocam_outlined),
@@ -1044,7 +1052,7 @@ class _ChatScreenState extends State<ChatScreen> {
               }
             },
             itemBuilder: (_) => [
-              if (!chat.isNotes) const PopupMenuItem(value: 'info', child: Text('View info')),
+              if (!chat.isNotes && !chat.isBroadcast) const PopupMenuItem(value: 'info', child: Text('View info')),
               const PopupMenuItem(value: 'search', child: Text('Search')),
               const PopupMenuItem(value: 'media', child: Text('Media, links and docs')),
               const PopupMenuItem(value: 'theme', child: Text('Chat theme')),
@@ -1261,7 +1269,7 @@ class _ChatScreenState extends State<ChatScreen> {
               });
             },
             onSend: _send,
-            onScheduleSend: chat.isReal
+            onScheduleSend: chat.isReal && !chat.isBroadcast && !chat.isNotes
                 ? () async {
                     final text = _ctrl.text;
                     if (await scheduleFromComposer(context, chat, text) && mounted) {
@@ -1499,6 +1507,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
             ),
             child: Text(lines.first.substring(2), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: fg.withOpacity(0.85))),
           ),
+        if (m.media?['sr'] is Map) _StatusQuote(sr: (m.media!['sr'] as Map).cast<String, dynamic>(), me: me, fg: fg),
+        if (m.media?['mention'] is Map) _MentionCard(md: (m.media!['mention'] as Map).cast<String, dynamic>(), fg: fg, me: me),
         if (m.media?['lp'] is Map)
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 280, minWidth: 280),
@@ -1515,7 +1525,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     }
 
     final bare = !m.deleted &&
-        ((m.kind == MsgKind.image && m.media?['stk'] == true) || (m.kind == MsgKind.text && isBigEmoji(m.text)));
+        ((m.kind == MsgKind.image && m.media?['stk'] == true) || (m.kind == MsgKind.text && m.media?['sr'] == null && m.media?['mention'] == null && isBigEmoji(m.text)));
     if (bare && m.kind == MsgKind.text) content = Text(m.text.trim(), style: const TextStyle(fontSize: 56, height: 1.15));
     final metaFg = bare ? bc.muted : fg;
     // Photo / video without a caption: time sits on the picture, like WhatsApp.
@@ -2303,6 +2313,88 @@ class _InfoBubble extends StatelessWidget {
           Text(hhmm(m.time), style: TextStyle(fontSize: 10.5, color: bc.onOutBubble.withOpacity(0.8))),
         ]),
       ),
+    );
+  }
+}
+
+/// Reply to a status: small copy of that status on top of the message.
+class _StatusQuote extends StatelessWidget {
+  final Map<String, dynamic> sr;
+  final bool me;
+  final Color fg;
+  const _StatusQuote({required this.sr, required this.me, required this.fg});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = me ? Colors.white : context.primary;
+    Widget? pic;
+    if (sr['th'] is String) {
+      try {
+        pic = Image.memory(base64Decode(sr['th'] as String), fit: BoxFit.cover, width: 46, height: 52, gaplessPlayback: true);
+      } catch (_) {}
+    } else if (sr['bg'] is int) {
+      pic = Container(width: 46, height: 52, color: Color(sr['bg'] as int), alignment: Alignment.center, child: const Icon(Icons.text_fields_rounded, color: Colors.white70, size: 18));
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      constraints: const BoxConstraints(minWidth: 200),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: (me ? Colors.black : context.primary).withOpacity(me ? 0.16 : 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border(left: BorderSide(color: accent, width: 3)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Flexible(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text('${me ? (sr['n'] ?? 'Status') : 'You'} · Status', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: accent)),
+              Text((sr['t'] as String?) ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: fg.withOpacity(0.85))),
+            ]),
+          ),
+        ),
+        if (pic != null) pic,
+      ]),
+    );
+  }
+}
+
+/// "X mentioned you in their status" card.
+class _MentionCard extends StatelessWidget {
+  final Map<String, dynamic> md;
+  final Color fg;
+  final bool me;
+  const _MentionCard({required this.md, required this.fg, required this.me});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget? pic;
+    if (md['th'] is String) {
+      try {
+        pic = Image.memory(base64Decode(md['th'] as String), fit: BoxFit.cover, width: 220, height: 150, gaplessPlayback: true);
+      } catch (_) {}
+    } else if (md['bg'] is int) {
+      pic = Container(
+        width: 220,
+        height: 150,
+        color: Color(md['bg'] as int),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(12),
+        child: Text((md['t'] as String?) ?? '', textAlign: TextAlign.center, maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        if (pic != null) ClipRRect(borderRadius: BorderRadius.circular(10), child: pic),
+        const SizedBox(height: 6),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.alternate_email_rounded, size: 15, color: fg.withOpacity(0.8)),
+          const SizedBox(width: 4),
+          Flexible(child: Text(me ? 'You mentioned them in your status' : 'Mentioned you in their status', style: TextStyle(fontSize: 13, color: fg.withOpacity(0.85), fontStyle: FontStyle.italic))),
+        ]),
+      ]),
     );
   }
 }

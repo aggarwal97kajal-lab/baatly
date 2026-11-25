@@ -891,10 +891,11 @@ class Messenger {
   // ------------------------------------------------------------------ outgoing
   String _newId() => base64Url.encode(List<int>.generate(12, (_) => _rnd.nextInt(256))).replaceAll('=', '');
 
-  void send(Chat chat, String text, {Map<String, dynamic>? lp}) {
+  void send(Chat chat, String text, {Map<String, dynamic>? lp, Map<String, dynamic>? extra}) {
+    final md = <String, dynamic>{if (lp != null) 'lp': lp, ...?extra};
     final m = Message(
       id: _newId(),
-      media: lp == null ? null : {'lp': lp},
+      media: md.isEmpty ? null : md,
       text: text,
       fromMe: true,
       time: DateTime.now(),
@@ -910,6 +911,10 @@ class Messenger {
   static const _fileKinds = {MsgKind.image, MsgKind.voice, MsgKind.doc, MsgKind.video};
 
   Future<void> _deliver(Chat chat, Message m) async {
+    if (chat.isBroadcast) {
+      await _deliverBroadcast(chat, m);
+      return;
+    }
     if (chat.isNotes) {
       m.status = MsgStatus.read;
       _s.changed();
@@ -936,7 +941,7 @@ class Messenger {
 
   /// Encrypts [payload] for the chat (each group member separately) and sends it.
   Future<bool> _sendPayload(Chat chat, String msgId, Map<String, dynamic> payload, {bool silent = false, String? onlyTo}) async {
-    if (chat.isNotes) return true;
+    if (chat.isNotes || chat.isBroadcast) return true;
     final r = await _seal(chat, msgId, payload, silent: silent, onlyTo: onlyTo);
     if (r == null) return false;
     await _post(r.$1, r.$2);
@@ -1027,6 +1032,62 @@ class Messenger {
         if (!pending.contains(m.id)) _schedSent(m.id);
       }
     } catch (_) {}
+  }
+
+  // ------------------------------------------------------------------ broadcast lists
+  Chat createBroadcast(String name, List<String> members) {
+    final c = Chat(id: 'bc_${_newId()}', name: name, initials: '📢', colorIndex: 0, about: '${members.length} recipients');
+    c.members = [...members];
+    _s.chats.add(c);
+    c.messages.add(Message(
+      id: 'sys_bc_${DateTime.now().millisecondsSinceEpoch}',
+      text: 'You created a broadcast list with ${members.length} recipients. Messages go to each of them in their own chat.',
+      fromMe: false,
+      time: DateTime.now(),
+      kind: MsgKind.system,
+    ));
+    _s.changed();
+    unawaited(_saveNow());
+    return c;
+  }
+
+  void setBroadcastMembers(Chat c, List<String> members) {
+    c.members = [...members];
+    c.about = '${members.length} recipients';
+    _s.changed();
+    unawaited(_saveNow());
+  }
+
+  /// Sends a copy of [m] to every member, each in their own 1:1 chat.
+  /// A photo/video is uploaded once and shared by all copies.
+  Future<void> _deliverBroadcast(Chat chat, Message m) async {
+    try {
+      if (_fileKinds.contains(m.kind) && m.media?['id'] == null) await _uploadMedia(m);
+    } catch (_) {
+      return; // stays "sending"
+    }
+    var ok = 0;
+    for (final u in chat.members) {
+      final target = await chatForUser(u);
+      if (target == null) continue;
+      final copy = Message(
+        id: _newId(),
+        text: m.text,
+        fromMe: true,
+        time: DateTime.now(),
+        status: MsgStatus.sending,
+        kind: m.kind,
+        voiceSeconds: m.voiceSeconds,
+        mediaPath: m.mediaPath,
+        media: m.media == null ? null : Map<String, dynamic>.from(m.media!),
+        expiresAt: target.disappear > 0 ? DateTime.now().add(Duration(seconds: target.disappear)) : null,
+      );
+      target.messages.add(copy);
+      await _deliver(target, copy);
+      ok++;
+    }
+    if (ok > 0 && m.status == MsgStatus.sending) m.status = MsgStatus.sent;
+    _s.changed();
   }
 
   // ------------------------------------------------------------------ notes
@@ -1732,7 +1793,7 @@ class Messenger {
 
   /// Called while the user types (throttled).
   void typing(Chat chat) {
-    if (!chat.isReal || chat.left || chat.isNotes) return;
+    if (!chat.isReal || chat.left || chat.isNotes || chat.isBroadcast) return;
     final now = DateTime.now();
     if (now.difference(_lastTypingSent).inSeconds < 4) return;
     _lastTypingSent = now;
@@ -1745,7 +1806,7 @@ class Messenger {
 
   // ------------------------------------------------------------------ open chat
   void openChat(Chat chat) {
-    if (!chat.isReal || chat.isNotes) return;
+    if (!chat.isReal || chat.isNotes || chat.isBroadcast) return;
     unawaited(Notifier.instance.clear(chat.groupId ?? chat.peerId!));
     chat.unread = 0;
     markRead(chat);
@@ -1764,7 +1825,7 @@ class Messenger {
   }
 
   void markRead(Chat chat) {
-    if (!_s.readReceipts) return;
+    if (!_s.readReceipts || chat.isBroadcast || chat.isNotes) return;
     final unread = [for (final m in chat.messages) if (!m.fromMe && !m.readSent && m.kind != MsgKind.system && m.kind != MsgKind.call) m];
     if (unread.isEmpty) return;
     for (final m in chat.messages) {

@@ -10,6 +10,7 @@ import 'app_state.dart';
 import 'contacts.dart';
 import 'e2e.dart';
 import 'messenger.dart';
+import 'media.dart';
 import 'models.dart';
 
 /// Real status updates, end-to-end encrypted.
@@ -282,12 +283,40 @@ class StatusService {
   }
 
   /// Reply to someone's status = a normal (encrypted) chat message to them.
-  void reply(StatusItem item, StatusSlide st, String text) {
+  /// @mentions in my status: each person gets a note (with a small copy) in their chat with me.
+  Future<void> mention(StatusSlide st, Set<String> people) async {
+    String? thumb;
+    if (st.isPhoto && st.imagePath != null) thumb = (await MediaFiles.thumb(st.imagePath!))?.$1;
+    for (final u in people) {
+      final chat = await Messenger.instance.chatForUser(u);
+      if (chat == null) continue;
+      Messenger.instance.send(chat, '', extra: {
+        'mention': {
+          't': (st.isPhoto ? (st.caption ?? '') : (st.text ?? '')).split('\n').first,
+          if (!st.isPhoto) 'bg': st.bg,
+          if (thumb != null) 'th': thumb,
+        },
+      });
+    }
+  }
+
+  /// Reply to a status: goes to the owner's chat with a small copy of the status on top.
+  Future<void> reply(StatusItem item, StatusSlide st, String text) async {
     final owner = item.ownerId;
     if (owner == null) return;
     final chat = Messenger.instance.chatWithUser(owner, item.name, '', null);
-    final what = st.isPhoto ? '📷 ${(st.caption ?? '').isEmpty ? 'Photo' : st.caption}' : (st.text ?? '');
-    Messenger.instance.send(chat, '↪ Status: ${what.split('\n').first}\n$text');
+    final what = st.isPhoto ? ((st.caption ?? '').isEmpty ? 'Photo' : st.caption!) : (st.text ?? '');
+    String? thumb;
+    if (st.isPhoto && st.imagePath != null) thumb = (await MediaFiles.thumb(st.imagePath!))?.$1;
+    Messenger.instance.send(chat, text, extra: {
+      'sr': {
+        'n': item.name,
+        't': what.split('\n').first,
+        if (!st.isPhoto) 'bg': st.bg,
+        if (thumb != null) 'th': thumb,
+        if (st.remoteId != null) 'id': st.remoteId,
+      },
+    });
   }
 
   static String _ago(DateTime t) {
