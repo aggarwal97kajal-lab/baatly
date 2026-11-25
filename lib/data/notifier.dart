@@ -188,6 +188,13 @@ class Notifier {
       if (uid != null && body.isNotEmpty) {
         await E2E.instance.load(uid);
         final local = await _localData(uid);
+        for (final c in (local['chats'] as List? ?? [])) {
+          final m = (c as Map).cast<String, dynamic>();
+          if ((m['peer'] == chat || m['gid'] == chat) && m['lk'] == true) {
+            await _show(chat, 'BAATLY', 'New message', {'chat': chat, 'from': from, if (group != null) 'group': group, 'msgId': data['msgId'] ?? ''});
+            return;
+          }
+        }
         final peers = (local['peers'] as Map?)?.cast<String, dynamic>() ?? {};
         final peer = (peers[from] as Map?)?.cast<String, dynamic>();
         var key = peer?['key'] as String?;

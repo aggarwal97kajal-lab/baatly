@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 
 import '../../data/app_state.dart';
 import '../../data/media.dart';
@@ -28,7 +29,8 @@ class _ChatsTabState extends State<ChatsTab> {
     return ListenableBuilder(
       listenable: s,
       builder: (context, _) {
-        var list = s.chats.where((c) => c.archived == _showArchived).toList();
+        var list = s.chats.where((c) => c.archived == _showArchived && !c.locked).toList();
+        final lockedCount = s.chats.where((c) => c.locked).length;
         if (_filter == 1) list = list.where((c) => c.unread > 0).toList();
         if (_filter == 2) list = list.where((c) => c.isGroup).toList();
         if (_filter == 3) list = list.where((c) => c.pinned).toList();
@@ -108,6 +110,19 @@ class _ChatsTabState extends State<ChatsTab> {
                     ),
                   ),
                 ),
+              if (!_showArchived && lockedCount > 0 && _q.isEmpty && _filter == 0)
+                SliverToBoxAdapter(
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    leading: Icon(Icons.lock_outline_rounded, color: bc.text),
+                    title: Text('Locked chats', style: TextStyle(fontWeight: FontWeight.w700, color: bc.text)),
+                    trailing: Text('$lockedCount', style: TextStyle(color: context.primary, fontWeight: FontWeight.w700)),
+                    onTap: () async {
+                      if (!await unlockWithFingerprint('Open locked chats')) return;
+                      if (context.mounted) Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LockedChatsScreen()));
+                    },
+                  ),
+                ),
               if (!_showArchived && archivedCount > 0 && _q.isEmpty && _filter == 0)
                 SliverToBoxAdapter(
                   child: ListTile(
@@ -169,6 +184,16 @@ class _ChatRow extends StatelessWidget {
             onTap: () {
               Navigator.pop(context);
               showMuteDialog(context, chat);
+            },
+          ),
+          ListTile(
+            leading: Icon(chat.locked ? Icons.lock_open_rounded : Icons.lock_outline_rounded),
+            title: Text(chat.locked ? 'Unlock chat' : 'Lock chat'),
+            subtitle: chat.locked ? null : const Text('Hide it in Locked chats, open with fingerprint'),
+            onTap: () async {
+              Navigator.pop(context);
+              if (!await unlockWithFingerprint(chat.locked ? 'Unlock this chat' : 'Lock this chat')) return;
+              s.toggle(() => chat.locked = !chat.locked);
             },
           ),
           ListTile(
@@ -314,6 +339,39 @@ class _ChatRow extends StatelessWidget {
           ),
         ]),
       ),
+    );
+  }
+}
+
+
+/// Fingerprint / screen lock check. Phones without a lock pass straight through.
+Future<bool> unlockWithFingerprint(String reason) async {
+  try {
+    final auth = LocalAuthentication();
+    if (!await auth.isDeviceSupported()) return true;
+    return await auth.authenticate(localizedReason: reason, options: const AuthenticationOptions(biometricOnly: false, stickyAuth: true));
+  } catch (_) {
+    return false;
+  }
+}
+
+class LockedChatsScreen extends StatelessWidget {
+  const LockedChatsScreen({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final s = AppState.instance;
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) {
+        final list = s.chats.where((c) => c.locked).toList()
+          ..sort((a, b) => (b.last?.time ?? DateTime(0)).compareTo(a.last?.time ?? DateTime(0)));
+        return Scaffold(
+          appBar: AppBar(title: const Text('Locked chats')),
+          body: list.isEmpty
+              ? const Center(child: Text('No locked chats'))
+              : ListView.builder(itemCount: list.length, itemBuilder: (_, i) => _ChatRow(chat: list[i])),
+        );
+      },
     );
   }
 }

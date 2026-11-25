@@ -1,4 +1,5 @@
 import { push } from './chat';
+import { blocked } from './safety';
 import { Env, HttpError, json, now, randomId, readJson } from './util';
 
 type Me = { id: string };
@@ -17,7 +18,9 @@ export async function statusRoute(c: Ctx, me: Me, m: string, p: string): Promise
     const body = String(b.body ?? '');
     if (!body) throw new HttpError(400, 'BAD_STATUS');
     if (body.length > MAX_BODY) throw new HttpError(413, 'STATUS_TOO_LARGE', 'This photo is too large. Try a smaller one.');
-    const keys = Object.entries(b.keys ?? {}).filter(([v, k]) => typeof v === 'string' && typeof k === 'string' && k.length < 2000);
+    const all = Object.entries(b.keys ?? {}).filter(([v, k]) => typeof v === 'string' && typeof k === 'string' && k.length < 2000);
+    const keys: [string, string][] = [];
+    for (const kv of all) if (kv[0] === me.id || !(await blocked(env, me.id, kv[0]))) keys.push(kv);
     if (!keys.some(([v]) => v === me.id)) throw new HttpError(400, 'OWNER_KEY_MISSING');
     if (keys.length > MAX_VIEWERS + 1) throw new HttpError(400, 'TOO_MANY_VIEWERS');
     const id = randomId();

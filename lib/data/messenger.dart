@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:cryptography/cryptography.dart' show Sha512;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/io.dart';
@@ -86,6 +87,7 @@ class Messenger {
     unawaited(Push.instance.start());
     unawaited(StatusService.instance.refresh());
     unawaited(_pullPrivacy());
+    unawaited(_loadBlocks());
     unawaited(CallService.instance.loadLog());
     // Keeps "My contacts" privacy and contact names up to date.
     unawaited(ContactBook.instance.load().then((_) {}, onError: (_) {}));
@@ -94,6 +96,57 @@ class Messenger {
     _purge();
     _purgeTimer?.cancel();
     _purgeTimer = Timer.periodic(const Duration(seconds: 20), (_) => _purge());
+  }
+
+  // ------------------------------------------------------------------ block / report
+  final Set<String> blockedIds = {};
+
+  Future<void> _loadBlocks() async {
+    try {
+      final d = await Api.instance.request('GET', '/v1/blocks');
+      blockedIds
+        ..clear()
+        ..addAll([for (final x in (d['blocked'] as List? ?? [])) x.toString()]);
+      _s.changed();
+    } catch (_) {}
+  }
+
+  bool isBlocked(String? id) => id != null && blockedIds.contains(id);
+
+  Future<void> setBlocked(String id, bool block) async {
+    await Api.instance.request(block ? 'PUT' : 'DELETE', '/v1/blocks/$id');
+    block ? blockedIds.add(id) : blockedIds.remove(id);
+    _s.changed();
+  }
+
+  /// Report a user; optionally share their last 5 messages from this chat and block them.
+  Future<void> report(Chat chat, {required bool includeMessages, required bool alsoBlock}) async {
+    final evidence = includeMessages
+        ? [for (final m in chat.messages.where((m) => !m.fromMe && m.kind != MsgKind.system && !m.deleted).toList().reversed.take(5).toList().reversed) m.text]
+        : <String>[];
+    await Api.instance.request('POST', '/v1/reports', {'user': chat.peerId, 'reason': 'spam', 'evidence': evidence, 'block': alsoBlock});
+    if (alsoBlock) blockedIds.add(chat.peerId!);
+    _s.changed();
+  }
+
+  // ------------------------------------------------------------------ safety number
+  /// 60-digit number both people see; it matches only if no one swapped keys.
+  Future<String?> safetyNumber(String peerId) async {
+    final p = _peers[peerId];
+    if (p?.key == null || _uid == null) return null;
+    final mine = E2E.instance.publicKey;
+    final keys = [mine, p!.key!]..sort();
+    final digest = await Sha512().hash(utf8.encode('baatly-safety-v1|${keys[0]}|${keys[1]}'));
+    final b = digest.bytes;
+    final groups = <String>[];
+    for (var i = 0; i < 12; i++) {
+      var n = 0;
+      for (var j = 0; j < 5; j++) {
+        n = (n * 256 + b[i * 5 + j]) % 100000;
+      }
+      groups.add(n.toString().padLeft(5, '0'));
+    }
+    return groups.join(' ');
   }
 
   // ------------------------------------------------------------------ privacy & profile photo
@@ -402,6 +455,20 @@ class Messenger {
     final peer = Peer(id, name, phone, u['about'] as String? ?? '', u['x25519'] as String?)
       ..photoVer = p?.photoVer ?? 0
       ..photo = p?.photo;
+    if (p?.key != null && peer.key != null && p!.key != peer.key) {
+      // Like WhatsApp: tell the user their contact's security code changed (new phone / reinstall).
+      for (final c in _s.chats) {
+        if (c.peerId == id) {
+          c.messages.add(Message(
+            id: 'sys_key_${DateTime.now().millisecondsSinceEpoch}',
+            text: "${p.name}'s security code changed. Tap to verify.",
+            fromMe: false,
+            time: DateTime.now(),
+            kind: MsgKind.system,
+          ));
+        }
+      }
+    }
     _peers[id] = peer;
     final ver = (u['photo_ver'] as int?) ?? 0;
     if (ver != peer.photoVer || (ver > 0 && peer.photo == null)) await _syncPhoto(peer, ver);
@@ -562,7 +629,7 @@ class Messenger {
       }
       chat.messages.add(m);
       chat.messages.sort((a, b) => a.time.compareTo(b.time));
-      if (chat.archived && !chat.muted) chat.archived = false;
+      if (chat.archived && !_s.keepArchived) chat.archived = false;
       final open = _s.activeChatId == chat.id;
       if (!open) chat.unread++;
       _s.changed();

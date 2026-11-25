@@ -1,5 +1,6 @@
 import { deliver, push } from './chat';
 import { notify, pushConfigured } from './fcm';
+import { blocked, limit } from './safety';
 import { Env, HttpError, json, now, randomId, readJson } from './util';
 
 type Me = { id: string; name: string; phone: string };
@@ -53,6 +54,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     const b = await readJson<{ name: string; members: string[] }>(c.req);
     const name = String(b.name ?? '').trim().slice(0, 100);
     if (!name) throw new HttpError(400, 'GROUP_NAME_REQUIRED', 'Give the group a name.');
+    await limit(env, 'group', me.id, 20, 3600);
     const wanted = [...new Set((Array.isArray(b.members) ? b.members : []).map(String))].filter((x) => x !== me.id);
     if (!wanted.length) throw new HttpError(400, 'NO_MEMBERS', 'Add at least one member.');
     if (wanted.length + 1 > MAX_MEMBERS) throw new HttpError(400, 'TOO_MANY_MEMBERS', `Groups can have up to ${MAX_MEMBERS} members.`);
@@ -187,6 +189,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     }
     const msgId = String(b.msgId ?? '').slice(0, 64);
     if (!msgId) throw new HttpError(400, 'BAD_MESSAGE');
+    await limit(env, 'gmsg', me.id, 120, 60);
     const members = new Set(await memberIds(env, gid));
     const name = (await env.DB.prepare('SELECT name FROM groups WHERE id = ?').bind(gid).first<{ name: string }>())?.name ?? 'Group';
     let at = t;

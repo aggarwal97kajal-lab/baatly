@@ -1,5 +1,6 @@
 import { notify, pushConfigured } from './fcm';
 import { cleanPrivacy, presenceFor, publicView } from './privacy';
+import { blocked, limit } from './safety';
 import { Env, HttpError, fromB64url, json, now, randomId, readJson } from './util';
 
 type Me = { id: string; phone: string; name: string; username: string | null; about: string };
@@ -171,6 +172,7 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
 
   const pm = p.match(/^\/v1\/users\/([\w-]+)\/presence$/);
   if ((m === 'GET' || m === 'POST') && pm) {
+    if (await blocked(env, me.id, pm[1])) return json({ online: false, lastSeen: null });
     const h = hub(env, pm[1]);
     // POST = "I have this chat open": get pushed online/offline changes instantly.
     if (m === 'POST') await h.fetch('https://hub/watch', { method: 'POST', body: JSON.stringify({ watcher: me.id }) });
@@ -186,6 +188,9 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     if (!msgId || !body) throw new HttpError(400, 'BAD_MESSAGE');
     if (body.length > MAX_BODY) throw new HttpError(413, 'MESSAGE_TOO_LARGE');
     if (to === me.id || !(await userExists(env, to))) throw new HttpError(404, 'USER_NOT_FOUND');
+    await limit(env, 'msg', me.id, 120, 60);
+    // Blocked: pretend it was sent (like WhatsApp: one tick, never delivered).
+    if (await blocked(env, me.id, to)) return json({ ok: true, at: now() });
     const ev = await deliver(env, to, { type: 'msg', from: me.id, msgId, body });
     if (!b.silent && ev.live === 0 && pushConfigured(env)) {
       try {
@@ -216,6 +221,7 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
 
   if (m === 'POST' && p === '/v1/typing') {
     const b = await readJson<{ to: string; typing: boolean }>(c.req);
+    if (await blocked(env, me.id, String(b.to ?? ''))) return json({ ok: true });
     await push(env, String(b.to ?? ''), { type: 'typing', from: me.id, typing: !!b.typing });
     return json({ ok: true });
   }

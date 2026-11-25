@@ -21,6 +21,7 @@ import 'media_widgets.dart';
 import 'cards.dart';
 import 'group_screens.dart';
 import 'chat_tools.dart';
+import 'safety_screens.dart';
 import '../../data/calls.dart';
 import '../../data/media.dart';
 
@@ -519,7 +520,14 @@ class _ChatScreenState extends State<ChatScreen> {
                       ]);
                     }
                     final m = msgs[i - 1];
-                    if (m.kind == MsgKind.system) return _SystemPill(text: m.text);
+                    if (m.kind == MsgKind.system) {
+                      return GestureDetector(
+                        onTap: m.text.contains('security code') && chat.peerId != null
+                            ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SafetyNumberScreen(chat: chat)))
+                            : null,
+                        child: _SystemPill(text: m.text),
+                      );
+                    }
                     return _SwipeToReply(
                       key: ValueKey('sw_${m.id}'),
                       onReply: () {
@@ -538,6 +546,16 @@ class _ChatScreenState extends State<ChatScreen> {
               seconds: _recStart == null ? 0 : DateTime.now().difference(_recStart!).inSeconds,
               onCancel: () => _stopRecording(send: false),
               onSend: () => _stopRecording(send: true),
+            )
+          else if (Messenger.instance.isBlocked(chat.peerId))
+            InkWell(
+              onTap: () => confirmBlock(context, chat),
+              child: Container(
+                width: double.infinity,
+                color: bc.surface,
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: Text('You blocked this contact. Tap to unblock.', textAlign: TextAlign.center, style: TextStyle(color: bc.muted)),
+              ),
             )
           else if (chat.isRealGroup && !chat.left && !Messenger.instance.canSendInGroup(chat))
             Container(

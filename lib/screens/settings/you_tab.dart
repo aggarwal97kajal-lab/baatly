@@ -73,7 +73,8 @@ class YouTab extends StatelessWidget {
                             ? () => _passkeyInfo(context)
                             : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PasskeySetupScreen(next: const _PopBack())))),
                 _row(context, Icons.shield_outlined, 'Security'),
-                _row(context, Icons.chat_bubble_outline_rounded, 'Chats'),
+                _row(context, Icons.chat_bubble_outline_rounded, 'Chats',
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatsSettingsScreen()))),
                 _row(context, Icons.notifications_none_rounded, 'Notifications'),
                 _row(context, Icons.data_usage_rounded, 'Storage and data'),
                 _row(context, Icons.devices_rounded, 'Linked devices'),
@@ -243,5 +244,37 @@ class _PopBack extends StatelessWidget {
       if (Navigator.of(context).canPop()) Navigator.of(context).pop();
     });
     return const Scaffold(body: SizedBox.shrink());
+  }
+}
+
+
+class ChatsSettingsScreen extends StatelessWidget {
+  const ChatsSettingsScreen({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final s = AppState.instance;
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) => Scaffold(
+        appBar: AppBar(title: const Text('Chats')),
+        body: ListView(children: [
+          SwitchListTile(
+            title: const Text('Keep chats archived'),
+            subtitle: const Text('Archived chats will remain archived when you receive a new message'),
+            value: s.keepArchived,
+            onChanged: (v) => s.toggle(() => s.keepArchived = v),
+          ),
+          ListTile(
+            title: const Text('Chat wallpaper'),
+            subtitle: Text(s.wallpaper.label),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const WallpaperScreen())),
+          ),
+          ListTile(
+            title: const Text('Theme'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppearanceScreen())),
+          ),
+        ]),
+      ),
+    );
   }
 }

@@ -119,6 +119,8 @@ class Chat {
   String sendMessages = 'all';
   /// Pinned message (any chat).
   String? pinnedId;
+  /// Hidden behind fingerprint in "Locked chats".
+  bool locked = false;
   String? phone;
   /// Real chats only: "online" / "last seen …" from the server.
   String? presence;
@@ -179,6 +181,7 @@ class Chat {
         'ei': editInfo,
         'sm': sendMessages,
         if (pinnedId != null) 'pin': pinnedId,
+        if (locked) 'lk': true,
         'pinned': pinned,
         'archived': archived,
         'unread': unread,
@@ -213,6 +216,7 @@ class Chat {
     c.editInfo = j['ei'] as String? ?? 'admins';
     c.sendMessages = j['sm'] as String? ?? 'all';
     c.pinnedId = j['pin'] as String?;
+    c.locked = j['lk'] == true;
     c.disappear = (j['dis'] as int?) ?? 0;
     final mute = j['mute'] as int?;
     if (mute != null) c.mutedUntil = DateTime.fromMillisecondsSinceEpoch(mute);

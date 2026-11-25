@@ -27,6 +27,7 @@ import { deleteUserStatuses, expireStatuses, statusRoute } from './status';
 import { expireMedia, mediaConfigured, mediaRoute } from './media';
 import { groupRoute } from './groups';
 import { callRoute } from './calls';
+import { cleanupRateLimits, safetyRoute } from './safety';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
 type Ctx = { req: Request; env: Env; url: URL };
@@ -387,6 +388,7 @@ async function deleteAccount(c: Ctx) {
     c.env.DB.prepare('DELETE FROM push_tokens WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM user_contacts WHERE user_id = ? OR contact_id = ?').bind(user.id, user.id),
     c.env.DB.prepare('DELETE FROM group_members WHERE user_id = ?').bind(user.id),
+    c.env.DB.prepare('DELETE FROM blocks WHERE user_id = ? OR blocked_id = ?').bind(user.id, user.id),
     c.env.DB.prepare('DELETE FROM challenges WHERE user_id = ?').bind(user.id),
     c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
   ]);
@@ -433,6 +435,11 @@ async function route(c: Ctx): Promise<Response> {
   if (m === 'GET' && p === '/get') {
     return Response.redirect('https://github.com/aggarwal97kajal-lab/baatly/releases/latest/download/baatly.apk', 302);
   }
+  if (/^\/v1\/(blocks|reports)(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await safetyRoute(c, user, m, p);
+    if (r) return r;
+  }
   if (/^\/v1\/calls(\/|$)/.test(p)) {
     const { user } = await requireUser(c);
     const r = await callRoute(c, user, m, p);
@@ -469,6 +476,7 @@ export default {
   async scheduled(_ev: ScheduledController, env: Env): Promise<void> {
     await expireStatuses(env);
     await expireMedia(env);
+    await cleanupRateLimits(env);
   },
 
   async fetch(req: Request, env: Env): Promise<Response> {

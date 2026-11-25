@@ -8,6 +8,9 @@ import '../../widgets/common.dart';
 import '../../widgets/photo_viewer.dart';
 import 'starred_screen.dart';
 import 'chat_tools.dart';
+import 'safety_screens.dart';
+import '../settings/privacy_screen.dart';
+import '../../data/messenger.dart';
 import '../../data/calls.dart';
 import '../settings/wallpaper_screen.dart';
 
@@ -115,23 +118,52 @@ class ChatInfoScreen extends StatelessWidget {
               ListTile(
                 leading: Icon(Icons.timer_outlined, color: context.primary),
                 title: const Text('Disappearing messages'),
-                trailing: Text('Off', style: TextStyle(color: bc.muted)),
-                onTap: () => showComingSoon(context, 'Disappearing messages'),
+                trailing: Text(PrivacyScreen.timerLabel(chat.disappear), style: TextStyle(color: bc.muted)),
+                onTap: () async {
+                  var v = chat.disappear;
+                  final r = await showDialog<int>(
+                    context: context,
+                    builder: (d) => StatefulBuilder(
+                      builder: (d, setD) => AlertDialog(
+                        title: const Text('Disappearing messages'),
+                        content: RadioGroup<int>(
+                          groupValue: v,
+                          onChanged: (x) => setD(() => v = x ?? 0),
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            for (final o in const [86400, 604800, 7776000, 0])
+                              RadioListTile<int>(value: o, contentPadding: EdgeInsets.zero, title: Text(PrivacyScreen.timerLabel(o))),
+                          ]),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
+                          TextButton(onPressed: () => Navigator.pop(d, v), child: const Text('OK')),
+                        ],
+                      ),
+                    ),
+                  );
+                  if (r != null) s.toggle(() => chat.disappear = r);
+                },
               ),
               ListTile(
                 leading: Icon(Icons.lock_outline_rounded, color: context.primary),
                 title: const Text('Encryption'),
-                subtitle: const Text('Coming in the next milestone'),
-                onTap: () => showComingSoon(context, 'End-to-end encryption'),
+                subtitle: Text(chat.isReal ? 'Messages and calls are end-to-end encrypted. Tap to verify.' : 'Demo chat'),
+                onTap: chat.peerId == null ? null : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SafetyNumberScreen(chat: chat))),
               ),
             ]),
             const SizedBox(height: 12),
             _Card(children: [
               ListTile(
                 leading: const Icon(Icons.block_rounded, color: Color(0xFFB3261E)),
-                title: Text('Block ${chat.name}', style: const TextStyle(color: Color(0xFFB3261E))),
-                onTap: () => showComingSoon(context, 'Block'),
+                title: Text('${Messenger.instance.isBlocked(chat.peerId) ? 'Unblock' : 'Block'} ${chat.name}', style: const TextStyle(color: Color(0xFFB3261E))),
+                onTap: chat.peerId == null ? () => showComingSoon(context, 'Block') : () => confirmBlock(context, chat),
               ),
+              if (chat.peerId != null)
+                ListTile(
+                  leading: const Icon(Icons.thumb_down_alt_outlined, color: Color(0xFFB3261E)),
+                  title: Text('Report ${chat.name}', style: const TextStyle(color: Color(0xFFB3261E))),
+                  onTap: () => showReportDialog(context, chat),
+                ),
               ListTile(
                 leading: const Icon(Icons.delete_sweep_outlined, color: Color(0xFFB3261E)),
                 title: const Text('Clear chat', style: TextStyle(color: Color(0xFFB3261E))),

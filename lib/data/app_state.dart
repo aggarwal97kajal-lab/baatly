@@ -70,6 +70,8 @@ class AppState extends ChangeNotifier {
   int defaultTimer = 0;
   /// My profile photo on this phone.
   String? myPhoto;
+  /// Archived chats stay archived when new messages arrive.
+  bool keepArchived = true;
   /// People whose statuses I've hidden (user ids).
   Set<String> hiddenStatus = {};
 
@@ -160,6 +162,7 @@ class AppState extends ChangeNotifier {
       defaultTimer = p.getInt('defaultTimer') ?? 0;
       myPhoto = p.getString('myPhoto');
       hiddenStatus = (p.getStringList('hiddenStatus') ?? []).toSet();
+      keepArchived = p.getBool('keepArchived') ?? true;
     } catch (_) {
       // Storage unavailable (e.g. tests): fall back to defaults.
     }
@@ -189,6 +192,7 @@ class AppState extends ChangeNotifier {
     p.setString('privacy', jsonEncode(privacyJson()));
     p.setInt('defaultTimer', defaultTimer);
     p.setStringList('hiddenStatus', hiddenStatus.toList());
+    p.setBool('keepArchived', keepArchived);
     if (myPhoto == null) {
       p.remove('myPhoto');
     } else {

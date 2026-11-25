@@ -1,5 +1,6 @@
 import { push } from './chat';
 import { notify, pushConfigured } from './fcm';
+import { blocked, limit } from './safety';
 import { Env, HttpError, json, now, readJson } from './util';
 
 type Me = { id: string; name: string; phone: string };
@@ -42,6 +43,8 @@ export async function callRoute(c: Ctx, me: Me, m: string, p: string): Promise<R
     const offer = String(b.offer ?? '');
     if (!id || !offer || offer.length > 60_000) throw new HttpError(400, 'BAD_CALL');
     if (to === me.id || !(await env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(to).first())) throw new HttpError(404, 'USER_NOT_FOUND');
+    await limit(env, 'call', me.id, 20, 600);
+    if (await blocked(env, me.id, to)) throw new HttpError(403, 'CANT_CALL', "Couldn't place this call.");
     await env.DB.prepare('INSERT INTO calls (id, caller, callee, video, offer, created_at) VALUES (?,?,?,?,?,?)').bind(id, me.id, to, b.video ? 1 : 0, offer, t).run();
     const live = await push(env, to, { type: 'call', action: 'offer', callId: id, from: me.id, video: !!b.video, offer });
     if (pushConfigured(env)) {
