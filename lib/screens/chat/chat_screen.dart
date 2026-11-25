@@ -249,7 +249,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 _toast('Added to your stickers');
               case 'info':
                 _clearSel();
-                await Navigator.of(context).push(MaterialPageRoute(builder: (_) => MessageInfoScreen(chat: chat, m: one!, bubble: _InfoBubble(m: one))));
+                await Navigator.of(context).push(MaterialPageRoute(builder: (_) => MessageInfoScreen(chat: chat, m: one!, bubble: _InfoBubble(m: one!))));
                 return;
               case 'remind':
                 _clearSel();
