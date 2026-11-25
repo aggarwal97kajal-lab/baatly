@@ -16,6 +16,9 @@ dependencies:
   image_picker: ^1.1.0
   image_cropper: ^13.0.0
   google_mlkit_subject_segmentation: ^0.3.2
+  google_mlkit_translation: any
+  google_mlkit_language_id: any
+  whisper_ggml: any
   connectivity_plus: ^6.1.0
   gal: ^2.3.0
   google_sign_in: ^7.0.0

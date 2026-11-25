@@ -132,6 +132,9 @@ class Chat {
   /// Own colour / wallpaper for just this chat (null = app theme).
   int? themePalette;
   int? themeWallpaper;
+  /// Translate: show their messages in this language / send mine in this language (codes, null = off).
+  String? autoTranslate;
+  String? sendTranslate;
   /// My chat lists ("Family", "Office"…) this chat is in.
   Set<String> lists = {};
   String? phone;
@@ -201,6 +204,8 @@ class Chat {
         if (favourite) 'fav': true,
         if (themePalette != null) 'tp': themePalette,
         if (themeWallpaper != null) 'tw': themeWallpaper,
+        if (autoTranslate != null) 'atr': autoTranslate,
+        if (sendTranslate != null) 'str': sendTranslate,
         if (lists.isNotEmpty) 'ls': lists.toList(),
         if (locked) 'lk': true,
         'pinned': pinned,
@@ -240,6 +245,8 @@ class Chat {
     c.locked = j['lk'] == true;
     c.themePalette = j['tp'] as int?;
     c.themeWallpaper = j['tw'] as int?;
+    c.autoTranslate = j['atr'] as String?;
+    c.sendTranslate = j['str'] as String?;
     c.lists = {for (final x in (j['ls'] as List? ?? [])) x.toString()};
     c.favourite = j['fav'] == true;
     c.disappear = (j['dis'] as int?) ?? 0;

@@ -22,6 +22,7 @@ import 'calls.dart';
 import 'group_calls.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'status_service.dart';
+import 'channels.dart';
 
 /// Someone we chat with: their public key is cached so we can encrypt.
 class Peer {
@@ -504,6 +505,9 @@ class Messenger {
       case 'status':
         StatusService.instance.refreshSoon();
         ok = false;
+      case 'channel':
+        ChannelService.instance.onNewPost(ev['channel'] as String? ?? '');
+        ok = false;
       case 'sched_sent':
         _schedSent(ev['msgId'] as String? ?? '');
         ok = false;
@@ -929,7 +933,7 @@ class Messenger {
         't': m.text,
         'ts': m.time.millisecondsSinceEpoch,
         if (ttl > 0) 'ttl': ttl,
-        if (m.media != null) 'md': m.media,
+        if (m.media != null) 'md': ({...m.media!}..removeWhere((k, _) => const {'orig', 'tr', 'tx', 'sched'}.contains(k))),
       });
       if (!ok) return;
       if (m.status == MsgStatus.sending) m.status = MsgStatus.sent;
@@ -1686,6 +1690,14 @@ class Messenger {
     if (chat.archived) chat.archived = false;
     _s.changed();
     unawaited(_deliver(chat, m));
+  }
+
+  /// Uploads a photo for a channel post; returns the details followers need to open it.
+  Future<Map<String, dynamic>> uploadForChannel(String path) async {
+    final name = path.split('/').last;
+    final m = Message(id: _newId(), text: '', fromMe: true, time: DateTime.now(), kind: MsgKind.image, mediaPath: path, media: {'type': 'image', 'name': name, 'mime': MediaFiles.mime(name)});
+    await _uploadMedia(m);
+    return m.media!;
   }
 
   Future<void> _uploadMedia(Message m) async {

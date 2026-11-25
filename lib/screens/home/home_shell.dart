@@ -103,7 +103,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   static const _items = [
     (Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, 'Chats'),
-    (Icons.blur_circular_outlined, Icons.blur_circular_rounded, 'Status'),
+    (Icons.blur_circular_outlined, Icons.blur_circular_rounded, 'Updates'),
     (Icons.call_outlined, Icons.call_rounded, 'Calls'),
     (Icons.groups_outlined, Icons.groups_rounded, 'Community'),
     (Icons.person_outline_rounded, Icons.person_rounded, 'You'),

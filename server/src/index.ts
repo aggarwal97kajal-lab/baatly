@@ -31,6 +31,7 @@ import { groupCallRoute } from './gcalls';
 import { communityRoute } from './groups';
 import { gifRoute } from './gifs';
 import { supportRoute } from './support';
+import { channelRoute } from './channels';
 import { checkPinTicket, needsPin, startPinReset, twoStepRoute } from './twostep';
 import { cleanupRateLimits, safetyRoute } from './safety';
 
@@ -492,6 +493,11 @@ async function route(c: Ctx): Promise<Response> {
   if (/^\/v1\/communities(\/|$)/.test(p)) {
     const { user } = await requireUser(c);
     const r = await communityRoute(c, user, m, p);
+    if (r) return r;
+  }
+  if (/^\/v1\/channels(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await channelRoute(c, user, m, p);
     if (r) return r;
   }
   if (/^\/v1\/gcalls(\/|$)/.test(p)) {

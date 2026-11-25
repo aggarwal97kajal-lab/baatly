@@ -33,6 +33,8 @@ import 'camera_screen.dart';
 import 'safety_screens.dart';
 import 'message_tools.dart';
 import 'broadcast.dart';
+import 'translate_ui.dart';
+import '../../data/translate.dart';
 import '../../data/calls.dart';
 import '../../data/group_calls.dart';
 import '../../data/media.dart';
@@ -255,6 +257,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 return;
               case 'unremind':
                 await Messenger.instance.clearReminder(one!);
+              case 'translate':
+                _clearSel();
+                await translateMessage(context, chat, one!);
+                return;
+              case 'untranslate':
+                one!.media?.remove('tr');
+                AppState.instance.changed();
               case 'select':
                 setState(() => _sel.addAll(chat.messages.where((m) => m.kind != MsgKind.system && m.kind != MsgKind.call).map((m) => m.id)));
                 _hideReactBar();
@@ -274,6 +283,10 @@ class _ChatScreenState extends State<ChatScreen> {
               Messenger.instance.reminders.containsKey(one.id)
                   ? const PopupMenuItem(value: 'unremind', child: Text('Remove reminder'))
                   : const PopupMenuItem(value: 'remind', child: Text('Remind me')),
+            if (one != null && !one.deleted && one.kind == MsgKind.text && one.text.trim().isNotEmpty)
+              one.media?['tr'] != null
+                  ? const PopupMenuItem(value: 'untranslate', child: Text('Hide translation'))
+                  : const PopupMenuItem(value: 'translate', child: Text('Translate')),
             const PopupMenuItem(value: 'select', child: Text('Select all')),
           ],
         ),
@@ -822,10 +835,41 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) Messenger.instance.openChat(chat);
     });
+    AppState.instance.addListener(_autoTranslate);
+    _autoTranslate();
+  }
+
+  final Set<String> _trying = {};
+  bool _translating = false;
+
+  /// "Auto-translate this chat": translate their new text messages on this phone.
+  Future<void> _autoTranslate() async {
+    final to = chat.autoTranslate;
+    if (to == null || _translating || !mounted) return;
+    final todo = chat.messages.reversed
+        .where((m) => !m.fromMe && !m.deleted && m.kind == MsgKind.text && m.text.trim().isNotEmpty && m.media?['tr'] == null && !_trying.contains(m.id))
+        .take(30)
+        .toList();
+    if (todo.isEmpty) return;
+    _translating = true;
+    try {
+      for (final m in todo) {
+        _trying.add(m.id);
+        try {
+          final r = await Translate.instance.run(m.text, to: to);
+          if (r.from == to) continue;
+          (m.media ??= {})['tr'] = {'to': to, 'from': r.from, 't': r.text};
+        } catch (_) {}
+      }
+      if (mounted) AppState.instance.changed();
+    } finally {
+      _translating = false;
+    }
   }
 
   @override
   void dispose() {
+    AppState.instance.removeListener(_autoTranslate);
     if (AppState.instance.activeChatId == chat.id) AppState.instance.activeChatId = null;
     Messenger.instance.closeChat(chat);
     _hideReactBar();
@@ -859,6 +903,18 @@ class _ChatScreenState extends State<ChatScreen> {
       _replyTo = null;
       _lp = _lpFor = _lpOff = null;
     });
+    final to = chat.sendTranslate;
+    if (to != null && chat.isReal) {
+      // "Translate what I send": they get it in their language, I see what I wrote under it.
+      Translate.instance.run(text, to: to).then((r) {
+        final out = _replyTo == null && !full.startsWith('↪ ') ? r.text : '${full.split('\n').first}\n${r.text}';
+        Messenger.instance.send(chat, out, extra: r.from == to ? null : {'orig': text});
+      }).catchError((Object e) {
+        _toast(e is TranslateError ? '${e.message} · sent as written' : "Couldn't translate · sent as written");
+        AppState.instance.send(chat, full, lp: lp);
+      });
+      return;
+    }
     AppState.instance.send(chat, full, lp: lp);
   }
 
@@ -1047,6 +1103,7 @@ class _ChatScreenState extends State<ChatScreen> {
               if (v == 'search') Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatSearchScreen(chat: chat)));
               if (v == 'media') Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatMediaScreen(chat: chat)));
               if (v == 'theme') _chatTheme();
+              if (v == 'translate') translateSettings(context, chat).then((_) => _autoTranslate());
               if (v == 'info') {
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => chat.isRealGroup ? GroupInfoScreen(chat: chat) : ChatInfoScreen(chat: chat)));
               }
@@ -1056,6 +1113,7 @@ class _ChatScreenState extends State<ChatScreen> {
               const PopupMenuItem(value: 'search', child: Text('Search')),
               const PopupMenuItem(value: 'media', child: Text('Media, links and docs')),
               const PopupMenuItem(value: 'theme', child: Text('Chat theme')),
+              if (chat.isReal && !chat.isNotes) const PopupMenuItem(value: 'translate', child: Text('Translate')),
             ],
           ),
         ],
@@ -1231,6 +1289,22 @@ class _ChatScreenState extends State<ChatScreen> {
                 _lpOff = _lp!['u'] as String?;
                 _lp = null;
               })),
+            ),
+          if (chat.sendTranslate != null && !_recording)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: Row(children: [
+                Icon(Icons.translate_rounded, size: 15, color: context.primary),
+                const SizedBox(width: 6),
+                Expanded(child: Text('Sending in ${Translate.instance.nameOf(chat.sendTranslate!)}', style: TextStyle(color: context.primary, fontSize: 12.5))),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    chat.sendTranslate = null;
+                    AppState.instance.changed();
+                  }),
+                  child: Icon(Icons.close_rounded, size: 16, color: bc.muted),
+                ),
+              ]),
             ),
           _Composer(
             onAttach: _attach,
@@ -1478,7 +1552,10 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     } else if (m.kind == MsgKind.doc) {
       content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [DocContent(m: m, fg: fg), if (caption != null) caption]);
     } else if (m.kind == MsgKind.voice && (m.media != null || m.mediaPath != null)) {
-      content = VoiceContent(m: m, fg: fg, accent: me ? Colors.white24 : context.primary);
+      content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        VoiceContent(m: m, fg: fg, accent: me ? Colors.white24 : context.primary),
+        TranscriptLine(m: m, fg: fg, accent: me ? Colors.white : context.primary),
+      ]);
     } else if (m.kind == MsgKind.voice) {
       content = Row(mainAxisSize: MainAxisSize.min, children: [
         Container(
@@ -1521,6 +1598,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
           ),
         LinkText(quoted ? lines.skip(1).join('\n') : m.text,
             style: TextStyle(fontSize: 15, color: fg, height: 1.35), linkColor: me ? Colors.white : context.primary),
+        if (m.media?['tr'] is Map) TranslationLine(tr: (m.media!['tr'] as Map).cast<String, dynamic>(), fg: fg),
+        if (me && m.media?['orig'] is String) TranslationLine(tr: {'t': m.media!['orig'], 'label': 'You wrote'}, fg: fg),
       ]);
     }
 

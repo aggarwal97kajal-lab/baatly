@@ -17,6 +17,9 @@ import 'status_privacy_screen.dart';
 import 'status_audio.dart';
 import '../../data/status_service.dart';
 import '../../data/messenger.dart';
+import '../../data/channels.dart';
+import '../../config.dart';
+import 'channels_ui.dart';
 
 class StatusTab extends StatelessWidget {
   const StatusTab({super.key});
@@ -55,7 +58,10 @@ class StatusTab extends StatelessWidget {
           ]),
           body: SafeArea(
             child: RefreshIndicator(
-              onRefresh: () => StatusService.instance.refresh(),
+              onRefresh: () async {
+                await StatusService.instance.refresh();
+                await ChannelService.instance.refresh();
+              },
               child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 10, 8, 4),
@@ -155,6 +161,7 @@ class StatusTab extends StatelessWidget {
                   onTap: () => _showHidden(context, hiddenList),
                 ),
               ],
+              if (kHasBackend) const ChannelsSection(),
               const SizedBox(height: 90),
             ]),
             ),
