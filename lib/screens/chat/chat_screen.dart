@@ -364,8 +364,11 @@ class _ChatScreenState extends State<ChatScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      // Tall enough for every option (Delete for everyone was cut off before).
+      isScrollControlled: true,
       builder: (sheet) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Row(
@@ -449,6 +452,7 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
         ]),
+        ),
       ),
     );
   }
@@ -672,7 +676,20 @@ class _ChatScreenState extends State<ChatScreen> {
             EmojiPicker(
               textEditingController: _ctrl,
               onEmojiSelected: (_, __) => setState(() {}),
-              config: const Config(height: 280),
+              config: Config(
+                height: 280,
+                emojiViewConfig: EmojiViewConfig(backgroundColor: bc.bg, columns: 8, emojiSizeMax: 28),
+                categoryViewConfig: CategoryViewConfig(
+                  backgroundColor: bc.surface,
+                  indicatorColor: context.primary,
+                  iconColor: bc.muted,
+                  iconColorSelected: context.primary,
+                  backspaceColor: context.primary,
+                  dividerColor: bc.line,
+                ),
+                bottomActionBarConfig: BottomActionBarConfig(backgroundColor: bc.surface, buttonColor: bc.surface, buttonIconColor: bc.muted),
+                searchViewConfig: SearchViewConfig(backgroundColor: bc.surface, buttonIconColor: bc.muted),
+              ),
             ),
         ]),
       ),
