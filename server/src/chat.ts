@@ -4,7 +4,7 @@ import { blocked, limit } from './safety';
 import { Env, HttpError, fromB64url, json, now, randomId, readJson } from './util';
 
 type Me = { id: string; phone: string; name: string; username: string | null; about: string };
-type Ctx = { req: Request; env: Env; url: URL };
+type Ctx = { req: Request; env: Env; url: URL; later?: (p: Promise<unknown>) => void };
 
 const MAX_BODY = 64 * 1024;
 
@@ -36,10 +36,12 @@ export async function profileChanged(env: Env, userId: string) {
 export async function deliver(env: Env, to: string, event: Record<string, unknown>) {
   const id = randomId();
   const ev = { ...event, id, at: now() };
-  await env.DB.prepare('INSERT INTO inbox (id, to_user, event, created_at) VALUES (?,?,?,?)')
-    .bind(id, to, JSON.stringify(ev), now())
-    .run();
-  const live = await push(env, to, ev);
+  // Store (for offline phones) and push live at the same time. The phone
+  // de-duplicates if it gets the same event both ways.
+  const [, live] = await Promise.all([
+    env.DB.prepare('INSERT INTO inbox (id, to_user, event, created_at) VALUES (?,?,?,?)').bind(id, to, JSON.stringify(ev), now()).run(),
+    push(env, to, ev),
+  ]);
   return { ...ev, live };
 }
 
@@ -187,13 +189,14 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     const msgId = String(b.msgId ?? '').slice(0, 64);
     if (!msgId || !body) throw new HttpError(400, 'BAD_MESSAGE');
     if (body.length > MAX_BODY) throw new HttpError(413, 'MESSAGE_TOO_LARGE');
-    if (to === me.id || !(await userExists(env, to))) throw new HttpError(404, 'USER_NOT_FOUND');
-    await limit(env, 'msg', me.id, 120, 60);
+    // These checks run together to keep sending fast.
+    const [exists, isBlocked] = await Promise.all([to === me.id ? false : userExists(env, to), blocked(env, me.id, to), limit(env, 'msg', me.id, 120, 60)]);
+    if (!exists) throw new HttpError(404, 'USER_NOT_FOUND');
     // Blocked: pretend it was sent (like WhatsApp: one tick, never delivered).
-    if (await blocked(env, me.id, to)) return json({ ok: true, at: now() });
+    if (isBlocked) return json({ ok: true, at: now() });
     const ev = await deliver(env, to, { type: 'msg', from: me.id, msgId, body });
     if (!b.silent && ev.live === 0 && pushConfigured(env)) {
-      try {
+      const job = (async () => {
         await notify(env, to, me.name || me.phone, 'New message', {
           type: 'msg',
           chat: me.id,
@@ -203,9 +206,10 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
           // FCM data is limited to 4 KB; big ones (photos with previews) just say "New message".
           body: body.length < 3000 ? body : '',
         });
-      } catch (e) {
-        console.error('notify failed', e);
-      }
+      })().catch((e) => console.error('notify failed', e));
+      // Reply first; the push notification goes out right after.
+      if (c.later) c.later(job);
+      else await job;
     }
     return json({ ok: true, at: ev.at });
   }

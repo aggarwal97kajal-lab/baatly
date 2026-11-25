@@ -181,7 +181,14 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickDoc() async {
     FilePickerResult? r;
     try {
-      r = await FilePicker.platform.pickFiles();
+      // Documents first; the picker still lets you browse to any other file.
+      r = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const [
+          'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt', 'rtf', 'odt', 'ods', 'odp',
+          'zip', 'rar', '7z', 'apk', 'epub', 'json', 'xml', 'html',
+        ],
+      );
     } catch (_) {
       _toast("Couldn't open files");
       return;
@@ -278,7 +285,6 @@ class _ChatScreenState extends State<ChatScreen> {
               item(Icons.poll_rounded, 'Poll', const Color(0xFFE0A100), () => _card(const PollCreateScreen())),
               item(Icons.event_rounded, 'Event', const Color(0xFFD9467A), () => _card(const EventCreateScreen())),
               item(Icons.videocam_rounded, 'Video', const Color(0xFF3A8F6B), _pickVideo),
-              item(Icons.headphones_rounded, 'Audio', const Color(0xFFE07A30), _pickAudio),
             ],
           ),
         ),
@@ -446,9 +452,19 @@ class _ChatScreenState extends State<ChatScreen> {
             ListTile(
               leading: Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
               title: Text('Delete for everyone', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(sheet);
-                Messenger.instance.deleteForEveryone(chat, m);
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (d) => AlertDialog(
+                    title: const Text('Delete message for everyone?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('No')),
+                      TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Yes, delete', style: TextStyle(color: Color(0xFFB3261E)))),
+                    ],
+                  ),
+                );
+                if (ok == true) Messenger.instance.deleteForEveryone(chat, m);
               },
             ),
         ]),

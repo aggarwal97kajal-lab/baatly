@@ -123,7 +123,13 @@ class DocContent extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: fg)),
               const SizedBox(height: 2),
-              Text('${size > 0 ? MediaFiles.size(size) : ''}${ext.isEmpty ? '' : ' · $ext'}', style: TextStyle(fontSize: 11.5, color: fg.withOpacity(0.75))),
+              Text(
+                  m.busy && m.progress != null && size > 0
+                      ? '${MediaFiles.size((size * m.progress!).round())} / ${MediaFiles.size(size)} · ${(m.progress! * 100).round()}%'
+                      : m.busy
+                          ? 'Preparing…'
+                          : '${size > 0 ? MediaFiles.size(size) : ''}${ext.isEmpty ? '' : ' · $ext'}',
+                  style: TextStyle(fontSize: 11.5, color: fg.withOpacity(0.75))),
             ]),
           ),
           const SizedBox(width: 6),

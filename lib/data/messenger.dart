@@ -388,8 +388,13 @@ class Messenger {
       }
       if (done.isNotEmpty) await Api.instance.request('POST', '/v1/inbox/ack', {'ids': done});
       for (final c in _s.chats.where((c) => c.isReal).toList()) {
-        for (final m in c.messages.where((m) => m.fromMe && m.status == MsgStatus.sending).toList()) {
-          await _deliver(c, m);
+        for (final m in c.messages.where((m) => m.fromMe && m.status == MsgStatus.sending && !m.busy).toList()) {
+          // Files go in the background so text messages aren't stuck behind them.
+          if (_fileKinds.contains(m.kind)) {
+            unawaited(_deliver(c, m));
+          } else {
+            await _deliver(c, m);
+          }
         }
       }
     } catch (_) {
@@ -1364,7 +1369,7 @@ class Messenger {
           m.media!['h'] = t.$3;
         }
       }
-      final (key, blob) = await E2E.instance.lock(bytes);
+      final (key, blob) = await E2E.lockInBackground(bytes);
       m.progress = 0;
       final id = await Api.instance.upload(blob, onProgress: (p) {
         m.progress = p;
@@ -1392,7 +1397,7 @@ class Messenger {
         m.progress = p;
         _s.changed();
       });
-      final clear = await E2E.instance.unlock(blob, base64Decode(md['k'] as String));
+      final clear = await E2E.unlockInBackground(blob, base64Decode(md['k'] as String));
       final name = (md['name'] as String?) ?? 'file';
       final ext = MediaFiles.ext(name);
       final f = File('${(await MediaFiles.dir()).path}/${m.id}${ext.isEmpty ? '' : '.$ext'}');

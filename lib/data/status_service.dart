@@ -63,13 +63,13 @@ class StatusService {
       final payload = await _payload(st);
       if (st.audioPath != null && st.audio != null) {
         // The song goes to media storage (encrypted with its own key); the status carries the key.
-        final (ak, ablob) = await E2E.instance.lock(await File(st.audioPath!).readAsBytes());
+        final (ak, ablob) = await E2E.lockInBackground(await File(st.audioPath!).readAsBytes());
         final id = await Api.instance.upload(ablob);
         st.audio!['id'] = id;
         st.audio!['k'] = base64Encode(ak);
         payload['audio'] = {'id': id, 'k': base64Encode(ak), 'start': st.audio!['start'], 'dur': st.audio!['dur'], 'name': st.audio!['name']};
       }
-      final (key, blob) = await E2E.instance.lock(utf8.encode(jsonEncode(payload)));
+      final (key, blob) = await E2E.lockInBackground(utf8.encode(jsonEncode(payload)));
       final keys = <String, String>{};
       final k = {'k': base64Encode(key)};
       keys[me] = await E2E.instance.seal(k, E2E.instance.publicKey);
@@ -220,7 +220,7 @@ class StatusService {
       final f = File('${(await getTemporaryDirectory()).path}/status_audio_${a['id']}');
       if (!await f.exists()) {
         final blob = await Api.instance.download(a['id'] as String);
-        await f.writeAsBytes(await E2E.instance.unlock(blob, base64Decode(a['k'] as String)), flush: true);
+        await f.writeAsBytes(await E2E.unlockInBackground(blob, base64Decode(a['k'] as String)), flush: true);
       }
       st.audioPath = f.path;
       return f.path;

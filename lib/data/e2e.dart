@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -104,6 +105,12 @@ class E2E {
     final box = await _aead.encrypt(data, secretKey: key);
     return (await key.extractBytes(), [...box.nonce, ...box.cipherText, ...box.mac.bytes]);
   }
+
+  /// Same as [lock] but on a background isolate, so big files don't freeze the app
+  /// (and other messages keep sending meanwhile).
+  static Future<(List<int>, List<int>)> lockInBackground(List<int> data) => Isolate.run(() => E2E.detached().lock(data));
+
+  static Future<List<int>> unlockInBackground(List<int> blob, List<int> key) => Isolate.run(() => E2E.detached().unlock(blob, key));
 
   Future<List<int>> unlock(List<int> blob, List<int> key) {
     final nonce = blob.sublist(0, 12);

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart' as crypto;
@@ -69,34 +70,36 @@ class Api {
     } catch (_) {}
   }
 
-  /// Uploads encrypted bytes (with progress 0..1); returns the media id.
+  /// Uploads encrypted bytes (with real network progress 0..1); returns the media id.
   Future<String> upload(List<int> bytes, {void Function(double)? onProgress}) async {
-    final req = http.StreamedRequest('POST', Uri.parse('$kApiBase/v1/media'))
-      ..headers['content-type'] = 'application/octet-stream'
-      ..contentLength = bytes.length;
-    if (_token != null) req.headers['authorization'] = 'Bearer $_token';
-    final send = http.Client().send(req);
-    const chunk = 64 * 1024;
-    for (var i = 0; i < bytes.length; i += chunk) {
-      final end = i + chunk > bytes.length ? bytes.length : i + chunk;
-      req.sink.add(bytes.sublist(i, end));
-      onProgress?.call(end / bytes.length * 0.95);
-      await Future<void>.delayed(Duration.zero);
-    }
-    await req.sink.close();
-    http.Response r;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
     try {
-      r = await http.Response.fromStream(await send.timeout(const Duration(minutes: 5)));
+      final req = await client.postUrl(Uri.parse('$kApiBase/v1/media'));
+      req.headers.set('content-type', 'application/octet-stream');
+      if (_token != null) req.headers.set('authorization', 'Bearer $_token');
+      req.contentLength = bytes.length;
+      const chunk = 64 * 1024;
+      for (var i = 0; i < bytes.length; i += chunk) {
+        final end = i + chunk > bytes.length ? bytes.length : i + chunk;
+        req.add(bytes.sublist(i, end));
+        await req.flush(); // waits until it's actually sent
+        onProgress?.call(end / bytes.length);
+      }
+      final res = await req.close().timeout(const Duration(minutes: 2));
+      final body = await res.transform(utf8.decoder).join();
+      Map<String, dynamic> d = {};
+      try {
+        d = jsonDecode(body) as Map<String, dynamic>;
+      } catch (_) {}
+      if (res.statusCode >= 400) throw ApiException(res.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+      return d['id'] as String;
+    } on ApiException {
+      rethrow;
     } catch (_) {
       throw ApiException(0, 'NETWORK', "Couldn't upload. Check your internet.");
+    } finally {
+      client.close();
     }
-    Map<String, dynamic> d = {};
-    try {
-      d = jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (_) {}
-    if (r.statusCode >= 400) throw ApiException(r.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
-    onProgress?.call(1);
-    return d['id'] as String;
   }
 
   /// Downloads encrypted media bytes (with progress 0..1).
