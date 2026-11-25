@@ -67,7 +67,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onLongPress(Message m, BuildContext bubble) {
-    if (m.kind == MsgKind.system) return;
+    if (m.kind == MsgKind.system || m.kind == MsgKind.call) return;
     HapticFeedback.mediumImpact();
     setState(() => _sel.add(m.id));
     _hideReactBar();
@@ -242,7 +242,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 await StickerStore.instance.add(one!.mediaPath!);
                 _toast('Added to your stickers');
               case 'select':
-                setState(() => _sel.addAll(chat.messages.where((m) => m.kind != MsgKind.system).map((m) => m.id)));
+                setState(() => _sel.addAll(chat.messages.where((m) => m.kind != MsgKind.system && m.kind != MsgKind.call).map((m) => m.id)));
                 _hideReactBar();
                 return;
             }
@@ -988,6 +988,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       ]);
                     }
                     final m = msgs[i - 1];
+                    if (m.kind == MsgKind.call) {
+                      return CallRecordBubble(m: m, onTap: () => CallService.instance.start(chat, video: m.media?['v'] == true));
+                    }
                     if (m.kind == MsgKind.system) {
                       return GestureDetector(
                         onTap: m.text.contains('security code') && chat.peerId != null
@@ -1963,6 +1966,69 @@ class _WavePainter extends CustomPainter {
 
 
 /// Centered note in group chats ("Riya added Aman").
+/// "Voice call · 4 min" / "Missed video call · Tap to call back" inside a chat.
+class CallRecordBubble extends StatelessWidget {
+  final Message m;
+  final VoidCallback onTap;
+  const CallRecordBubble({super.key, required this.m, required this.onTap});
+
+  static String durText(int s) => s >= 60 ? '${s ~/ 60} min' : '$s sec';
+
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    final me = m.fromMe;
+    final video = m.media?['v'] == true;
+    final missed = m.media?['missed'] == true;
+    final dur = (m.media?['dur'] as int?) ?? 0;
+    final title = !me && missed ? (video ? 'Missed video call' : 'Missed voice call') : (video ? 'Video call' : 'Voice call');
+    final sub = !me && missed ? 'Tap to call back' : (missed || dur == 0 ? 'No answer' : durText(dur));
+    final bg = me ? bc.outBubble : bc.inBubble;
+    final fg = me ? bc.onOutBubble : bc.text;
+    final iconColor = !me && missed ? const Color(0xFFE5484D) : fg;
+    return Align(
+      alignment: me ? Alignment.centerRight : Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: Ink(
+              decoration: BoxDecoration(color: bg, gradient: me ? bc.accentGradient : null, borderRadius: BorderRadius.circular(16)),
+              padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(color: fg.withOpacity(0.12), shape: BoxShape.circle),
+                  child: Stack(alignment: Alignment.center, children: [
+                    Icon(video ? Icons.videocam_rounded : Icons.call_rounded, size: 20, color: iconColor),
+                    if (!me && missed) const Positioned(left: 4, bottom: 4, child: Icon(Icons.call_received_rounded, size: 12, color: Color(0xFFE5484D))),
+                    if (me) Positioned(left: 4, bottom: 4, child: Icon(Icons.call_made_rounded, size: 12, color: fg.withOpacity(0.8))),
+                  ]),
+                ),
+                const SizedBox(width: 10),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 120),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text(title, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: fg)),
+                    const SizedBox(height: 2),
+                    Text(sub, style: TextStyle(fontSize: 13, color: fg.withOpacity(0.75))),
+                  ]),
+                ),
+                const SizedBox(width: 10),
+                Text(hhmm(m.time), style: TextStyle(fontSize: 11, color: fg.withOpacity(0.7))),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SystemPill extends StatelessWidget {
   final String text;
   const _SystemPill({required this.text});

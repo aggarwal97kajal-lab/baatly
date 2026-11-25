@@ -62,6 +62,22 @@ export async function callRoute(c: Ctx, me: Me, m: string, p: string): Promise<R
     return json({ ok: true });
   }
 
+  // Recent calls (both directions), so a phone that was off can fill its call log and chat history.
+  if (m === 'GET' && p === '/v1/calls/recent') {
+    const since = Number(c.url.searchParams.get('since') ?? 0) || 0;
+    const rows = await env.DB.prepare(
+      'SELECT id, caller, callee, video, status, created_at, answered_at, ended_at FROM calls WHERE (caller = ? OR callee = ?) AND created_at > ? ORDER BY created_at DESC LIMIT 100',
+    ).bind(me.id, me.id, since).all<{ id: string; caller: string; callee: string; video: number; status: string; created_at: number; answered_at: number | null; ended_at: number | null }>();
+    const calls = rows.results
+      .map((r) => ({
+        ...r,
+        video: r.video === 1,
+        status: r.status === 'ringing' && t - r.created_at >= RING_MS ? 'missed' : r.status,
+      }))
+      .filter((r) => r.status !== 'ringing' && r.status !== 'answered');
+    return json({ calls });
+  }
+
   const g = p.match(/^\/v1\/calls\/([\w-]+)(\/signal)?$/);
   if (!g) return null;
   const call = await env.DB.prepare('SELECT * FROM calls WHERE id = ?').bind(g[1]).first<{
@@ -78,12 +94,25 @@ export async function callRoute(c: Ctx, me: Me, m: string, p: string): Promise<R
   if (m === 'POST' && g[2]) {
     const b = await readJson<{ action: string; data?: string }>(c.req);
     const action = String(b.action ?? '');
-    if (!['answer', 'ice', 'end', 'reject', 'ringing', 'busy'].includes(action)) throw new HttpError(400, 'BAD_ACTION');
+    if (!['answer', 'ice', 'end', 'reject', 'ringing', 'busy', 'reoffer', 'reanswer', 'cam'].includes(action)) throw new HttpError(400, 'BAD_ACTION');
     if (action === 'answer') await env.DB.prepare("UPDATE calls SET status = 'answered', answered_at = ? WHERE id = ?").bind(t, call.id).run();
     if (action === 'reject' || action === 'busy') await env.DB.prepare("UPDATE calls SET status = 'rejected', ended_at = ? WHERE id = ?").bind(t, call.id).run();
     if (action === 'end') {
-      const status = call.status === 'answered' ? 'ended' : 'missed';
+      const status = call.status === 'answered' ? 'ended' : call.status === 'rejected' ? 'rejected' : 'missed';
       await env.DB.prepare('UPDATE calls SET status = ?, ended_at = ? WHERE id = ?').bind(status, t, call.id).run();
+      // Caller gave up before it was picked up: tell the callee's phone (delivered whenever it's online).
+      if (status === 'missed' && call.status === 'ringing' && me.id === call.caller && pushConfigured(env)) {
+        try {
+          await notify(env, call.callee, me.name || me.phone, call.video === 1 ? 'Missed video call' : 'Missed voice call', {
+            type: 'missed_call',
+            callId: call.id,
+            from: me.id,
+            video: call.video === 1 ? '1' : '0',
+            phone: me.phone,
+            at: String(call.created_at),
+          });
+        } catch {}
+      }
     }
     await push(env, other, { type: 'call', action, callId: call.id, from: me.id, data: b.data ?? null });
     return json({ ok: true });

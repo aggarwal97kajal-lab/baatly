@@ -12,6 +12,10 @@ export const MAX_IN_CALL = 4;
 type Row = { id: string; group_id: string; creator: string; video: number; created_at: number; ended_at: number | null };
 
 async function groupMembers(env: Env, gid: string) {
+  if (gid.startsWith('adhoc:')) {
+    const a = await env.DB.prepare('SELECT user_id FROM adhoc_call_members WHERE call_id = ?').bind(gid.slice(6)).all<{ user_id: string }>();
+    return a.results.map((x) => x.user_id);
+  }
   const r = await env.DB.prepare('SELECT user_id FROM group_members WHERE group_id = ?').bind(gid).all<{ user_id: string }>();
   return r.results.map((x) => x.user_id);
 }
@@ -25,6 +29,38 @@ export async function groupCallRoute(c: Ctx, me: Me, m: string, p: string): Prom
   const env = c.env;
   const t = now();
   const bg = (x: Promise<unknown>) => (c.later ? c.later(x) : x.catch(() => {}));
+
+  // "Add person" on a 1:1 call: a small call between chosen people, no group needed.
+  if (m === 'POST' && p === '/v1/gcalls/adhoc') {
+    const b = await readJson<{ people: string[]; callId: string; video?: boolean; upgrade?: string; upgradePeer?: string }>(c.req);
+    const id = String(b.callId ?? '').slice(0, 64);
+    if (!id.startsWith('grp-')) throw new HttpError(400, 'BAD_CALL');
+    const people = [...new Set((b.people ?? []).map(String))].filter((u) => u !== me.id).slice(0, MAX_IN_CALL - 1);
+    if (!people.length) throw new HttpError(400, 'BAD_CALL');
+    await limit(env, 'gcall', me.id, 20, 600);
+    const gid = `adhoc:${id}`;
+    const stmts = [
+      env.DB.prepare('INSERT INTO group_calls (id, group_id, creator, video, created_at) VALUES (?,?,?,?,?)').bind(id, gid, me.id, b.video ? 1 : 0, t),
+      ...[me.id, ...people].map((u) => env.DB.prepare('INSERT OR IGNORE INTO adhoc_call_members (call_id, user_id) VALUES (?,?)').bind(id, u)),
+    ];
+    await env.DB.batch(stmts);
+    const upgrade = String(b.upgrade ?? '');
+    bg(
+      Promise.all(
+        people.map(async (u) => {
+          const live = await push(env, u, { type: 'gcall', action: 'ring', callId: id, groupId: gid, from: me.id, video: !!b.video, upgrade: u === b.upgradePeer ? upgrade : '', name: me.name || me.phone });
+          if (pushConfigured(env) && !(upgrade && u === b.upgradePeer)) {
+            try {
+              await notify(env, u, me.name || me.phone, b.video ? 'Group video call' : 'Group voice call', {
+                type: 'call', callId: id, from: me.id, group: gid, video: b.video ? '1' : '0', live: String(live),
+              });
+            } catch {}
+          }
+        }),
+      ),
+    );
+    return json({ callId: id, groupId: gid });
+  }
 
   // Start a call in a group (or join the one already running there).
   if (m === 'POST' && p === '/v1/gcalls') {

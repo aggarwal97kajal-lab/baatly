@@ -117,6 +117,34 @@ class GroupCallService {
     }
   }
 
+  /// "Add person" on a 1:1 call: turns it into a small call with the chosen people.
+  /// [upgrade] is the 1:1 call being replaced; that person's phone joins by itself.
+  Future<void> startAdhoc({required List<String> people, required String name, required bool video, String? upgrade, String? upgradePeer}) async {
+    final id = _newId();
+    try {
+      await Api.instance.request('POST', '/v1/gcalls/adhoc', {
+        'people': people,
+        'callId': id,
+        'video': video,
+        if (upgrade != null) 'upgrade': upgrade,
+        if (upgradePeer != null) 'upgradePeer': upgradePeer,
+      });
+    } catch (e) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx != null) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : "Couldn't add people")));
+      return;
+    }
+    if (upgrade != null) await CallService.instance.hangUp(reason: '', silent: true);
+    final s = GroupCallSession(id: id, groupId: 'adhoc:$id', groupName: name, outgoing: true, video: video, state: GroupCallState.joining);
+    current = s;
+    _open(s);
+    try {
+      await _join(s);
+    } catch (e) {
+      await leave(reason: e is ApiException ? e.message : "Couldn't start the call", toast: true);
+    }
+  }
+
   Future<void> _join(GroupCallSession s) async {
     await s.localView.initialize();
     s.local = await navigator.mediaDevices.getUserMedia({
@@ -227,10 +255,22 @@ class GroupCallService {
     final callId = ev['callId'] as String?;
     final from = ev['from'] as String? ?? '';
     if (action == 'ring') {
-      if (busy) return;
       final gid = ev['groupId'] as String? ?? '';
       final chat = Messenger.instance.chatById(gid);
-      _incoming(callId!, gid, chat?.name ?? 'Group call', ev['video'] == true, from);
+      final name = chat?.name ?? (gid.startsWith('adhoc:') ? '${ev['name'] ?? Messenger.instance.nameFor(from)} + others' : 'Group call');
+      final upgrade = ev['upgrade'] as String? ?? '';
+      final one = CallService.instance.current;
+      if (upgrade.isNotEmpty && one != null && one.id == upgrade && current == null) {
+        // The person I'm talking to added someone: move into the new call without ringing.
+        unawaited(() async {
+          await CallService.instance.hangUp(reason: '', remote: true, silent: true);
+          _incoming(callId!, gid, name, ev['video'] == true, from, quiet: true);
+          await accept();
+        }());
+        return;
+      }
+      if (busy) return;
+      _incoming(callId!, gid, name, ev['video'] == true, from);
       return;
     }
     final s = current;
@@ -291,10 +331,10 @@ class GroupCallService {
     } catch (_) {}
   }
 
-  void _incoming(String id, String gid, String name, bool video, String? from) {
+  void _incoming(String id, String gid, String name, bool video, String? from, {bool quiet = false}) {
     final s = GroupCallSession(id: id, groupId: gid, groupName: name, outgoing: false, video: video, state: GroupCallState.incoming)..ringFrom = from;
     current = s;
-    unawaited(Notifier.instance.ring(id, name, video));
+    if (!quiet) unawaited(Notifier.instance.ring(id, name, video));
     s._ringTimer = Timer(const Duration(seconds: 45), () {
       if (s.state == GroupCallState.incoming) unawaited(leave(reason: 'Missed group call', remote: true));
     });

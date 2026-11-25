@@ -1,7 +1,7 @@
 enum MsgStatus { sending, sent, delivered, read }
 
 /// Saved by index: only ever append new kinds.
-enum MsgKind { text, voice, image, doc, system, poll, location, contact, event, video }
+enum MsgKind { text, voice, image, doc, system, poll, location, contact, event, video, call }
 
 class Message {
   final String id;
@@ -242,7 +242,9 @@ class CallLog {
   /// Real calls: who, so you can call back.
   final String? peerId;
   final DateTime? at;
-  CallLog(this.name, this.initials, this.colorIndex, this.kind, this.video, this.when, {this.peerId, this.at});
+  /// Server call id (to avoid logging the same call twice).
+  final String? callId;
+  CallLog(this.name, this.initials, this.colorIndex, this.kind, this.video, this.when, {this.peerId, this.at, this.callId});
 
   Map<String, dynamic> toJson() => {
         'n': name,
@@ -253,6 +255,7 @@ class CallLog {
         'w': when,
         if (peerId != null) 'p': peerId,
         if (at != null) 'a': at!.millisecondsSinceEpoch,
+        if (callId != null) 'id': callId,
       };
   factory CallLog.fromJson(Map<String, dynamic> j) => CallLog(
         j['n'] as String? ?? '',
@@ -263,6 +266,7 @@ class CallLog {
         j['w'] as String? ?? '',
         peerId: j['p'] as String?,
         at: j['a'] is int ? DateTime.fromMillisecondsSinceEpoch(j['a'] as int) : null,
+        callId: j['id'] as String?,
       );
 }
 

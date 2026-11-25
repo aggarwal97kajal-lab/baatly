@@ -41,6 +41,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     Notifier.instance.onOpenChat = _openFromNotification;
+    Notifier.instance.onCallBack = _callBack;
     Notifier.instance.onOpenCall = (id) {
       Notifier.instance.pendingCall = null;
       CallService.instance.openIncoming(id);
@@ -53,6 +54,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         if (mounted) unawaited(offerRestore(context));
         final p = Notifier.instance.pendingChat;
         if (p != null) _openFromNotification(p);
+        final cb = Notifier.instance.pendingCallBack;
+        if (cb != null) _callBack(cb.peer, cb.video);
+        unawaited(CallService.instance.syncRecent());
         final call = Notifier.instance.pendingCall;
         if (call != null) {
           Notifier.instance.pendingCall = null;
@@ -62,6 +66,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     } else {
       AppState.instance.startDemoActivity();
     }
+  }
+
+  Future<void> _callBack(String peer, bool video) async {
+    Notifier.instance.pendingCallBack = null;
+    final chat = await Messenger.instance.chatForUser(peer);
+    if (chat != null) await CallService.instance.start(chat, video: video);
   }
 
   void _openFromNotification(String id) {
@@ -87,6 +97,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       Messenger.instance.resume();
       unawaited(BackupService.instance.maybeAuto());
+      unawaited(CallService.instance.syncRecent());
     }
   }
 

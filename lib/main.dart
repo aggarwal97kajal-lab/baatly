@@ -6,6 +6,7 @@ import 'data/app_state.dart';
 import 'data/notifier.dart';
 import 'widgets/app_lock.dart';
 import 'nav.dart';
+import 'screens/call/call_screen.dart';
 import 'config.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'screens/home/home_shell.dart';
@@ -49,7 +50,7 @@ class BaatlyApp extends StatelessWidget {
           final mq = MediaQuery.of(context);
           return MediaQuery(
             data: mq.copyWith(disableAnimations: mq.disableAnimations || state.reduceMotion),
-            child: AppLockGate(child: child!),
+            child: CallBarHost(child: AppLockGate(child: child!)),
           );
         },
         // Animated splash + onboarding only on first launch; afterwards straight to chats.

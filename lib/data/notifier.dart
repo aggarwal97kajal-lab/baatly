@@ -66,6 +66,10 @@ class Notifier {
         final j = jsonDecode(p) as Map;
         pendingChat = j['chat'] as String?;
         pendingCall = j['call'] as String?;
+        if (j['cb'] != null && launch?.notificationResponse?.actionId == 'call_back') {
+          pendingCallBack = (peer: j['chat'] as String, video: j['cb'] == 'v');
+          pendingChat = null;
+        }
       }
     } catch (_) {}
   }
@@ -123,6 +127,50 @@ class Notifier {
   Future<void> ring(String callId, String name, bool video) =>
       _showCall({'callId': callId, 'title': name, 'video': video ? '1' : '0'}, knownName: true);
 
+  /// Missed call: shown once per call (same id replaces), with Call back / Message.
+  Future<void> showMissedCall(String callId, String from, String fallbackName, bool video) async {
+    await init();
+    var name = fallbackName;
+    try {
+      await Api.instance.load();
+      final uid = Api.instance.userId;
+      if (uid != null) {
+        final peers = ((await _localData(uid))['peers'] as Map?)?.cast<String, dynamic>() ?? {};
+        final n = (peers[from] as Map?)?['name'] as String?;
+        if (n != null && n.isNotEmpty) name = n;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final seen = prefs.getStringList('missed_shown') ?? <String>[];
+      if (seen.contains(callId)) return;
+      await prefs.setStringList('missed_shown', [...seen.take(50), callId]);
+    } catch (_) {}
+    await _plugin.show(
+      _idFor('missed_$callId'),
+      name.isEmpty ? 'BAATLY' : name,
+      video ? 'Missed video call' : 'Missed voice call',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channel.id,
+          _channel.name,
+          channelDescription: _channel.description,
+          importance: Importance.high,
+          priority: Priority.high,
+          category: AndroidNotificationCategory.message,
+          actions: const [
+            AndroidNotificationAction('call_back', 'Call back', showsUserInterface: true),
+            AndroidNotificationAction('open_msg', 'Message', showsUserInterface: true),
+          ],
+        ),
+      ),
+      payload: jsonEncode({'chat': from, 'from': from, 'cb': video ? 'v' : 'a', 'nid': 'missed_$callId'}),
+    );
+  }
+
+  /// "Call back" tapped on a missed-call notification.
+  ({String peer, bool video})? pendingCallBack;
+  void Function(String peer, bool video)? onCallBack;
+
   Future<void> stopRing() async {
     try {
       await _plugin.cancel(_idFor('call'));
@@ -175,7 +223,26 @@ class Notifier {
 
   /// Decrypts the pushed message on this phone and shows it.
   Future<void> showFromPush(Map<String, dynamic> data) async {
+    if (data['type'] == 'missed_call') {
+      await showMissedCall(data['callId'] as String? ?? '', data['from'] as String? ?? '', data['title'] as String? ?? '', data['video'] == '1');
+      return;
+    }
     if (data['type'] == 'call') {
+      final id = data['callId'] as String? ?? '';
+      // A call push can arrive late (phone was offline). Ring only if it's still ringing,
+      // otherwise it's a missed call. Tell the caller we're ringing ("Ringing…" on their screen).
+      if (!id.startsWith('grp-') && data['group'] == null) {
+        try {
+          await Api.instance.load();
+          final d = await Api.instance.request('GET', '/v1/calls/$id');
+          final st = (d['call'] as Map?)?['status'];
+          if (st != 'ringing') {
+            if (st == 'missed') await showMissedCall(id, data['from'] as String? ?? '', data['title'] as String? ?? '', data['video'] == '1');
+            return;
+          }
+          await Api.instance.request('POST', '/v1/calls/$id/signal', {'action': 'ringing'});
+        } catch (_) {}
+      }
       await _showCall(data);
       return;
     }
@@ -291,6 +358,19 @@ class Notifier {
       }
       pendingCall = call;
       onOpenCall?.call(call);
+      return;
+    }
+    if (p['cb'] != null) {
+      try {
+        await _plugin.cancel(_idFor(p['nid'] as String? ?? ''));
+      } catch (_) {}
+      if (r.actionId == 'call_back') {
+        pendingCallBack = (peer: chat, video: p['cb'] == 'v');
+        onCallBack?.call(chat, p['cb'] == 'v');
+        return;
+      }
+      pendingChat = chat;
+      onOpenChat?.call(chat);
       return;
     }
     if (r.actionId == 'reply') {

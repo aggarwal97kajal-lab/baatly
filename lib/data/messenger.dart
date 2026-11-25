@@ -587,6 +587,34 @@ class Messenger {
     }
   }
 
+  /// Puts a call into the chat history ("Voice call · 4 min", "Missed video call").
+  /// Same call id twice is ignored.
+  Future<void> addCallRecord(String peerId, String callId,
+      {required bool video, required bool outgoing, required bool missed, int seconds = 0, DateTime? at, bool countUnread = true}) async {
+    final chat = await chatForUser(peerId);
+    if (chat == null) return;
+    final id = 'call-$callId';
+    if (chat.messages.any((m) => m.id == id)) return;
+    final when = at ?? DateTime.now();
+    final m = Message(
+      id: id,
+      text: video ? 'Video call' : 'Voice call',
+      fromMe: outgoing,
+      time: when,
+      kind: MsgKind.call,
+      readSent: true,
+      media: {'cid': callId, 'v': video, 'missed': missed, 'dur': seconds},
+    );
+    var i = chat.messages.length;
+    while (i > 0 && chat.messages[i - 1].time.isAfter(when)) {
+      i--;
+    }
+    chat.messages.insert(i, m);
+    if (missed && !outgoing && countUnread && _s.activeChatId != chat.id) chat.unread++;
+    _s.changed();
+    await _saveNow();
+  }
+
   /// Profile photo of a user, if we have it.
   String? photoOf(String id) => _peers[id]?.photo;
 
@@ -1582,7 +1610,7 @@ class Messenger {
 
   void markRead(Chat chat) {
     if (!_s.readReceipts) return;
-    final unread = [for (final m in chat.messages) if (!m.fromMe && !m.readSent && m.kind != MsgKind.system) m];
+    final unread = [for (final m in chat.messages) if (!m.fromMe && !m.readSent && m.kind != MsgKind.system && m.kind != MsgKind.call) m];
     if (unread.isEmpty) return;
     for (final m in chat.messages) {
       if (!m.fromMe) m.readSent = true;

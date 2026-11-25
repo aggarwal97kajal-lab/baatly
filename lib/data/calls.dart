@@ -39,6 +39,9 @@ class CallSession extends ChangeNotifier {
   DateTime? connectedAt;
   Timer? _ringTimer, _tick;
   bool screenOpen = false;
+  final DateTime started = DateTime.now();
+  /// Minimised to a bar (call keeps going while you use the app).
+  bool minimised = false;
 
   CallSession({required this.id, required this.peerId, required this.peerName, required this.outgoing, required this.video, required this.state});
 
@@ -63,7 +66,15 @@ class CallService {
   CallService._();
   static final CallService instance = CallService._();
 
-  CallSession? current;
+  CallSession? _current;
+  CallSession? get current => _current;
+  set current(CallSession? s) {
+    _current = s;
+    active.value = s;
+  }
+
+  /// The call in progress (for the "tap to return to call" bar).
+  final active = ValueNotifier<CallSession?>(null);
   final _rnd = Random.secure();
 
   String _newId() => base64Url.encode(List<int>.generate(12, (_) => _rnd.nextInt(256))).replaceAll('=', '');
@@ -176,6 +187,15 @@ class CallService {
         s.changed();
         final d = jsonDecode(ev['data'] as String) as Map<String, dynamic>;
         unawaited(s.pc?.setRemoteDescription(RTCSessionDescription(d['sdp'] as String, d['type'] as String)));
+      case 'reoffer':
+        unawaited(_onReoffer(s, ev['data'] as String));
+      case 'reanswer':
+        final d = jsonDecode(ev['data'] as String) as Map<String, dynamic>;
+        unawaited(s.pc?.setRemoteDescription(RTCSessionDescription(d['sdp'] as String, d['type'] as String)));
+      case 'cam':
+        s.remoteVideo = ev['data'] == 'on';
+        if (s.remoteVideo) s.video = true;
+        s.changed();
       case 'reject':
         unawaited(hangUp(reason: 'Declined', remote: true));
       case 'busy':
@@ -254,14 +274,67 @@ class CallService {
     s.changed();
   }
 
-  void toggleCamera() {
+  void toggleCamera() => unawaited(toggleVideo());
+
+  /// Video button: turn my camera on (adds video to a voice call) or off.
+  Future<void> toggleVideo() async {
     final s = current;
-    if (s == null) return;
-    s.cameraOff = !s.cameraOff;
-    for (final t in s.local?.getVideoTracks() ?? <MediaStreamTrack>[]) {
-      t.enabled = !s.cameraOff;
+    if (s == null || s.pc == null || s.local == null) return;
+    final tracks = s.local!.getVideoTracks();
+    if (tracks.isNotEmpty) {
+      s.cameraOff = !s.cameraOff;
+      for (final t in tracks) {
+        t.enabled = !s.cameraOff;
+      }
+      s.changed();
+      unawaited(_signal(s, 'cam', s.cameraOff ? 'off' : 'on'));
+      return;
     }
+    try {
+      final cam = await navigator.mediaDevices.getUserMedia({
+        'audio': false,
+        'video': {'facingMode': 'user', 'width': 640, 'height': 480},
+      });
+      final t = cam.getVideoTracks().first;
+      await s.local!.addTrack(t);
+      await s.pc!.addTrack(t, s.local!);
+      s.localView.srcObject = s.local;
+      s.video = true;
+      s.cameraOff = false;
+      if (!s.speaker) speaker(s, true);
+      s.changed();
+      final offer = await s.pc!.createOffer();
+      await s.pc!.setLocalDescription(offer);
+      await _signal(s, 'reoffer', await _gathered(s.pc!));
+      unawaited(_signal(s, 'cam', 'on'));
+    } catch (_) {}
+  }
+
+  Future<void> _onReoffer(CallSession s, String data) async {
+    try {
+      final o = jsonDecode(data) as Map<String, dynamic>;
+      await s.pc!.setRemoteDescription(RTCSessionDescription(o['sdp'] as String, o['type'] as String));
+      final answer = await s.pc!.createAnswer();
+      await s.pc!.setLocalDescription(answer);
+      await _signal(s, 'reanswer', await _gathered(s.pc!));
+    } catch (_) {}
+  }
+
+  /// Minimise: keep talking while using the rest of the app.
+  void minimise() {
+    final s = current;
+    if (s == null || !s.screenOpen) return;
+    s.screenOpen = false;
+    s.minimised = true;
+    navigatorKey.currentState?.pop();
     s.changed();
+  }
+
+  void restore() {
+    final s = current;
+    if (s == null || s.screenOpen) return;
+    s.minimised = false;
+    _open(s);
   }
 
   Future<void> switchCamera() async {
@@ -302,7 +375,11 @@ class CallService {
     try {
       Helper.setSpeakerphoneOn(false);
     } catch (_) {}
-    _log(s, missed: !s.outgoing && !wasConnected && (wasIncoming || reason == 'Missed call'), seconds: dur);
+    final missedIn = !s.outgoing && !wasConnected && (wasIncoming || reason == 'Missed call') && reason != 'Declined';
+    _log(s, missed: missedIn, seconds: dur);
+    unawaited(Messenger.instance.addCallRecord(s.peerId, s.id,
+        video: s.video, outgoing: s.outgoing, missed: s.outgoing ? !wasConnected : (missedIn || !wasConnected), seconds: dur, at: s.started));
+    if (missedIn) unawaited(Notifier.instance.showMissedCall(s.id, s.peerId, s.peerName, s.video));
     await Future<void>.delayed(const Duration(milliseconds: 1200));
     if (current == s) current = null;
     final nav = navigatorKey.currentState;
@@ -339,26 +416,87 @@ class CallService {
     } catch (_) {}
   }
 
-  void _log(CallSession c, {required bool missed, required int seconds}) {
+  static String _whenText(DateTime at, bool missed, int seconds) {
     final now = DateTime.now();
-    final h = now.hour % 12 == 0 ? 12 : now.hour % 12;
-    final time = '$h:${now.minute.toString().padLeft(2, '0')} ${now.hour < 12 ? 'AM' : 'PM'}';
+    final h = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    final time = '$h:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(at.year, at.month, at.day);
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    final d = day == today ? 'Today' : (day == today.subtract(const Duration(days: 1)) ? 'Yesterday' : '${at.day} ${months[at.month - 1]}');
     final dur = seconds > 0 ? ' · ${seconds ~/ 60 > 0 ? '${seconds ~/ 60} min' : '$seconds sec'}' : '';
-    final entry = CallLog(
-      c.peerName,
-      Messenger.initialsOf(c.peerName),
-      c.peerId.codeUnits.fold<int>(0, (a, b) => a + b) % 7,
-      missed ? CallKind.missed : (c.outgoing ? CallKind.outgoing : CallKind.incoming),
-      c.video,
-      '${missed ? 'Missed · ' : ''}Today, $time$dur',
-      peerId: c.peerId,
-      at: now,
-    );
+    return '${missed ? 'Missed · ' : ''}$d, $time$dur';
+  }
+
+  void _log(CallSession c, {required bool missed, required int seconds}) =>
+      _addLog(c.peerId, c.peerName, c.id, video: c.video, outgoing: c.outgoing, missed: missed, seconds: seconds, at: c.started);
+
+  void _addLog(String peerId, String name, String callId,
+      {required bool video, required bool outgoing, required bool missed, required int seconds, required DateTime at}) {
     final s = AppState.instance;
-    s.calls.insert(0, entry);
+    if (s.calls.any((e) => e.callId == callId)) return;
+    final entry = CallLog(
+      name,
+      Messenger.initialsOf(name),
+      peerId.codeUnits.fold<int>(0, (a, b) => a + b) % 7,
+      missed ? CallKind.missed : (outgoing ? CallKind.outgoing : CallKind.incoming),
+      video,
+      _whenText(at, missed, seconds),
+      peerId: peerId,
+      at: at,
+      callId: callId,
+    );
+    var i = 0;
+    while (i < s.calls.length && (s.calls[i].at ?? DateTime(2000)).isAfter(at)) {
+      i++;
+    }
+    s.calls.insert(i, entry);
     s.changed();
     final uid = Api.instance.userId;
     if (uid == null) return;
     unawaited(SharedPreferences.getInstance().then((p) => p.setStringList('calls_$uid', [for (final e in s.calls.take(100)) jsonEncode(e.toJson())])));
+  }
+
+  /// Calls that happened while this phone was off / app closed: fill the call log,
+  /// chat history and show missed-call notifications.
+  bool _syncing = false;
+  Future<void> syncRecent() async {
+    final uid = Api.instance.userId;
+    if (uid == null || _syncing) return;
+    _syncing = true;
+    try {
+      final p = await SharedPreferences.getInstance();
+      final key = 'calls_sync_$uid';
+      final last = p.getInt(key) ?? DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
+      final d = await Api.instance.request('GET', '/v1/calls/recent?since=${last - 120000}');
+      var newest = last;
+      for (final raw in (d['calls'] as List? ?? []).reversed) {
+        final c = (raw as Map).cast<String, dynamic>();
+        final id = c['id'] as String;
+        if (current?.id == id) continue;
+        final created = (c['created_at'] as num).toInt();
+        if (created > newest) newest = created;
+        final outgoing = c['caller'] == uid;
+        final peer = (outgoing ? c['callee'] : c['caller']) as String;
+        final status = c['status'] as String? ?? '';
+        final video = c['video'] == true;
+        final ans = (c['answered_at'] as num?)?.toInt();
+        final end = (c['ended_at'] as num?)?.toInt();
+        final seconds = status == 'ended' && ans != null && end != null ? ((end - ans) ~/ 1000) : 0;
+        final missed = status != 'ended';
+        final at = DateTime.fromMillisecondsSinceEpoch(created);
+        final name = Messenger.instance.nameFor(peer);
+        final alreadyLogged = AppState.instance.calls.any((e) => e.callId == id);
+        _addLog(peer, name, id, video: video, outgoing: outgoing, missed: !outgoing && status == 'missed', seconds: seconds, at: at);
+        await Messenger.instance.addCallRecord(peer, id, video: video, outgoing: outgoing, missed: missed, seconds: seconds, at: at);
+        if (!alreadyLogged && !outgoing && status == 'missed') {
+          await Notifier.instance.showMissedCall(id, peer, name, video);
+        }
+      }
+      await p.setInt(key, newest);
+    } catch (_) {
+    } finally {
+      _syncing = false;
+    }
   }
 }

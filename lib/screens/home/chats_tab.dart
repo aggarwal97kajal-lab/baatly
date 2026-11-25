@@ -261,6 +261,11 @@ class _ChatRow extends StatelessWidget {
       preview = m.fromMe ? 'You deleted this message' : 'This message was deleted';
     } else if (m != null && m.kind == MsgKind.system) {
       preview = m.text;
+    } else if (m != null && m.kind == MsgKind.call) {
+      final v = m.media?['v'] == true;
+      final missed = m.media?['missed'] == true;
+      pIcon = v ? Icons.videocam_rounded : Icons.call_rounded;
+      preview = !m.fromMe && missed ? (v ? 'Missed video call' : 'Missed voice call') : (v ? 'Video call' : 'Voice call');
     } else if (m != null && m.kind == MsgKind.poll) {
       pIcon = Icons.poll_rounded;
       preview = (m.media?['q'] as String?) ?? 'Poll';
