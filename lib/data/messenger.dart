@@ -20,6 +20,7 @@ import 'push.dart';
 import 'notifier.dart';
 import 'calls.dart';
 import 'group_calls.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'status_service.dart';
 
 /// Someone we chat with: their public key is cached so we can encrypt.
@@ -466,7 +467,7 @@ class Messenger {
     final peer = Peer(id, name, phone, u['about'] as String? ?? '', u['x25519'] as String?)
       ..photoVer = p?.photoVer ?? 0
       ..photo = p?.photo;
-    if (p?.key != null && peer.key != null && p!.key != peer.key) {
+    if (p?.key != null && peer.key != null && p!.key != peer.key && _s.securityNotices) {
       // Like WhatsApp: tell the user their contact's security code changed (new phone / reinstall).
       for (final c in _s.chats) {
         if (c.peerId == id) {
@@ -634,10 +635,8 @@ class Messenger {
         media: md,
         expiresAt: ttl > 0 ? DateTime.now().add(Duration(seconds: ttl)) : null,
       )..from = from;
-      // Photos and voice notes download automatically (small); documents on tap.
-      if ((kind == MsgKind.image || kind == MsgKind.voice) && md?['once'] != true && ((md?['size'] as int?) ?? 0) < 16 * 1024 * 1024) {
-        unawaited(downloadMedia(m));
-      }
+      // Auto-download as set in Storage and data (stickers always: they're tiny).
+      if (md != null && md['once'] != true) unawaited(_autoDownload(m));
       chat.messages.add(m);
       chat.messages.sort((a, b) => a.time.compareTo(b.time));
       if (chat.archived && !_s.keepArchived) chat.archived = false;
@@ -1386,6 +1385,32 @@ class Messenger {
       m.busy = false;
       _s.changed();
     }
+  }
+
+  Future<void> _autoDownload(Message m) async {
+    final md = m.media!;
+    final size = (md['size'] as int?) ?? 0;
+    if (md['stk'] == true) {
+      await downloadMedia(m);
+      return;
+    }
+    final rule = switch (m.kind) {
+      MsgKind.image => _s.autoPhotos,
+      MsgKind.voice => md['audio'] == true ? _s.autoDocs : _s.autoAudio,
+      MsgKind.video => _s.autoVideos,
+      MsgKind.doc => _s.autoDocs,
+      _ => 0,
+    };
+    if (rule == 0 || size > 100 * 1024 * 1024) return;
+    if (rule == 1) {
+      try {
+        final c = await Connectivity().checkConnectivity();
+        if (!c.contains(ConnectivityResult.wifi) && !c.contains(ConnectivityResult.ethernet)) return;
+      } catch (_) {
+        return;
+      }
+    }
+    await downloadMedia(m);
   }
 
   /// Downloads + decrypts a received file to this phone.

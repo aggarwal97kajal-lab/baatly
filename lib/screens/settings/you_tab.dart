@@ -12,6 +12,7 @@ import 'privacy_screen.dart';
 import '../chat/starred_screen.dart';
 import 'profile_photo.dart';
 import 'wallpaper_screen.dart';
+import 'more_settings.dart';
 
 class YouTab extends StatelessWidget {
   const YouTab({super.key});
@@ -61,7 +62,7 @@ class YouTab extends StatelessWidget {
               ]),
               const SizedBox(height: 12),
               _Group(children: [
-                _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone),
+                _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen()))),
                 _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrivacyScreen()))),
                 _row(context, Icons.star_outline_rounded, 'Starred messages',
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StarredScreen()))),
@@ -72,12 +73,12 @@ class YouTab extends StatelessWidget {
                         : Api.instance.hasFingerprint
                             ? () => _passkeyInfo(context)
                             : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PasskeySetupScreen(next: const _PopBack())))),
-                _row(context, Icons.shield_outlined, 'Security'),
+                _row(context, Icons.shield_outlined, 'Security', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SecurityScreen()))),
                 _row(context, Icons.chat_bubble_outline_rounded, 'Chats',
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatsSettingsScreen()))),
-                _row(context, Icons.notifications_none_rounded, 'Notifications'),
-                _row(context, Icons.data_usage_rounded, 'Storage and data'),
-                _row(context, Icons.devices_rounded, 'Linked devices'),
+                _row(context, Icons.notifications_none_rounded, 'Notifications', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationsScreen()))),
+                _row(context, Icons.data_usage_rounded, 'Storage and data', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StorageDataScreen()))),
+                _row(context, Icons.devices_rounded, 'Linked devices', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LinkedDevicesScreen()))),
                 _row(context, Icons.palette_outlined, 'Appearance',
                     trailing: switch (s.themeMode) { ThemeMode.light => 'Light', ThemeMode.dark => 'Dark', _ => 'System' },
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppearanceScreen()))),
@@ -87,7 +88,7 @@ class YouTab extends StatelessWidget {
               ]),
               const SizedBox(height: 12),
               _Group(children: [
-                _row(context, Icons.help_outline_rounded, 'Help'),
+                _row(context, Icons.help_outline_rounded, 'Help', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen()))),
                 _row(context, Icons.info_outline_rounded, 'About BAATLY', onTap: () => _about(context)),
                 _row(context, Icons.logout_rounded, 'Log out', onTap: () async {
                   await Api.instance.logout();
@@ -97,7 +98,7 @@ class YouTab extends StatelessWidget {
                 }),
               ]),
               const SizedBox(height: 18),
-              Center(child: Text('BAATLY v0.1.0 · Demo build (Milestone 1)', style: TextStyle(fontSize: 11, color: bc.muted))),
+              Center(child: Text('BAATLY v0.1.0', style: TextStyle(fontSize: 11, color: bc.muted))),
               const SizedBox(height: 24),
             ]),
           ),

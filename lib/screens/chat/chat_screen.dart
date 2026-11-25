@@ -101,7 +101,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickImage(ImageSource src) async {
     XFile? f;
     try {
-      f = await ImagePicker().pickImage(source: src, maxWidth: 2048, imageQuality: 85);
+      final hd = AppState.instance.hdPhotos;
+      f = await ImagePicker().pickImage(source: src, maxWidth: hd ? 4096 : 1600, imageQuality: hd ? 95 : 80);
     } catch (_) {
       _toast('Camera / photos permission needed');
       return;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 
@@ -6,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
 
@@ -53,7 +56,25 @@ class Api {
 
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'session_token';
-  static const _device = 'Android · BAATLY app';
+  static String _device = 'Android phone';
+
+  /// "OnePlus CPH2609" etc., shown in Linked devices.
+  static Future<void> _loadDeviceName() async {
+    try {
+      final a = await DeviceInfoPlugin().androidInfo;
+      final brand = a.manufacturer.isEmpty ? '' : '${a.manufacturer[0].toUpperCase()}${a.manufacturer.substring(1)} ';
+      _device = '$brand${a.model}'.trim();
+    } catch (_) {}
+  }
+
+  /// Media bytes sent / received on this phone (Storage and data → Network usage).
+  static Future<void> addUsage({int sent = 0, int received = 0}) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      if (sent > 0) p.setInt('net_sent', (p.getInt('net_sent') ?? 0) + sent);
+      if (received > 0) p.setInt('net_recv', (p.getInt('net_recv') ?? 0) + received);
+    } catch (_) {}
+  }
 
   String? _token;
   String? _userId;
@@ -92,6 +113,7 @@ class Api {
         d = jsonDecode(body) as Map<String, dynamic>;
       } catch (_) {}
       if (res.statusCode >= 400) throw ApiException(res.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+      unawaited(addUsage(sent: bytes.length));
       return d['id'] as String;
     } on ApiException {
       rethrow;
@@ -135,6 +157,7 @@ class Api {
     } catch (_) {
       throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
     }
+    unawaited(addUsage(received: out.length));
     return out;
   }
 
@@ -148,6 +171,7 @@ class Api {
   final _localAuth = LocalAuthentication();
 
   Future<void> load() async {
+    await _loadDeviceName();
     try {
       _token = await _storage.read(key: _tokenKey);
       _userId = await _storage.read(key: _userIdKey);

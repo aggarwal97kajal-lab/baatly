@@ -185,6 +185,14 @@ class Notifier {
     final group = data['group'] as String?;
     var title = data['title'] as String? ?? 'BAATLY';
     var text = data['preview'] as String? ?? 'New message';
+    var showPreview = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      if (group != null && prefs.getBool('n_groups') == false) return;
+      if (group == null && prefs.getBool('n_msgs') == false) return;
+      showPreview = prefs.getBool('n_preview') ?? true;
+    } catch (_) {}
     try {
       await Api.instance.load();
       final uid = Api.instance.userId;
@@ -224,6 +232,7 @@ class Notifier {
     } catch (_) {
       // Couldn't decrypt here (e.g. new phone): fall back to "New message".
     }
+    if (!showPreview) text = 'New message';
     await _show(chat, title, text, {'chat': chat, 'from': from, if (group != null) 'group': group, 'msgId': data['msgId'] ?? ''});
   }
 

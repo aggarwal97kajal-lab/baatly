@@ -72,6 +72,15 @@ class AppState extends ChangeNotifier {
   String? myPhoto;
   /// Archived chats stay archived when new messages arrive.
   bool keepArchived = true;
+  // Notifications
+  bool notifMessages = true;
+  bool notifGroups = true;
+  bool notifPreview = true;
+  // Security
+  bool securityNotices = true;
+  // Storage and data: auto-download per kind: 0 never, 1 Wi-Fi only, 2 Wi-Fi + mobile data
+  int autoPhotos = 2, autoAudio = 2, autoVideos = 1, autoDocs = 0;
+  bool hdPhotos = false;
   /// People whose statuses I've hidden (user ids).
   Set<String> hiddenStatus = {};
 
@@ -163,6 +172,15 @@ class AppState extends ChangeNotifier {
       myPhoto = p.getString('myPhoto');
       hiddenStatus = (p.getStringList('hiddenStatus') ?? []).toSet();
       keepArchived = p.getBool('keepArchived') ?? true;
+      notifMessages = p.getBool('n_msgs') ?? true;
+      notifGroups = p.getBool('n_groups') ?? true;
+      notifPreview = p.getBool('n_preview') ?? true;
+      securityNotices = p.getBool('securityNotices') ?? true;
+      autoPhotos = p.getInt('autoPhotos') ?? 2;
+      autoAudio = p.getInt('autoAudio') ?? 2;
+      autoVideos = p.getInt('autoVideos') ?? 1;
+      autoDocs = p.getInt('autoDocs') ?? 0;
+      hdPhotos = p.getBool('hdPhotos') ?? false;
     } catch (_) {
       // Storage unavailable (e.g. tests): fall back to defaults.
     }
@@ -193,6 +211,15 @@ class AppState extends ChangeNotifier {
     p.setInt('defaultTimer', defaultTimer);
     p.setStringList('hiddenStatus', hiddenStatus.toList());
     p.setBool('keepArchived', keepArchived);
+    p.setBool('n_msgs', notifMessages);
+    p.setBool('n_groups', notifGroups);
+    p.setBool('n_preview', notifPreview);
+    p.setBool('securityNotices', securityNotices);
+    p.setInt('autoPhotos', autoPhotos);
+    p.setInt('autoAudio', autoAudio);
+    p.setInt('autoVideos', autoVideos);
+    p.setInt('autoDocs', autoDocs);
+    p.setBool('hdPhotos', hdPhotos);
     if (myPhoto == null) {
       p.remove('myPhoto');
     } else {
