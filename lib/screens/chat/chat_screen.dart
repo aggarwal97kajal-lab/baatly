@@ -24,6 +24,7 @@ import 'cards.dart';
 import 'group_screens.dart';
 import 'chat_tools.dart';
 import 'location.dart';
+import 'gif_panel.dart';
 import 'safety_screens.dart';
 import '../../data/calls.dart';
 import '../../data/group_calls.dart';
@@ -116,6 +117,16 @@ class _ChatScreenState extends State<ChatScreen> {
       Messenger.instance.sendMedia(chat, path: path, kind: MsgKind.image, name: 'sticker.png', extra: {'stk': true});
     } else {
       _sendMedia(path, MsgKind.image, name: 'sticker.png');
+    }
+  }
+
+  void _sendKlipy(String path, {required bool sticker}) {
+    if (sticker) {
+      _sendSticker(path);
+    } else if (chat.isReal) {
+      Messenger.instance.sendMedia(chat, path: path, kind: MsgKind.image, name: 'anim.gif', extra: {'gif': true});
+    } else {
+      _sendMedia(path, MsgKind.image, name: 'anim.gif');
     }
   }
 
@@ -912,7 +923,7 @@ class _ChatScreenState extends State<ChatScreen> {
             )
                       : _panel == 1
                           ? _StickerPanel(onSend: _sendSticker, onCreate: _createSticker)
-                          : _GifPanel(onPick: _pickGif),
+                          : GifPanel(onSend: _sendKlipy, onPickFromPhone: _pickGif),
                 ),
                 Container(
                   color: bc.surface,
@@ -1320,27 +1331,6 @@ class _StickerPanelState extends State<_StickerPanel> {
             ),
           ]);
         },
-      ),
-    );
-  }
-}
-
-class _GifPanel extends StatelessWidget {
-  final VoidCallback onPick;
-  const _GifPanel({required this.onPick});
-  @override
-  Widget build(BuildContext context) {
-    final bc = context.bc;
-    return ColoredBox(
-      color: bc.bg,
-      child: Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.gif_box_outlined, size: 56, color: bc.muted),
-          const SizedBox(height: 10),
-          Text('Send a GIF saved on your phone', style: TextStyle(color: bc.muted)),
-          const SizedBox(height: 14),
-          FilledButton.icon(onPressed: onPick, icon: const Icon(Icons.folder_open_rounded), label: const Text('Choose GIF')),
-        ]),
       ),
     );
   }

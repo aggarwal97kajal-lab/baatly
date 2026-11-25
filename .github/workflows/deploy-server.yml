@@ -105,3 +105,16 @@ jobs:
           else
             echo "::notice::TURN_KEY_ID / TURN_KEY_TOKEN not set - calls use STUN only (may fail on some mobile networks)"
           fi
+      - name: Set GIF search (KLIPY) secret
+        if: steps.cf.outputs.ok == 'true'
+        env:
+          KLIPY_KEY: ${{ secrets.KLIPY_KEY }}
+        run: |
+          if [ -n "$KLIPY_KEY" ]; then
+            node -e 'console.log(JSON.stringify({KLIPY_KEY:process.env.KLIPY_KEY}))' > /tmp/k.json
+            npx wrangler secret bulk /tmp/k.json
+            rm /tmp/k.json
+            echo "KLIPY configured"
+          else
+            echo "::notice::KLIPY_KEY not set - GIF search off"
+          fi

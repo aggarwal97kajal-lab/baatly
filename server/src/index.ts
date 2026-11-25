@@ -28,6 +28,8 @@ import { expireMedia, mediaConfigured, mediaRoute } from './media';
 import { groupRoute } from './groups';
 import { callRoute } from './calls';
 import { groupCallRoute } from './gcalls';
+import { communityRoute } from './groups';
+import { gifRoute } from './gifs';
 import { cleanupRateLimits, safetyRoute } from './safety';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
@@ -439,6 +441,16 @@ async function route(c: Ctx): Promise<Response> {
   if (/^\/v1\/(blocks|reports)(\/|$)/.test(p)) {
     const { user } = await requireUser(c);
     const r = await safetyRoute(c, user, m, p);
+    if (r) return r;
+  }
+  if (p === '/v1/gifs') {
+    const { user } = await requireUser(c);
+    const r = await gifRoute(c, user, m, p);
+    if (r) return r;
+  }
+  if (/^\/v1\/communities(\/|$)/.test(p)) {
+    const { user } = await requireUser(c);
+    const r = await communityRoute(c, user, m, p);
     if (r) return r;
   }
   if (/^\/v1\/gcalls(\/|$)/.test(p)) {

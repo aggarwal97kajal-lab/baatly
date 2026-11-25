@@ -13,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'chat_screen.dart';
 import 'group_screens.dart';
+import 'communities.dart';
 
 class NewChatScreen extends StatelessWidget {
   const NewChatScreen({super.key});
@@ -232,6 +233,12 @@ class _RealNewChatScreenState extends State<RealNewChatScreen> {
           leading: CircleAvatar(backgroundColor: context.primary, child: const Icon(Icons.group_add_rounded, color: Colors.white)),
           title: Text('New group', style: bold),
           onTap: () => startNewGroup(context),
+        ),
+      if (_q.isEmpty)
+        ListTile(
+          leading: CircleAvatar(backgroundColor: context.primary, child: const Icon(Icons.groups_rounded, color: Colors.white)),
+          title: Text('Communities', style: bold),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CommunitiesScreen())),
         ),
       if (_q.isEmpty)
         ListTile(

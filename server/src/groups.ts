@@ -18,7 +18,7 @@ async function memberIds(env: Env, gid: string) {
 }
 
 async function info(env: Env, gid: string) {
-  const g = await env.DB.prepare('SELECT id, name, about, photo_ver, created_by, created_at, edit_info, send_messages FROM groups WHERE id = ?').bind(gid).first();
+  const g = await env.DB.prepare('SELECT id, name, about, photo_ver, created_by, created_at, edit_info, send_messages, community_id FROM groups WHERE id = ?').bind(gid).first();
   if (!g) return null;
   const m = await env.DB.prepare(
     `SELECT gm.user_id AS id, gm.role, u.name, u.phone, u.photo_ver, k.x25519
@@ -154,6 +154,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     if (add.length) {
       await env.DB.batch(add.map((u) => env.DB.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id, role, added_at) VALUES (?,?,?,?)').bind(gid, u, 'member', t)));
       bg(groupEvent(env, gid, { action: 'added', actor: me.id, targets: add }));
+      bg(addToAnnouncements(env, gid, add, me.id));
     }
     return json({ group: await info(env, gid) });
   }
@@ -226,5 +227,148 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     return json({ ok: true });
   }
 
+  return null;
+}
+
+
+const MAX_COMMUNITY_GROUPS = 20;
+
+/** People added to a community's group also join its announcement group. */
+async function addToAnnouncements(env: Env, gid: string, users: string[], actor: string) {
+  const g = await env.DB.prepare('SELECT c.announce_id AS a FROM groups g JOIN communities c ON c.id = g.community_id WHERE g.id = ?').bind(gid).first<{ a: string }>();
+  if (!g || g.a === gid || !users.length) return;
+  const current = new Set(await memberIds(env, g.a));
+  const add = users.filter((u) => !current.has(u));
+  if (!add.length) return;
+  const t = now();
+  await env.DB.batch(add.map((u) => env.DB.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id, role, added_at) VALUES (?,?,?,?)').bind(g.a, u, 'member', t)));
+  await groupEvent(env, g.a, { action: 'added', actor, targets: add });
+}
+
+async function communityView(env: Env, cid: string, me: string) {
+  const c = await env.DB.prepare('SELECT * FROM communities WHERE id = ?').bind(cid).first<{ id: string; name: string; about: string; creator: string; announce_id: string }>();
+  if (!c) return null;
+  const role = await membership(env, c.announce_id, me);
+  const gs = await env.DB.prepare(
+    `SELECT g.id, g.name, (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) AS members,
+            EXISTS(SELECT 1 FROM group_members WHERE group_id = g.id AND user_id = ?) AS joined
+       FROM groups g WHERE g.community_id = ? AND g.id != ? ORDER BY g.created_at`,
+  )
+    .bind(me, cid, c.announce_id)
+    .all<{ id: string; name: string; members: number; joined: number }>();
+  const inAny = !!role || gs.results.some((g) => g.joined);
+  if (!inAny) return null;
+  return {
+    id: c.id,
+    name: c.name,
+    about: c.about,
+    announce: c.announce_id,
+    admin: role?.role === 'admin',
+    member: !!role,
+    groups: gs.results.map((g) => ({ id: g.id, name: g.name, members: g.members, joined: !!g.joined })),
+  };
+}
+
+export async function communityRoute(c: Ctx, me: Me, m: string, p: string): Promise<Response | null> {
+  const env = c.env;
+  const bg = (pr: Promise<unknown>) => (c.later ? c.later(pr) : pr);
+  const t = now();
+
+  if (m === 'POST' && p === '/v1/communities') {
+    const b = await readJson<{ name: string; about?: string; groups?: string[] }>(c.req);
+    const name = String(b.name ?? '').trim().slice(0, 100);
+    if (!name) throw new HttpError(400, 'NAME_REQUIRED', 'Give the community a name.');
+    await limit(env, 'community', me.id, 10, 3600);
+    const gids = [...new Set((b.groups ?? []).map(String))].slice(0, MAX_COMMUNITY_GROUPS);
+    for (const g of gids) {
+      const r = await membership(env, g, me.id);
+      if (r?.role !== 'admin') throw new HttpError(403, 'ADMIN_ONLY', 'You can only add groups where you are an admin.');
+      const already = await env.DB.prepare('SELECT community_id FROM groups WHERE id = ?').bind(g).first<{ community_id: string | null }>();
+      if (already?.community_id) throw new HttpError(409, 'IN_COMMUNITY', 'One of these groups is already in a community.');
+    }
+    const people = new Set<string>();
+    for (const g of gids) for (const u of await memberIds(env, g)) people.add(u);
+    people.delete(me.id);
+    const cid = randomId();
+    const aid = randomId();
+    const about = String(b.about ?? '').slice(0, 500);
+    const stmts = [
+      env.DB.prepare('INSERT INTO communities (id, name, about, creator, announce_id, created_at) VALUES (?,?,?,?,?,?)').bind(cid, name, about, me.id, aid, t),
+      env.DB.prepare("INSERT INTO groups (id, name, about, created_by, created_at, edit_info, send_messages, community_id) VALUES (?,?,?,?,?,'admins','admins',?)").bind(
+        aid,
+        name,
+        'Announcements from the community admins',
+        me.id,
+        t,
+        cid,
+      ),
+      env.DB.prepare('INSERT INTO group_members (group_id, user_id, role, added_at) VALUES (?,?,?,?)').bind(aid, me.id, 'admin', t),
+      ...[...people].map((u) => env.DB.prepare('INSERT INTO group_members (group_id, user_id, role, added_at) VALUES (?,?,?,?)').bind(aid, u, 'member', t)),
+      ...gids.map((g) => env.DB.prepare('UPDATE groups SET community_id = ? WHERE id = ?').bind(cid, g)),
+    ];
+    for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+    await groupEvent(env, aid, { action: 'created', actor: me.id, targets: [...people], name });
+    return json({ community: await communityView(env, cid, me.id) });
+  }
+
+  if (m === 'GET' && p === '/v1/communities') {
+    const r = await env.DB.prepare(
+      `SELECT DISTINCT g.community_id AS cid FROM group_members gm JOIN groups g ON g.id = gm.group_id
+        WHERE gm.user_id = ? AND g.community_id IS NOT NULL`,
+    )
+      .bind(me.id)
+      .all<{ cid: string }>();
+    const out = [];
+    for (const x of r.results) {
+      const v = await communityView(env, x.cid, me.id);
+      if (v) out.push(v);
+    }
+    return json({ communities: out });
+  }
+
+  const mm = p.match(/^\/v1\/communities\/([\w-]+)(\/.*)?$/);
+  if (!mm) return null;
+  const cid = mm[1];
+  const rest = mm[2] ?? '';
+  const view = await communityView(env, cid, me.id);
+  if (!view) throw new HttpError(404, 'COMMUNITY_NOT_FOUND');
+
+  if (m === 'GET' && rest === '') return json({ community: view });
+
+  // Link one more group (community admin who also admins that group).
+  if (m === 'POST' && rest === '/groups') {
+    if (!view.admin) throw new HttpError(403, 'ADMIN_ONLY', 'Only community admins can add groups.');
+    const b = await readJson<{ groupId: string }>(c.req);
+    const gid = String(b.groupId ?? '');
+    if ((await membership(env, gid, me.id))?.role !== 'admin') throw new HttpError(403, 'ADMIN_ONLY', 'You can only add groups where you are an admin.');
+    const g = await env.DB.prepare('SELECT community_id FROM groups WHERE id = ?').bind(gid).first<{ community_id: string | null }>();
+    if (g?.community_id) throw new HttpError(409, 'IN_COMMUNITY', 'This group is already in a community.');
+    if (view.groups.length >= MAX_COMMUNITY_GROUPS) throw new HttpError(400, 'TOO_MANY_GROUPS', `A community can have up to ${MAX_COMMUNITY_GROUPS} groups.`);
+    await env.DB.prepare('UPDATE groups SET community_id = ? WHERE id = ?').bind(cid, gid).run();
+    bg(addToAnnouncements(env, gid, await memberIds(env, gid), me.id));
+    return json({ community: await communityView(env, cid, me.id) });
+  }
+
+  // Remove a group from the community (it keeps working as a normal group).
+  const rg = rest.match(/^\/groups\/([\w-]+)$/);
+  if (m === 'DELETE' && rg) {
+    if (!view.admin) throw new HttpError(403, 'ADMIN_ONLY', 'Only community admins can remove groups.');
+    await env.DB.prepare('UPDATE groups SET community_id = NULL WHERE id = ? AND community_id = ? AND id != ?').bind(rg[1], cid, view.announce).run();
+    return json({ community: await communityView(env, cid, me.id) });
+  }
+
+  // Community members can join any of its groups.
+  const jg = rest.match(/^\/groups\/([\w-]+)\/join$/);
+  if (m === 'POST' && jg) {
+    if (!view.member) throw new HttpError(403, 'NOT_MEMBER');
+    const g = view.groups.find((x) => x.id === jg[1]);
+    if (!g) throw new HttpError(404, 'GROUP_NOT_FOUND');
+    if (!g.joined) {
+      if (g.members >= MAX_MEMBERS) throw new HttpError(400, 'TOO_MANY_MEMBERS', 'This group is full.');
+      await env.DB.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id, role, added_at) VALUES (?,?,?,?)').bind(g.id, me.id, 'member', t).run();
+      await groupEvent(env, g.id, { action: 'added', actor: me.id, targets: [me.id] });
+    }
+    return json({ community: await communityView(env, cid, me.id) });
+  }
   return null;
 }
