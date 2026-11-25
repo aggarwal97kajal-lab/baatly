@@ -870,22 +870,34 @@ class _ChatScreenState extends State<ChatScreen> {
                 Text(chat.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: bc.text)),
                 ListenableBuilder(
                   listenable: AppState.instance,
-                  builder: (context, _) => AnimatedSwitcher(
-                    duration: Mitti.fast,
-                    child: Text(
-                      chat.typing
-                          ? (chat.typingName != null ? '${chat.typingName} is typing…' : 'typing…')
-                          : chat.isRealGroup
-                              ? (chat.left ? "You're no longer a member" : Messenger.instance.memberLine(chat))
-                              : chat.isReal
-                              ? ((chat.presence ?? '').isEmpty ? 'tap for contact info' : chat.presence!)
-                              : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen today')),
-                      key: ValueKey(chat.typing),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: chat.typing ? context.primary : bc.muted),
-                    ),
-                  ),
+                  builder: (context, _) {
+                    final text = chat.typing
+                        ? (chat.typingName != null ? '${chat.typingName} is typing…' : 'typing…')
+                        : chat.isRealGroup
+                            ? (chat.left ? "You're no longer a member" : Messenger.instance.memberLine(chat))
+                            : chat.isReal
+                                ? (chat.presence ?? '')
+                                : (chat.isGroup ? chat.about : (chat.online ? 'online' : 'last seen today'));
+                    return AnimatedSize(
+                      duration: Mitti.medium,
+                      curve: Curves.easeOut,
+                      alignment: Alignment.topLeft,
+                      child: text.isEmpty
+                          ? const SizedBox(width: double.infinity)
+                          : AnimatedSwitcher(
+                              duration: Mitti.medium,
+                              transitionBuilder: (c, a) => FadeTransition(
+                                opacity: a,
+                                child: SlideTransition(position: Tween(begin: const Offset(0, 0.6), end: Offset.zero).animate(a), child: c),
+                              ),
+                              child: _HeaderSubtitle(
+                                key: ValueKey(text),
+                                text: text,
+                                style: TextStyle(fontSize: 12, color: chat.typing ? context.primary : bc.muted),
+                              ),
+                            ),
+                    );
+                  },
                 ),
               ]),
             ),
@@ -2025,6 +2037,72 @@ class CallRecordBubble extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Chat header line. "last seen yesterday at 11:30 pm" slides left after a moment
+/// and settles on just "11:30 pm", like WhatsApp.
+class _HeaderSubtitle extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  const _HeaderSubtitle({super.key, required this.text, required this.style});
+
+  @override
+  State<_HeaderSubtitle> createState() => _HeaderSubtitleState();
+}
+
+class _HeaderSubtitleState extends State<_HeaderSubtitle> {
+  final _scroll = ScrollController();
+  bool _short = false;
+
+  static String? shortOf(String t) {
+    if (!t.startsWith('last seen ')) return null;
+    final rest = t.substring('last seen '.length);
+    final at = rest.lastIndexOf(' at ');
+    if (at < 0) return rest.isEmpty ? null : rest;
+    // Today / yesterday: just the time. Older: just the date.
+    return rest.startsWith('today') || rest.startsWith('yesterday') ? rest.substring(at + 4) : rest.substring(0, at);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final short = shortOf(widget.text);
+    if (short == null) return;
+    Future.delayed(const Duration(milliseconds: 1600), () async {
+      if (!mounted) return;
+      if (_scroll.hasClients && _scroll.position.maxScrollExtent > 0) {
+        final ms = (_scroll.position.maxScrollExtent * 18).clamp(500, 2600).toInt();
+        await _scroll.animateTo(_scroll.position.maxScrollExtent, duration: Duration(milliseconds: ms), curve: Curves.linear);
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      } else {
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+      }
+      if (mounted) setState(() => _short = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final short = shortOf(widget.text);
+    return AnimatedSwitcher(
+      duration: Mitti.fast,
+      child: _short && short != null
+          ? Align(key: const ValueKey('s'), alignment: Alignment.centerLeft, child: Text(short, maxLines: 1, style: widget.style))
+          : SingleChildScrollView(
+              key: const ValueKey('l'),
+              controller: _scroll,
+              scrollDirection: Axis.horizontal,
+              physics: const NeverScrollableScrollPhysics(),
+              child: Text(widget.text, maxLines: 1, style: widget.style),
+            ),
     );
   }
 }

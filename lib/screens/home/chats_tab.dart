@@ -9,6 +9,7 @@ import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/chat_dialogs.dart';
 import '../../widgets/common.dart';
+import 'search_screen.dart';
 import '../chat/chat_screen.dart';
 import '../chat/new_chat_screen.dart';
 
@@ -82,17 +83,17 @@ class _ChatsTabState extends State<ChatsTab> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                  child: TextField(
-                    onChanged: (v) => setState(() => _q = v),
-                    style: TextStyle(color: bc.text),
-                    decoration: InputDecoration(
-                      hintText: 'Search chats, people, messages',
-                      hintStyle: TextStyle(color: bc.muted, fontSize: 14),
-                      prefixIcon: Icon(Icons.search_rounded, color: bc.muted),
-                      filled: true,
-                      fillColor: bc.raised,
-                      contentPadding: EdgeInsets.zero,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SearchScreen())),
+                    child: Container(
+                      height: 46,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(24)),
+                      child: Row(children: [
+                        Icon(Icons.search_rounded, color: bc.muted),
+                        const SizedBox(width: 10),
+                        Text('Search', style: TextStyle(color: bc.muted, fontSize: 15)),
+                      ]),
                     ),
                   ),
                 ),
