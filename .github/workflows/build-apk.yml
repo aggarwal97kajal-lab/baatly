@@ -99,26 +99,31 @@ jobs:
           yes | $SDKM --install "ndk;29.0.13113456" > /dev/null || true
 
       - name: Build release APK
-        run: flutter build apk --release --build-number=${{ github.run_number }} $DART_DEFINES
+        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} $DART_DEFINES
 
       - name: Sign with BAATLY release key
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          IN=build/app/outputs/flutter-apk/app-release.apk
+          # One APK per CPU type keeps the download small: baatly.apk is for 64-bit phones (almost all),
+          # baatly-32bit.apk for old phones.
+          IN=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          IN32=build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
           if [ -z "$KEYSTORE_PASSWORD" ]; then
             echo "::warning::ANDROID_KEYSTORE_PASSWORD secret missing - APK stays debug-signed (updates and passkeys won't work)"
             cp $IN baatly.apk
+            cp $IN32 baatly-32bit.apk || true
           else
             openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in android_overrides/baatly-release.jks.enc -out /tmp/release.jks -pass env:KEYSTORE_PASSWORD
             BT=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
             $BT/apksigner sign --ks /tmp/release.jks --ks-key-alias baatly --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out baatly.apk $IN
+            $BT/apksigner sign --ks /tmp/release.jks --ks-key-alias baatly --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out baatly-32bit.apk $IN32 || true
             $BT/apksigner verify --print-certs baatly.apk | grep -i "SHA-256"
             # Public signing fingerprints (needed for Google sign-in / Drive backup setup).
             keytool -list -v -keystore /tmp/release.jks -alias baatly -storepass "$KEYSTORE_PASSWORD" | grep -E "SHA1:|SHA256:" | sed 's/^/::notice::Release key /' || true
             rm -f /tmp/release.jks
           fi
-          ls -lh baatly.apk
+          ls -lh baatly*.apk
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -128,5 +133,7 @@ jobs:
           body: |
             Demo build (Milestone 1) from commit ${{ github.sha }}.
             Download **baatly.apk** below and install on Android.
-          files: baatly.apk
+          files: |
+            baatly.apk
+            baatly-32bit.apk
           make_latest: true
