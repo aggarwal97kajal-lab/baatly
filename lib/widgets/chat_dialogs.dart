@@ -134,7 +134,10 @@ void showProfilePeek(BuildContext context, Chat chat) {
               icon: Icon(Icons.call_outlined, color: ctx.primary),
               onPressed: () {
                 Navigator.pop(ctx);
-                if (chat.isRealGroup) return GroupCallService.instance.start(chat, video: false);
+                if (chat.isRealGroup) {
+                  GroupCallService.instance.start(chat, video: false);
+                  return;
+                }
                 if (chat.peerId == null) return showComingSoon(context, 'Audio call');
                 CallService.instance.start(chat, video: false);
               },
@@ -144,7 +147,10 @@ void showProfilePeek(BuildContext context, Chat chat) {
               icon: Icon(Icons.videocam_outlined, color: ctx.primary),
               onPressed: () {
                 Navigator.pop(ctx);
-                if (chat.isRealGroup) return GroupCallService.instance.start(chat, video: true);
+                if (chat.isRealGroup) {
+                  GroupCallService.instance.start(chat, video: true);
+                  return;
+                }
                 if (chat.peerId == null) return showComingSoon(context, 'Video call');
                 CallService.instance.start(chat, video: true);
               },
