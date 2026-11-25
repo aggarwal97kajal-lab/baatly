@@ -164,34 +164,57 @@ class _VoiceContentState extends State<VoiceContent> {
   bool _on = false;
   final _subs = <StreamSubscription<dynamic>>[];
 
+  double _speed = 1;
+
+  /// Loads the file into the player (downloading it first if needed).
+  Future<bool> _ensure() async {
+    if (_p != null) return true;
+    var path = widget.m.mediaPath;
+    if (path == null || !File(path).existsSync()) {
+      path = await Messenger.instance.downloadMedia(widget.m);
+      if (path == null) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't download this audio")));
+        return false;
+      }
+    }
+    final p = _p = AudioPlayer();
+    _subs.add(p.positionStream.listen((d) => mounted ? setState(() => _pos = d) : null));
+    _subs.add(p.playerStateStream.listen((st) {
+      if (!mounted) return;
+      setState(() => _on = st.playing && st.processingState != ProcessingState.completed);
+      if (st.processingState == ProcessingState.completed) {
+        p.pause();
+        p.seek(Duration.zero);
+      }
+    }));
+    _dur = await p.setFilePath(path);
+    await p.setSpeed(_speed);
+    return true;
+  }
+
+  /// Drag the bar to jump forward / back.
+  Future<void> _seek(double frac) async {
+    if (!await _ensure()) return;
+    final total = _dur?.inMilliseconds ?? widget.m.voiceSeconds * 1000;
+    final to = Duration(milliseconds: (total * frac).round());
+    setState(() => _pos = to);
+    await _p!.seek(to);
+  }
+
+  Future<void> _cycleSpeed() async {
+    _speed = _speed == 1 ? 1.5 : (_speed == 1.5 ? 2 : 1);
+    setState(() {});
+    await _p?.setSpeed(_speed);
+  }
+
   Future<void> _toggle() async {
     if (_on) {
       await _p?.pause();
       return;
     }
-    var path = widget.m.mediaPath;
-    if (path == null || !File(path).existsSync()) {
-      path = await Messenger.instance.downloadMedia(widget.m);
-      if (path == null) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't download this voice note")));
-        return;
-      }
-    }
+    if (!await _ensure()) return;
     if (_playing != null && _playing != this) await _playing!._p?.pause();
     _playing = this;
-    if (_p == null) {
-      final p = _p = AudioPlayer();
-      _subs.add(p.positionStream.listen((d) => mounted ? setState(() => _pos = d) : null));
-      _subs.add(p.playerStateStream.listen((st) {
-        if (!mounted) return;
-        setState(() => _on = st.playing && st.processingState != ProcessingState.completed);
-        if (st.processingState == ProcessingState.completed) {
-          p.pause();
-          p.seek(Duration.zero);
-        }
-      }));
-      _dur = await p.setFilePath(path);
-    }
     await _p!.play();
   }
 
@@ -240,12 +263,34 @@ class _VoiceContentState extends State<VoiceContent> {
                   ),
                 ]),
               ),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(value: v, minHeight: 4, color: fg, backgroundColor: fg.withOpacity(0.25)),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                activeTrackColor: fg,
+                inactiveTrackColor: fg.withOpacity(0.25),
+                thumbColor: fg,
+                overlayColor: fg.withOpacity(0.15),
+              ),
+              child: SizedBox(
+                height: 22,
+                child: Slider(value: v.toDouble(), onChanged: (x) => _seek(x)),
+              ),
             ),
             const SizedBox(height: 6),
-            Text(MediaFiles.fmtDur(shown), style: TextStyle(fontSize: 11, color: fg.withOpacity(0.8))),
+            Row(children: [
+              Text(MediaFiles.fmtDur(shown), style: TextStyle(fontSize: 11, color: fg.withOpacity(0.8))),
+              const Spacer(),
+              GestureDetector(
+                onTap: _cycleSpeed,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(color: fg.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+                  child: Text('${_speed == 1 ? '1' : (_speed == 1.5 ? '1.5' : '2')}×', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg)),
+                ),
+              ),
+            ]),
           ]),
         ),
       ]),

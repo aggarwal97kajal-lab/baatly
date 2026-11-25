@@ -187,6 +187,8 @@ class _ChatScreenState extends State<ChatScreen> {
         allowedExtensions: const [
           'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt', 'rtf', 'odt', 'ods', 'odp',
           'zip', 'rar', '7z', 'apk', 'epub', 'json', 'xml', 'html',
+          // Audio files too (they play right in the chat).
+          'mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'flac', 'amr',
         ],
       );
     } catch (_) {
