@@ -52,13 +52,23 @@ class ImageContent extends StatelessWidget {
           height: maxW / ratio,
           child: Stack(fit: StackFit.expand, children: [
             img,
+            if (m.busy && m.progress != null)
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
+                  child: Text('${(m.progress! * 100).round()}%', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                ),
+              ),
             if (!has || m.busy)
               Center(
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
                   child: m.busy
-                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                      ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white, value: m.progress))
                       : const Icon(Icons.download_rounded, color: Colors.white),
                 ),
               ),
@@ -118,7 +128,10 @@ class DocContent extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           if (m.busy)
-            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: fg))
+            Column(mainAxisSize: MainAxisSize.min, children: [
+              SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.2, color: fg, value: m.progress, backgroundColor: fg.withOpacity(0.2))),
+              if (m.progress != null) Text('${(m.progress! * 100).round()}%', style: TextStyle(fontSize: 10, color: fg)),
+            ])
           else if (!has)
             Icon(Icons.download_rounded, color: fg),
         ]),
@@ -202,13 +215,25 @@ class _VoiceContentState extends State<VoiceContent> {
             height: 38,
             decoration: BoxDecoration(color: widget.accent, shape: BoxShape.circle),
             child: widget.m.busy
-                ? const Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? Padding(padding: const EdgeInsets.all(10), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white, value: widget.m.progress))
                 : Icon(_on ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (widget.m.media?['audio'] == true || widget.m.kind == MsgKind.doc)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(children: [
+                  Icon(Icons.headphones_rounded, size: 15, color: fg.withOpacity(0.8)),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text((widget.m.media?['name'] as String?) ?? 'Audio',
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: fg)),
+                  ),
+                ]),
+              ),
             ClipRRect(
               borderRadius: BorderRadius.circular(3),
               child: LinearProgressIndicator(value: v, minHeight: 4, color: fg, backgroundColor: fg.withOpacity(0.25)),
@@ -342,7 +367,7 @@ class VideoContent extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
                 child: m.busy
-                    ? const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                    ? SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white, value: m.progress))
                     : Icon(has ? Icons.play_arrow_rounded : Icons.download_rounded, color: Colors.white, size: 30),
               ),
             ),

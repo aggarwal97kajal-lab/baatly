@@ -32,6 +32,8 @@ class Message {
   Map<String, dynamic>? media;
   /// Upload/download in progress (not saved).
   bool busy = false;
+  /// 0..1 while uploading/downloading, null when unknown.
+  double? progress;
 
   Message({
     required this.id,

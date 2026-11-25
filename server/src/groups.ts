@@ -4,7 +4,7 @@ import { blocked, limit } from './safety';
 import { Env, HttpError, json, now, randomId, readJson } from './util';
 
 type Me = { id: string; name: string; phone: string };
-type Ctx = { req: Request; env: Env; url: URL };
+type Ctx = { req: Request; env: Env; url: URL; later?: (p: Promise<unknown>) => void };
 
 const MAX_MEMBERS = 256;
 
@@ -48,6 +48,8 @@ async function validUsers(env: Env, ids: string[]) {
 
 export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<Response | null> {
   const env = c.env;
+  // Tell members after replying, so the app doesn't wait for every member's delivery.
+  const bg = (pr: Promise<unknown>) => (c.later ? c.later(pr) : pr);
   const t = now();
 
   if (m === 'POST' && p === '/v1/groups') {
@@ -96,11 +98,11 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
       const name = String(b.name).trim().slice(0, 100);
       if (!name) throw new HttpError(400, 'GROUP_NAME_REQUIRED', 'Give the group a name.');
       await env.DB.prepare('UPDATE groups SET name = ? WHERE id = ?').bind(name, gid).run();
-      await groupEvent(env, gid, { action: 'renamed', actor: me.id, name });
+      bg(groupEvent(env, gid, { action: 'renamed', actor: me.id, name }));
     }
     if (b.about !== undefined) {
       await env.DB.prepare('UPDATE groups SET about = ? WHERE id = ?').bind(String(b.about).slice(0, 500), gid).run();
-      await groupEvent(env, gid, { action: 'about', actor: me.id });
+      bg(groupEvent(env, gid, { action: 'about', actor: me.id }));
     }
     return json({ group: await info(env, gid) });
   }
@@ -110,11 +112,11 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     const b = await readJson<{ editInfo?: string; sendMessages?: string }>(c.req);
     if (b.editInfo === 'all' || b.editInfo === 'admins') {
       await env.DB.prepare('UPDATE groups SET edit_info = ? WHERE id = ?').bind(b.editInfo, gid).run();
-      await groupEvent(env, gid, { action: 'edit_info', actor: me.id, value: b.editInfo });
+      bg(groupEvent(env, gid, { action: 'edit_info', actor: me.id, value: b.editInfo }));
     }
     if (b.sendMessages === 'all' || b.sendMessages === 'admins') {
       await env.DB.prepare('UPDATE groups SET send_messages = ? WHERE id = ?').bind(b.sendMessages, gid).run();
-      await groupEvent(env, gid, { action: 'send_messages', actor: me.id, value: b.sendMessages });
+      bg(groupEvent(env, gid, { action: 'send_messages', actor: me.id, value: b.sendMessages }));
     }
     return json({ group: await info(env, gid) });
   }
@@ -122,7 +124,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
   if (m === 'DELETE' && rest === '/photo') {
     if (!canEdit) throw new HttpError(403, 'ADMIN_ONLY', 'Only admins can edit this group\'s info.');
     await env.DB.prepare('UPDATE groups SET photo = NULL, photo_ver = 0 WHERE id = ?').bind(gid).run();
-    await groupEvent(env, gid, { action: 'photo_removed', actor: me.id });
+    bg(groupEvent(env, gid, { action: 'photo_removed', actor: me.id }));
     return json({ ok: true });
   }
 
@@ -132,7 +134,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     const photo = String(b.photo ?? '');
     if (photo.length < 100 || photo.length > 1_200_000) throw new HttpError(413, 'PHOTO_TOO_LARGE', 'This photo is too large.');
     await env.DB.prepare('UPDATE groups SET photo = ?, photo_ver = photo_ver + 1 WHERE id = ?').bind(photo, gid).run();
-    await groupEvent(env, gid, { action: 'photo', actor: me.id });
+    bg(groupEvent(env, gid, { action: 'photo', actor: me.id }));
     const v = await env.DB.prepare('SELECT photo_ver FROM groups WHERE id = ?').bind(gid).first<{ photo_ver: number }>();
     return json({ ok: true, ver: v?.photo_ver ?? 1 });
   }
@@ -151,7 +153,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     if (current.size + add.length > MAX_MEMBERS) throw new HttpError(400, 'TOO_MANY_MEMBERS', `Groups can have up to ${MAX_MEMBERS} members.`);
     if (add.length) {
       await env.DB.batch(add.map((u) => env.DB.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id, role, added_at) VALUES (?,?,?,?)').bind(gid, u, 'member', t)));
-      await groupEvent(env, gid, { action: 'added', actor: me.id, targets: add });
+      bg(groupEvent(env, gid, { action: 'added', actor: me.id, targets: add }));
     }
     return json({ group: await info(env, gid) });
   }
@@ -167,7 +169,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     if (left.results.length && !left.results.some((x) => x.role === 'admin')) {
       await env.DB.prepare("UPDATE group_members SET role = 'admin' WHERE group_id = ? AND user_id = ?").bind(gid, left.results[0].user_id).run();
     }
-    await groupEvent(env, gid, { action: leaving ? 'left' : 'removed', actor: me.id, targets: [target] }, [target]);
+    bg(groupEvent(env, gid, { action: leaving ? 'left' : 'removed', actor: me.id, targets: [target] }, [target]));
     return json({ ok: true });
   }
 
@@ -176,7 +178,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
     if (!admin) throw new HttpError(403, 'ADMIN_ONLY', 'Only group admins can change admins.');
     if (!(await membership(env, gid, am[1]))) throw new HttpError(404, 'NOT_A_MEMBER');
     await env.DB.prepare('UPDATE group_members SET role = ? WHERE group_id = ? AND user_id = ?').bind(m === 'POST' ? 'admin' : 'member', gid, am[1]).run();
-    await groupEvent(env, gid, { action: m === 'POST' ? 'admin' : 'unadmin', actor: me.id, targets: [am[1]] });
+    bg(groupEvent(env, gid, { action: m === 'POST' ? 'admin' : 'unadmin', actor: me.id, targets: [am[1]] }));
     return json({ ok: true });
   }
 

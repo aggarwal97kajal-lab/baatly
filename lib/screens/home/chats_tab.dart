@@ -254,7 +254,7 @@ class _ChatRow extends StatelessWidget {
       preview = (m.media?['q'] as String?) ?? 'Poll';
     } else if (m != null && m.kind == MsgKind.location) {
       pIcon = Icons.location_on_rounded;
-      preview = 'Location';
+      preview = m.media?['live'] == true ? 'Live location' : 'Location';
     } else if (m != null && m.kind == MsgKind.contact) {
       pIcon = Icons.person_rounded;
       preview = (m.media?['name'] as String?) ?? 'Contact';
@@ -274,6 +274,9 @@ class _ChatRow extends StatelessWidget {
       } else if (m.kind == MsgKind.doc) {
         pIcon = Icons.insert_drive_file_rounded;
         preview = (m.media?['name'] as String?) ?? 'Document';
+      } else if (m.kind == MsgKind.voice && m.media?['audio'] == true) {
+        pIcon = Icons.headphones_rounded;
+        preview = (m.media?['name'] as String?) ?? 'Audio';
       } else if (m.kind == MsgKind.voice) {
         pIcon = Icons.mic_rounded;
         preview = 'Voice message · ${MediaFiles.fmtDur(m.voiceSeconds)}';

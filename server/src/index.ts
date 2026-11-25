@@ -30,7 +30,7 @@ import { callRoute } from './calls';
 import { cleanupRateLimits, safetyRoute } from './safety';
 
 type User = { id: string; phone: string; name: string; username: string | null; about: string; created_at: number };
-type Ctx = { req: Request; env: Env; url: URL };
+type Ctx = { req: Request; env: Env; url: URL; later?: (p: Promise<unknown>) => void };
 
 const OTP_PER_PHONE_10MIN = 3;
 const OTP_PER_IP_HOUR = 10;
@@ -479,9 +479,9 @@ export default {
     await cleanupRateLimits(env);
   },
 
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
-      return await route({ req, env, url: new URL(req.url) });
+      return await route({ req, env, url: new URL(req.url), later: (p) => ctx.waitUntil(p.catch((e) => console.error('later', e))) });
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.code, message: e.message }, e.status);
       console.error(e);

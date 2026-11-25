@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:cryptography/cryptography.dart' show Sha512;
+import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/io.dart';
@@ -87,6 +88,7 @@ class Messenger {
     unawaited(Push.instance.start());
     unawaited(StatusService.instance.refresh());
     unawaited(_pullPrivacy());
+    _resumeLive();
     unawaited(_loadBlocks());
     unawaited(CallService.instance.loadLog());
     // Keeps "My contacts" privacy and contact names up to date.
@@ -588,7 +590,7 @@ class Messenger {
       if (ts is int) at = DateTime.fromMillisecondsSinceEpoch(ts);
       ttl = (plain['ttl'] as int?) ?? 0;
       md = (plain['md'] as Map?)?.cast<String, dynamic>();
-      for (final k in const ['del', 'opened', 'vote', 'pin', 'unpin']) {
+      for (final k in const ['del', 'opened', 'vote', 'pin', 'unpin', 'live']) {
         if (plain.containsKey(k)) control = {k: plain[k]};
       }
     } catch (_) {
@@ -868,6 +870,18 @@ class Messenger {
       for (final ch in _s.chats) {
         if (ch.messages.any((m) => m.id == id)) ch.pinnedId = c['pin'] is String ? id : null;
       }
+    } else if (c['live'] is Map) {
+      final v = (c['live'] as Map).cast<String, dynamic>();
+      final m = _find(v['m'] as String? ?? '');
+      if (m != null && m.kind == MsgKind.location && !m.fromMe) {
+        if (v['stop'] == true) {
+          m.media!['stopped'] = true;
+        } else {
+          m.media!['lat'] = v['lat'];
+          m.media!['lng'] = v['lng'];
+          m.media!['upd'] = DateTime.now().millisecondsSinceEpoch;
+        }
+      }
     } else if (c['vote'] is Map) {
       final v = (c['vote'] as Map).cast<String, dynamic>();
       final m = _find(v['m'] as String? ?? '');
@@ -955,6 +969,63 @@ class Messenger {
   }
 
   String? get myId => _uid;
+
+  // ------------------------------------------------------------------ live location
+  final Map<String, StreamSubscription<Position>> _live = {};
+
+  /// Starts live location: posts the card, then keeps sending position updates
+  /// (a "BAATLY is sharing your location" notification keeps it running).
+  void shareLive(Chat chat, Map<String, dynamic> md) {
+    sendCard(chat, MsgKind.location, md);
+    _startLive(chat, chat.messages.last);
+  }
+
+  void _startLive(Chat chat, Message m) {
+    final until = DateTime.fromMillisecondsSinceEpoch((m.media?['until'] as int?) ?? 0);
+    if (!until.isAfter(DateTime.now()) || _live.containsKey(m.id)) return;
+    DateTime last = DateTime(0);
+    final settings = AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 15,
+      intervalDuration: const Duration(seconds: 20),
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationTitle: 'Sharing live location',
+        notificationText: 'BAATLY is sharing your live location',
+        enableWakeLock: true,
+      ),
+    );
+    _live[m.id] = Geolocator.getPositionStream(locationSettings: settings).listen((p) {
+      if (!until.isAfter(DateTime.now()) || m.media?['stopped'] == true) {
+        unawaited(stopLive(chat, m));
+        return;
+      }
+      m.media!['lat'] = p.latitude;
+      m.media!['lng'] = p.longitude;
+      m.media!['upd'] = DateTime.now().millisecondsSinceEpoch;
+      _s.changed();
+      if (DateTime.now().difference(last).inSeconds < 15) return;
+      last = DateTime.now();
+      unawaited(_sendPayload(chat, _newId(), {'live': {'m': m.id, 'lat': p.latitude, 'lng': p.longitude}}, silent: true).then((_) {}, onError: (_) {}));
+    }, onError: (_) {});
+  }
+
+  Future<void> stopLive(Chat chat, Message m) async {
+    await _live.remove(m.id)?.cancel();
+    m.media?['stopped'] = true;
+    _s.changed();
+    try {
+      await _sendPayload(chat, _newId(), {'live': {'m': m.id, 'stop': true}}, silent: true);
+    } catch (_) {}
+  }
+
+  /// After a restart, keep sharing anything still live.
+  void _resumeLive() {
+    for (final c in _s.chats) {
+      for (final m in c.messages) {
+        if (m.fromMe && m.kind == MsgKind.location && m.media?['live'] == true && m.media?['stopped'] != true) _startLive(c, m);
+      }
+    }
+  }
 
   // ------------------------------------------------------------------ groups
   Chat _upsertGroup(Map<String, dynamic> g) {
@@ -1108,16 +1179,33 @@ class Messenger {
     _s.changed();
   }
 
+  // Group changes show instantly; the server call runs after (and undoes on error).
   Future<void> removeMember(Chat chat, String id) async {
-    await Api.instance.request('DELETE', '/v1/groups/${chat.groupId}/members/$id');
-    await _groupChat(chat.groupId!, refresh: true);
+    final before = [...chat.members];
+    chat.members.remove(id);
+    chat.admins.remove(id);
+    chat.about = memberLine(chat);
     _s.changed();
+    try {
+      await Api.instance.request('DELETE', '/v1/groups/${chat.groupId}/members/$id');
+    } catch (e) {
+      chat.members = before;
+      chat.about = memberLine(chat);
+      _s.changed();
+      rethrow;
+    }
   }
 
   Future<void> setAdmin(Chat chat, String id, bool admin) async {
-    await Api.instance.request(admin ? 'POST' : 'DELETE', '/v1/groups/${chat.groupId}/admins/$id');
-    await _groupChat(chat.groupId!, refresh: true);
+    admin ? chat.admins.add(id) : chat.admins.remove(id);
     _s.changed();
+    try {
+      await Api.instance.request(admin ? 'POST' : 'DELETE', '/v1/groups/${chat.groupId}/admins/$id');
+    } catch (e) {
+      admin ? chat.admins.remove(id) : chat.admins.add(id);
+      _s.changed();
+      rethrow;
+    }
   }
 
   Future<void> renameGroup(Chat chat, String name) async {
@@ -1165,12 +1253,21 @@ class Messenger {
   }
 
   Future<void> setGroupSettings(Chat chat, {String? editInfo, String? sendMessages}) async {
-    final d = await Api.instance.request('PATCH', '/v1/groups/${chat.groupId}/settings', {
-      if (editInfo != null) 'editInfo': editInfo,
-      if (sendMessages != null) 'sendMessages': sendMessages,
-    });
-    _upsertGroup((d['group'] as Map).cast<String, dynamic>());
+    final oldE = chat.editInfo, oldS = chat.sendMessages;
+    if (editInfo != null) chat.editInfo = editInfo;
+    if (sendMessages != null) chat.sendMessages = sendMessages;
     _s.changed();
+    try {
+      await Api.instance.request('PATCH', '/v1/groups/${chat.groupId}/settings', {
+        if (editInfo != null) 'editInfo': editInfo,
+        if (sendMessages != null) 'sendMessages': sendMessages,
+      });
+    } catch (e) {
+      chat.editInfo = oldE;
+      chat.sendMessages = oldS;
+      _s.changed();
+      rethrow;
+    }
   }
 
   /// Can I change this group's name / icon / description / pins?
@@ -1268,7 +1365,11 @@ class Messenger {
         }
       }
       final (key, blob) = await E2E.instance.lock(bytes);
-      final id = await Api.instance.upload(blob);
+      m.progress = 0;
+      final id = await Api.instance.upload(blob, onProgress: (p) {
+        m.progress = p;
+        _s.changed();
+      });
       m.media!['id'] = id;
       m.media!['k'] = base64Encode(key);
       m.media!['size'] = bytes.length;
@@ -1286,7 +1387,11 @@ class Messenger {
     m.busy = true;
     _s.changed();
     try {
-      final blob = await Api.instance.download(md['id'] as String);
+      m.progress = 0;
+      final blob = await Api.instance.download(md['id'] as String, onProgress: (p) {
+        m.progress = p;
+        _s.changed();
+      });
       final clear = await E2E.instance.unlock(blob, base64Decode(md['k'] as String));
       final name = (md['name'] as String?) ?? 'file';
       final ext = MediaFiles.ext(name);

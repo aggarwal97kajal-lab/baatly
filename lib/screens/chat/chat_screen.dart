@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
@@ -22,6 +23,7 @@ import 'media_widgets.dart';
 import 'cards.dart';
 import 'group_screens.dart';
 import 'chat_tools.dart';
+import 'location.dart';
 import 'safety_screens.dart';
 import '../../data/calls.dart';
 import '../../data/media.dart';
@@ -148,6 +150,34 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _pickAudio() async {
+    FilePickerResult? r;
+    try {
+      r = await FilePicker.platform.pickFiles(type: FileType.audio);
+    } catch (_) {
+      _toast("Couldn't open audio files");
+      return;
+    }
+    final f = r?.files.single;
+    if (f == null || f.path == null) return;
+    if (f.size > 64 * 1024 * 1024) {
+      _toast('Audio up to 64 MB can be sent');
+      return;
+    }
+    var secs = 0;
+    try {
+      final p = AudioPlayer();
+      secs = (await p.setFilePath(f.path!))?.inSeconds ?? 0;
+      await p.dispose();
+    } catch (_) {}
+    final kept = await _keep(f.path!, f.name);
+    if (chat.isReal) {
+      Messenger.instance.sendMedia(chat, path: kept, kind: MsgKind.voice, name: f.name, seconds: secs, extra: {'audio': true});
+    } else {
+      _sendMedia(kept, MsgKind.voice, name: f.name, seconds: secs);
+    }
+  }
+
   Future<void> _pickDoc() async {
     FilePickerResult? r;
     try {
@@ -234,13 +264,21 @@ class _ChatScreenState extends State<ChatScreen> {
             children: [
               item(Icons.photo_library_rounded, 'Gallery', const Color(0xFF2E7D8C), () => _pickImage(ImageSource.gallery)),
               item(Icons.photo_camera_rounded, 'Camera', const Color(0xFFC8553D), () => _pickImage(ImageSource.camera)),
-              item(Icons.location_on_rounded, 'Location', const Color(0xFF2E7D5B), _sendLocation),
+              item(Icons.location_on_rounded, 'Location', const Color(0xFF2E7D5B), () async {
+                final md = await Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(builder: (_) => const SendLocationScreen()));
+                if (md == null) return;
+                if (md['live'] == true) {
+                  Messenger.instance.shareLive(chat, md);
+                } else {
+                  Messenger.instance.sendCard(chat, MsgKind.location, md);
+                }
+              }),
               item(Icons.person_rounded, 'Contact', const Color(0xFF3D7DC8), () => _card(const ShareContactScreen())),
               item(Icons.insert_drive_file_rounded, 'Document', const Color(0xFF7A5BA6), _pickDoc),
               item(Icons.poll_rounded, 'Poll', const Color(0xFFE0A100), () => _card(const PollCreateScreen())),
               item(Icons.event_rounded, 'Event', const Color(0xFFD9467A), () => _card(const EventCreateScreen())),
               item(Icons.videocam_rounded, 'Video', const Color(0xFF3A8F6B), _pickVideo),
-              item(Icons.headphones_rounded, 'Audio', const Color(0xFFE07A30), _pickDoc),
+              item(Icons.headphones_rounded, 'Audio', const Color(0xFFE07A30), _pickAudio),
             ],
           ),
         ),
@@ -703,7 +741,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     } else if (m.kind == MsgKind.poll) {
       content = PollContent(chat: widget.chat, m: m, fg: fg, accent: accent);
     } else if (m.kind == MsgKind.location) {
-      content = LocationContent(m: m, fg: fg);
+      content = LocationContent(chat: widget.chat, m: m, fg: fg);
     } else if (m.kind == MsgKind.contact) {
       content = ContactContent(m: m, fg: fg);
     } else if (m.kind == MsgKind.event) {
@@ -712,6 +750,9 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
       content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [VideoContent(m: m, fg: fg), if (caption != null) caption]);
     } else if (m.kind == MsgKind.image) {
       content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [ImageContent(m: m, fg: fg), if (caption != null) caption]);
+    } else if (m.kind == MsgKind.doc && const {'mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'flac', 'amr'}.contains(MediaFiles.ext((m.media?['name'] as String?) ?? ''))) {
+      // Audio files play right in the chat, like WhatsApp.
+      content = VoiceContent(m: m, fg: fg, accent: me ? Colors.white24 : context.primary);
     } else if (m.kind == MsgKind.doc) {
       content = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [DocContent(m: m, fg: fg), if (caption != null) caption]);
     } else if (m.kind == MsgKind.voice && (m.media != null || m.mediaPath != null)) {

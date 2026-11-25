@@ -91,38 +91,6 @@ class PollContent extends StatelessWidget {
   }
 }
 
-/// Shared location: tap to open in Maps.
-class LocationContent extends StatelessWidget {
-  final Message m;
-  final Color fg;
-  const LocationContent({super.key, required this.m, required this.fg});
-  @override
-  Widget build(BuildContext context) {
-    final md = m.media ?? {};
-    final lat = (md['lat'] as num?)?.toDouble() ?? 0, lng = (md['lng'] as num?)?.toDouble() ?? 0;
-    return InkWell(
-      onTap: () => launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng'), mode: LaunchMode.externalApplication),
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.62,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: fg.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
-        child: Row(children: [
-          const CircleAvatar(radius: 22, backgroundColor: Color(0xFF2E7D5B), child: Icon(Icons.location_on_rounded, color: Colors.white)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Location', style: TextStyle(fontWeight: FontWeight.w700, color: fg)),
-              Text('${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}', style: TextStyle(fontSize: 12, color: fg.withOpacity(0.75))),
-              const SizedBox(height: 2),
-              Text('Tap to open in Maps', style: TextStyle(fontSize: 11.5, color: fg.withOpacity(0.7))),
-            ]),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
 /// Shared contact card: message them on BAATLY or invite.
 class ContactContent extends StatelessWidget {
   final Message m;

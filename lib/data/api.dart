@@ -69,14 +69,24 @@ class Api {
     } catch (_) {}
   }
 
-  /// Uploads encrypted bytes; returns the media id.
-  Future<String> upload(List<int> bytes) async {
+  /// Uploads encrypted bytes (with progress 0..1); returns the media id.
+  Future<String> upload(List<int> bytes, {void Function(double)? onProgress}) async {
+    final req = http.StreamedRequest('POST', Uri.parse('$kApiBase/v1/media'))
+      ..headers['content-type'] = 'application/octet-stream'
+      ..contentLength = bytes.length;
+    if (_token != null) req.headers['authorization'] = 'Bearer $_token';
+    final send = http.Client().send(req);
+    const chunk = 64 * 1024;
+    for (var i = 0; i < bytes.length; i += chunk) {
+      final end = i + chunk > bytes.length ? bytes.length : i + chunk;
+      req.sink.add(bytes.sublist(i, end));
+      onProgress?.call(end / bytes.length * 0.95);
+      await Future<void>.delayed(Duration.zero);
+    }
+    await req.sink.close();
     http.Response r;
     try {
-      r = await http
-          .post(Uri.parse('$kApiBase/v1/media'),
-              headers: {'content-type': 'application/octet-stream', if (_token != null) 'authorization': 'Bearer $_token'}, body: bytes)
-          .timeout(const Duration(minutes: 3));
+      r = await http.Response.fromStream(await send.timeout(const Duration(minutes: 5)));
     } catch (_) {
       throw ApiException(0, 'NETWORK', "Couldn't upload. Check your internet.");
     }
@@ -85,25 +95,39 @@ class Api {
       d = jsonDecode(r.body) as Map<String, dynamic>;
     } catch (_) {}
     if (r.statusCode >= 400) throw ApiException(r.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+    onProgress?.call(1);
     return d['id'] as String;
   }
 
-  /// Downloads encrypted media bytes.
-  Future<List<int>> download(String id) async {
-    http.Response r;
+  /// Downloads encrypted media bytes (with progress 0..1).
+  Future<List<int>> download(String id, {void Function(double)? onProgress}) async {
+    final req = http.Request('GET', Uri.parse('$kApiBase/v1/media/$id'));
+    if (_token != null) req.headers['authorization'] = 'Bearer $_token';
+    http.StreamedResponse r;
     try {
-      r = await http.get(Uri.parse('$kApiBase/v1/media/$id'), headers: {if (_token != null) 'authorization': 'Bearer $_token'}).timeout(const Duration(minutes: 3));
+      r = await http.Client().send(req).timeout(const Duration(minutes: 1));
     } catch (_) {
       throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
     }
     if (r.statusCode >= 400) {
+      final body = await r.stream.bytesToString();
       Map<String, dynamic> d = {};
       try {
-        d = jsonDecode(r.body) as Map<String, dynamic>;
+        d = jsonDecode(body) as Map<String, dynamic>;
       } catch (_) {}
       throw ApiException(r.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
     }
-    return r.bodyBytes;
+    final total = r.contentLength ?? 0;
+    final out = <int>[];
+    try {
+      await for (final c in r.stream.timeout(const Duration(minutes: 2))) {
+        out.addAll(c);
+        if (total > 0) onProgress?.call(out.length / total);
+      }
+    } catch (_) {
+      throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
+    }
+    return out;
   }
 
   /// Authenticated JSON call, used by the messenger.
