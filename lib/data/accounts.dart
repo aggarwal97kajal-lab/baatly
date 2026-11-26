@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config.dart';
 import '../nav.dart';
 import '../screens/home/home_shell.dart';
 import '../screens/onboarding/phone_screen.dart';
@@ -234,6 +236,46 @@ class Accounts {
     await Api.instance.adoptSession(target['token'] as String, uid);
     await _go(const HomeShell());
     return true;
+  }
+
+  /// Make sure every saved account gets notifications on this phone:
+  /// (re)register this phone's push token for each of them.
+  Future<void> ensurePush() async {
+    if (!kPushEnabled) return;
+    try {
+      final fcm = await FirebaseMessaging.instance.getToken();
+      if (fcm == null) return;
+      final slots = await _slots();
+      for (final e in slots.entries) {
+        final token = (e.value as Map)['token'] as String?;
+        if (token == null) continue;
+        try {
+          await Api.instance.requestAs(token, 'PUT', '/v1/push/token', {'token': fcm});
+        } on ApiException catch (err) {
+          if (err.status == 401) await forget(e.key); // logged out from elsewhere
+        } catch (_) {}
+      }
+      await refresh();
+    } catch (_) {}
+  }
+
+  /// Sends a test notification to every account on this phone. Returns how many were asked.
+  Future<int> testPush() async {
+    var n = 0;
+    try {
+      await Api.instance.request('POST', '/v1/push/test');
+      n++;
+    } catch (_) {}
+    final slots = await _slots();
+    for (final e in slots.entries) {
+      final token = (e.value as Map)['token'] as String?;
+      if (token == null) continue;
+      try {
+        await Api.instance.requestAs(token, 'POST', '/v1/push/test');
+        n++;
+      } catch (_) {}
+    }
+    return n;
   }
 
   /// The saved session was rejected by the server (logged out elsewhere): forget it.

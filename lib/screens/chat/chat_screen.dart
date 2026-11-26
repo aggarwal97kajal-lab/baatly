@@ -1,3 +1,4 @@
+import '../../widgets/photo_viewer.dart';
 import 'shared_cards.dart';
 import '../settings/quick_replies.dart';
 import '../../data/secure_screen.dart';
@@ -1070,7 +1071,7 @@ class _ChatScreenState extends State<ChatScreen> {
         titleSpacing: 0,
         title: InkWell(
           onTap: chat.isNotes
-              ? null
+              ? (chat.photo == null ? null : () => PhotoViewerScreen.open(context, chat.photo, chat.name))
               : chat.isBroadcast
                   ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => BroadcastEditor(existing: chat)))
                   : () => Navigator.of(context).push(MaterialPageRoute(
@@ -1089,7 +1090,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         : chat.isRealGroup
                             ? (chat.left ? "You're no longer a member" : Messenger.instance.memberLine(chat))
                             : chat.isNotes
-                                ? 'Only you can see this'
+                                ? 'Message yourself'
                                 : chat.isBroadcast
                                 ? chat.about
                                 : chat.isReal

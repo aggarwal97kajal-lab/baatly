@@ -171,6 +171,25 @@ class Api {
 
   /// Authenticated JSON call, used by the messenger.
   Future<Map<String, dynamic>> request(String method, String path, [Object? body]) => _call(method, path, body);
+
+  /// A call made as another account kept on this phone (two numbers in one app).
+  Future<Map<String, dynamic>> requestAs(String token, String method, String path, [Object? body]) async {
+    final req = http.Request(method, Uri.parse('$kApiBase$path'))
+      ..headers.addAll({'content-type': 'application/json', 'authorization': 'Bearer $token'});
+    if (body != null) req.body = jsonEncode(body);
+    http.Response r;
+    try {
+      r = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 20)));
+    } catch (_) {
+      throw ApiException(0, 'NETWORK', "Can't reach the server. Check your internet and try again.");
+    }
+    Map<String, dynamic> data = {};
+    try {
+      data = jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (_) {}
+    if (r.statusCode >= 400) throw ApiException(r.statusCode, (data['error'] as String?) ?? 'ERROR', _friendly(data));
+    return data;
+  }
   final _auth = PasskeyAuthenticator();
 
   static const _dkIdKey = 'device_key_id';

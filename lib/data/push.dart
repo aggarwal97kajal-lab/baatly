@@ -28,7 +28,8 @@ class Push {
         // While BAATLY is open, pushes for the *other* account on this phone still need showing.
         FirebaseMessaging.onMessage.listen((m) async {
           final acct = m.data['acct'];
-          if (acct == null || acct == Api.instance.userId) return;
+          final test = '${m.data['msgId'] ?? ''}'.startsWith('test-');
+          if (acct == null || (acct == Api.instance.userId && !test)) return;
           await Notifier.instance.showFromPush(m.data);
           await Accounts.instance.refresh();
         });

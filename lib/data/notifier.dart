@@ -493,7 +493,7 @@ class Notifier {
       category: AndroidNotificationCategory.message,
       styleInformation: InboxStyleInformation(lines, contentTitle: title, summaryText: lines.length > 1 ? '${lines.length} new messages' : null),
       subText: sub,
-      actions: !actions ? null : const [
+      actions: !actions ? const [AndroidNotificationAction('switch', 'Switch account', showsUserInterface: true)] : const [
         AndroidNotificationAction('reply', 'Reply', inputs: [AndroidNotificationActionInput(label: 'Message')], showsUserInterface: false, cancelNotification: false),
         AndroidNotificationAction('read', 'Mark as read', showsUserInterface: false),
       ],

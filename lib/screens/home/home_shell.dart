@@ -63,7 +63,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       unawaited(Birthdays.instance.sync());
       unawaited(Accounts.instance.refresh());
         unawaited(_birthdays());
-        unawaited(Accounts.instance.refresh());
+        unawaited(Accounts.instance.ensurePush());
         final call = Notifier.instance.pendingCall;
         if (call != null) {
           Notifier.instance.pendingCall = null;

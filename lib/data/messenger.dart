@@ -122,6 +122,7 @@ class Messenger {
     // Keeps "My contacts" privacy and contact names up to date.
     unawaited(ContactBook.instance.load().then((_) {}, onError: (_) {}));
     unawaited(_refreshPeers());
+    unawaited(_ensureMyPhoto());
     unawaited(loadGroups().then((_) => _mergeNotificationReplies()));
     _purge();
     _purgeTimer?.cancel();
@@ -206,6 +207,18 @@ class Messenger {
 
   Future<void> removeMyPhoto() async {
     await Api.instance.request('DELETE', '/v1/me/photo');
+  }
+
+  /// If my photo is on this phone but not on the server (an upload failed), send it again.
+  Future<void> _ensureMyPhoto() async {
+    final path = _s.myPhoto;
+    final uid = _uid;
+    if (path == null || uid == null) return;
+    try {
+      final d = await Api.instance.request('GET', '/v1/users/$uid');
+      final ver = ((d['user'] as Map)['photo_ver'] as num?)?.toInt() ?? 0;
+      if (ver == 0 && await File(path).exists()) await uploadMyPhoto(path);
+    } catch (_) {}
   }
 
   Future<void> _refreshPeers() async {
@@ -354,6 +367,7 @@ class Messenger {
   Future<void> _saveNow() async {
     final uid = _uid;
     if (uid == null || !_s.realChats) return;
+    if (_syncNotesProfile()) _s.changed();
     _saveTimer?.cancel();
     try {
       final data = jsonEncode({
@@ -1115,10 +1129,31 @@ class Messenger {
   }
 
   // ------------------------------------------------------------------ notes
+  /// "Name (You)": chat with yourself, shows your own name and photo like WhatsApp.
   void _ensureNotes() {
-    if (_s.chats.any((c) => c.isNotes)) return;
-    _s.chats.add(Chat(id: 'notes', name: 'Notes (You)', initials: '✎', colorIndex: 0, pinned: true, about: 'Only you can see this', peerId: _uid, phone: _s.phone));
-    _s.changed();
+    if (!_s.chats.any((c) => c.isNotes)) {
+      _s.chats.add(Chat(id: 'notes', name: 'You', initials: '✎', colorIndex: 2, pinned: true, about: 'Message yourself', peerId: _uid, phone: _s.phone));
+    }
+    if (_syncNotesProfile()) _s.changed();
+  }
+
+  /// Keeps the notes chat showing my current name and photo. True if something changed.
+  bool _syncNotesProfile() {
+    Chat? n;
+    for (final c in _s.chats) {
+      if (c.isNotes) n = c;
+    }
+    if (n == null) return false;
+    final me = _s.name.trim().isEmpty ? 'You' : _s.name.trim();
+    final name = me == 'You' ? 'You' : '$me (You)';
+    final parts = me.split(' ').where((x) => x.isNotEmpty).toList();
+    final ini = parts.isEmpty ? '✎' : (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
+    if (n.name == name && n.photo == _s.myPhoto && n.initials == ini && n.about == 'Message yourself') return false;
+    n.name = name;
+    n.initials = ini;
+    n.photo = _s.myPhoto;
+    n.about = 'Message yourself';
+    return true;
   }
 
   // ------------------------------------------------------------------ reminders

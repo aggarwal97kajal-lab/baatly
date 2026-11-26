@@ -99,6 +99,18 @@ class NotificationsScreen extends StatelessWidget {
       builder: (context, _) => Scaffold(
         appBar: AppBar(title: const Text('Notifications')),
         body: ListView(children: [
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Send a test notification'),
+            subtitle: const Text('Checks that this phone gets notifications (for every account on it)'),
+            onTap: () async {
+              final n = await Accounts.instance.testPush();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(n == 0 ? "Couldn't reach the server" : 'Sent. A notification should appear in a few seconds${n > 1 ? ' for each account' : ''}.')));
+              }
+            },
+          ),
           const SectionLabel('Messages'),
           SwitchListTile(
             title: const Text('Message notifications'),

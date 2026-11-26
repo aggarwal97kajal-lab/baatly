@@ -250,6 +250,15 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     return json({ ok: true });
   }
 
+  // "Send a test notification" (Settings › Notifications): checks this phone gets pushes for this account.
+  if (m === 'POST' && p === '/v1/push/test') {
+    await limit(env, 'pushtest', me.id, 10, 3600);
+    if (!pushConfigured(env)) return json({ ok: false, configured: false });
+    const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM push_tokens WHERE user_id = ?').bind(me.id).first<{ n: number }>();
+    await notify(env, me.id, 'BAATLY', 'Test notification · notifications are working', { type: 'msg', chat: 'test', from: '', msgId: `test-${Date.now()}`, body: '' });
+    return json({ ok: true, configured: true, phones: n?.n ?? 0 });
+  }
+
   if (m === 'PUT' && p === '/v1/push/token') {
     const b = await readJson<{ token: string }>(c.req);
     const token = String(b.token ?? '');
