@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_background/flutter_background.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -42,6 +43,9 @@ class CallSession extends ChangeNotifier {
   final DateTime started = DateTime.now();
   /// Minimised to a bar (call keeps going while you use the app).
   bool minimised = false;
+  /// Sharing my screen instead of the camera.
+  bool sharing = false;
+  MediaStream? screen;
 
   CallSession({required this.id, required this.peerId, required this.peerName, required this.outgoing, required this.video, required this.state});
 
@@ -310,6 +314,79 @@ class CallService {
     } catch (_) {}
   }
 
+  // ------------------------------------------------------------ screen share
+  /// "Share screen": Android asks for permission, a "sharing your screen"
+  /// notification keeps it running, and my video becomes the screen.
+  Future<bool> startScreenShare() async {
+    final s = current;
+    if (s == null || s.pc == null || s.local == null || s.sharing || s.state != CallState.connected) return false;
+    try {
+      if (!await Helper.requestCapturePermission()) return false;
+      const cfg = FlutterBackgroundAndroidConfig(
+        notificationTitle: 'BAATLY',
+        notificationText: 'You are sharing your screen',
+        notificationImportance: AndroidNotificationImportance.normal,
+        notificationIcon: AndroidResource(name: 'ic_launcher', defType: 'mipmap'),
+      );
+      if (await FlutterBackground.initialize(androidConfig: cfg) && !FlutterBackground.isBackgroundExecutionEnabled) {
+        await FlutterBackground.enableBackgroundExecution();
+      }
+      final disp = await navigator.mediaDevices.getDisplayMedia({'video': true, 'audio': false});
+      final track = disp.getVideoTracks().first;
+      s.screen = disp;
+      RTCRtpSender? vs;
+      for (final sd in await s.pc!.getSenders()) {
+        if (sd.track?.kind == 'video') vs = sd;
+      }
+      if (vs != null) {
+        await vs.replaceTrack(track);
+      } else {
+        await s.pc!.addTrack(track, s.local!);
+        final offer = await s.pc!.createOffer();
+        await s.pc!.setLocalDescription(offer);
+        await _signal(s, 'reoffer', await _gathered(s.pc!));
+      }
+      track.onEnded = () => unawaited(stopScreenShare());
+      s.sharing = true;
+      s.changed();
+      unawaited(_signal(s, 'cam', 'on'));
+      return true;
+    } catch (_) {
+      await _endShareService();
+      return false;
+    }
+  }
+
+  Future<void> stopScreenShare() async {
+    final s = current;
+    if (s == null || !s.sharing) return;
+    s.sharing = false;
+    try {
+      final cam = s.local?.getVideoTracks() ?? <MediaStreamTrack>[];
+      for (final sd in await s.pc!.getSenders()) {
+        if (sd.track?.kind == 'video') {
+          await sd.replaceTrack(cam.isNotEmpty && !s.cameraOff ? cam.first : null);
+        }
+      }
+      if (cam.isEmpty || s.cameraOff) unawaited(_signal(s, 'cam', 'off'));
+    } catch (_) {}
+    try {
+      for (final t in s.screen?.getTracks() ?? <MediaStreamTrack>[]) {
+        await t.stop();
+      }
+      await s.screen?.dispose();
+    } catch (_) {}
+    s.screen = null;
+    await _endShareService();
+    s.changed();
+  }
+
+  Future<void> _endShareService() async {
+    try {
+      if (FlutterBackground.isBackgroundExecutionEnabled) await FlutterBackground.disableBackgroundExecution();
+    } catch (_) {}
+  }
+
   Future<void> _onReoffer(CallSession s, String data) async {
     try {
       final o = jsonDecode(data) as Map<String, dynamic>;
@@ -363,6 +440,17 @@ class CallService {
     s._ringTimer?.cancel();
     s._tick?.cancel();
     if (!remote) unawaited(_signal(s, 'end'));
+    if (s.sharing) {
+      s.sharing = false;
+      try {
+        for (final t in s.screen?.getTracks() ?? <MediaStreamTrack>[]) {
+          await t.stop();
+        }
+        await s.screen?.dispose();
+      } catch (_) {}
+      s.screen = null;
+      await _endShareService();
+    }
     try {
       for (final t in s.local?.getTracks() ?? <MediaStreamTrack>[]) {
         await t.stop();

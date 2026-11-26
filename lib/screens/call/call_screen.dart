@@ -70,6 +70,17 @@ class _CallScreenState extends State<CallScreen> {
             _sheetItem(sh, Icons.cameraswitch_rounded, 'Flip camera', cs.switchCamera),
           _sheetItem(sh, s.speaker ? Icons.phone_in_talk_rounded : Icons.volume_up_rounded, s.speaker ? 'Use phone earpiece' : 'Use speaker',
               () => cs.speaker(s, !s.speaker)),
+          if (s.state == CallState.connected)
+            _sheetItem(sh, s.sharing ? Icons.stop_screen_share_rounded : Icons.screen_share_rounded, s.sharing ? 'Stop sharing screen' : 'Share screen', () async {
+              if (s.sharing) {
+                await cs.stopScreenShare();
+                return;
+              }
+              final ok = await cs.startScreenShare();
+              if (!ok && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't start screen sharing")));
+              }
+            }),
           _sheetItem(sh, Icons.chat_bubble_outline_rounded, 'Message', _message),
           _sheetItem(sh, Icons.link_rounded, 'Share call link', _share),
           const SizedBox(height: 8),
@@ -152,7 +163,34 @@ class _CallScreenState extends State<CallScreen> {
           final videoLayout = (s.video || s.remoteVideo) && s.state != CallState.incoming && s.state != CallState.ended;
           return Scaffold(
             backgroundColor: const Color(0xFF1B1512),
-            body: videoLayout ? _video(hasLocalVideo) : _voice(),
+            body: Stack(children: [
+              Positioned.fill(child: videoLayout ? _video(hasLocalVideo) : _voice()),
+              if (s.sharing)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  top: MediaQuery.of(context).padding.top + 64,
+                  child: Material(
+                    color: const Color(0xFFE5484D),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                      child: Row(children: [
+                        const Icon(Icons.screen_share_rounded, color: Colors.white, size: 20),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text("You're sharing your screen", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                        ),
+                        TextButton(
+                          style: TextButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFFE5484D), minimumSize: const Size(56, 32)),
+                          onPressed: cs.stopScreenShare,
+                          child: const Text('Stop', style: TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ),
+            ]),
           );
         },
       ),
