@@ -7,6 +7,8 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/common.dart';
 import 'passkey_setup_screen.dart';
+import '../../data/birthdays.dart';
+import '../settings/birthdays_screen.dart';
 import 'permissions_screen.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
@@ -22,6 +24,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _about = TextEditingController(text: 'Let\'s talk!');
   bool _saving = false;
   String? _serverError;
+  String _dob = '';
 
   Future<void> _submit() async {
     setState(() {
@@ -32,6 +35,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       if (kHasBackend) {
         await Api.instance.updateProfile(name: _name.text.trim(), username: _user.text.trim(), about: _about.text.trim());
       }
+      await Birthdays.instance.saveMine(_dob);
       AppState.instance.finishOnboarding(name: _name.text, username: _user.text, about: _about.text);
       if (!mounted) return;
       final next = widget.offerPasskey && kHasBackend ? const PasskeySetupScreen() : const PermissionsScreen();
@@ -62,7 +66,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final bc = context.bc;
-    final ready = _name.text.trim().isNotEmpty && _userOk;
+    final ready = _name.text.trim().isNotEmpty && _userOk && _dob.isNotEmpty;
     return Scaffold(
       backgroundColor: bc.bg,
       appBar: AppBar(backgroundColor: bc.bg, title: const Text('Set up profile'), centerTitle: true, automaticallyImplyLeading: false),
@@ -101,7 +105,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               ),
             ),
             const SizedBox(height: 28),
-            _Field(label: 'Name', ctrl: _name, hint: 'Aapka naam', onChanged: () => setState(() {}), helper: 'Your contacts will see this name.'),
+            _Field(label: 'Name', ctrl: _name, hint: 'Your name', onChanged: () => setState(() {}), helper: 'Your contacts will see this name.'),
             _Field(
               label: 'Username',
               ctrl: _user,
@@ -120,6 +124,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 child: Text(_serverError!, style: const TextStyle(color: Mitti.error, fontWeight: FontWeight.w500)),
               ),
             _Field(label: 'About', ctrl: _about, hint: 'A little about you', onChanged: () => setState(() {}), maxLength: 140),
+            DobField(value: _dob, onChanged: (v) => setState(() => _dob = v)),
             const SizedBox(height: 20),
             AnimatedOpacity(
               opacity: ready ? 1 : 0.45,

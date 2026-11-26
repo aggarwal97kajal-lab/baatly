@@ -110,6 +110,10 @@ class Notifier {
         return '👤 ${md?['name'] ?? 'Contact'}';
       case 'event':
         return '📅 ${md?['title'] ?? 'Event'}';
+      case 'checklist':
+        return '☑️ ${md?['title'] ?? 'Checklist'}';
+      case 'ledger':
+        return '₹ ${md?['title'] ?? 'Hisaab'}';
     }
     return t;
   }
@@ -190,6 +194,26 @@ class Notifier {
     );
   }
 
+  Future<void> showBirthday(String chatId, String name, String uid) async {
+    await init();
+    await _plugin.show(
+      _idFor('bday_$uid'),
+      "🎂 It's $name's birthday today",
+      'Send them a wish',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channel.id,
+          _channel.name,
+          channelDescription: _channel.description,
+          importance: Importance.high,
+          priority: Priority.high,
+          category: AndroidNotificationCategory.reminder,
+        ),
+      ),
+      payload: jsonEncode({'chat': chatId, 'bday': uid}),
+    );
+  }
+
   /// "Call back" tapped on a missed-call notification.
   ({String peer, bool video})? pendingCallBack;
   void Function(String peer, bool video)? onCallBack;
@@ -246,6 +270,26 @@ class Notifier {
 
   /// Decrypts the pushed message on this phone and shows it.
   Future<void> showFromPush(Map<String, dynamic> data) async {
+    if (data['type'] == 'reminder' && (data['msgId'] as String? ?? '').startsWith('bday:')) {
+      final uid = (data['msgId'] as String).substring(5);
+      var name = 'Someone';
+      try {
+        await Api.instance.load();
+        final me = Api.instance.userId;
+        if (me != null) {
+          final local = await _localData(me);
+          final peer = ((local['peers'] as Map?)?[uid] as Map?)?.cast<String, dynamic>();
+          final pn = peer?['name'] as String?;
+          if (pn != null && pn.isNotEmpty) name = pn;
+          for (final c in (local['chats'] as List? ?? [])) {
+            final m = (c as Map).cast<String, dynamic>();
+            if (m['peer'] == uid && (m['name'] as String? ?? '').isNotEmpty) name = m['name'] as String;
+          }
+        }
+      } catch (_) {}
+      await showBirthday(data['rchat'] as String? ?? '', name, uid);
+      return;
+    }
     if (data['type'] == 'reminder') {
       var chatName = 'BAATLY';
       var line = 'Tap to see the message';
@@ -334,7 +378,7 @@ class Notifier {
         if (key != null) {
           final plain = await E2E.instance.open(body, key);
           // Delete / view-once / poll votes: nothing to show.
-          if (const ['del', 'opened', 'vote', 'pin', 'unpin', 'live', 'edit'].any(plain.containsKey)) return;
+          if (const ['del', 'opened', 'vote', 'pin', 'unpin', 'live', 'edit', 'cl', 'hs'].any(plain.containsKey)) return;
           text = _preview(plain);
         }
         final name = (peer?['name'] as String?)?.isNotEmpty == true

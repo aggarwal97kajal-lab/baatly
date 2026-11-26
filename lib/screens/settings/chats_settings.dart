@@ -16,6 +16,8 @@ import '../../widgets/common.dart';
 import 'appearance_screen.dart';
 import 'wallpaper_screen.dart';
 import 'quick_replies.dart';
+import 'busy_mode.dart';
+import 'birthdays_screen.dart';
 
 String _size(int b) {
   if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(0)} KB';
@@ -56,6 +58,18 @@ class ChatsSettingsScreen extends StatelessWidget {
             title: const Text('Quick replies'),
             subtitle: Text(s.quickReplies.isEmpty ? 'Type "/" in a chat to use saved texts' : '${s.quickReplies.length} saved'),
             onTap: () => go(const QuickRepliesScreen()),
+          ),
+          ListTile(
+            leading: const Icon(Icons.do_not_disturb_on_outlined),
+            title: const Text('Busy mode'),
+            subtitle: Text(busySummary()),
+            onTap: () => go(const BusyModeScreen()),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cake_outlined),
+            title: const Text('Birthdays'),
+            subtitle: Text(s.birthdayReminders ? 'Reminders on' : 'Reminders off'),
+            onTap: () => go(const BirthdaysScreen()),
           ),
           const Divider(),
           ListTile(leading: const Icon(Icons.cloud_upload_outlined), title: const Text('Chat backup'), onTap: () => go(const ChatBackupScreen())),

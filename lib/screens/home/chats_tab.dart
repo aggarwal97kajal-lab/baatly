@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../settings/you_tab.dart';
+import '../settings/busy_mode.dart';
+import '../settings/birthdays_screen.dart';
 import '../settings/qr_screen.dart';
 import 'package:local_auth/local_auth.dart';
 
@@ -133,6 +135,27 @@ class _ChatsTabState extends State<ChatsTab> {
                   ),
                 ),
               ),
+              if (!_showArchived && s.busyOn)
+                SliverToBoxAdapter(
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+                    decoration: BoxDecoration(color: context.primary.withOpacity(0.13), borderRadius: BorderRadius.circular(14)),
+                    child: Row(children: [
+                      Icon(Icons.do_not_disturb_on_outlined, color: context.primary, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BusyModeScreen())),
+                          child: Text(s.busyNow ? 'Busy mode is on' : 'Busy mode · ${busySummary()}',
+                              style: TextStyle(color: context.primary, fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                      TextButton(onPressed: () => s.toggle(() => s.busyOn = false), child: const Text('Turn off')),
+                    ]),
+                  ),
+                ),
+              if (!_showArchived) const SliverToBoxAdapter(child: BirthdayTodayCard()),
               if (!_showArchived)
                 SliverToBoxAdapter(
                   child: SizedBox(
@@ -438,6 +461,12 @@ class _ChatRow extends StatelessWidget {
       final missed = m.media?['missed'] == true;
       pIcon = v ? Icons.videocam_rounded : Icons.call_rounded;
       preview = !m.fromMe && missed ? (v ? 'Missed video call' : 'Missed voice call') : (v ? 'Video call' : 'Voice call');
+    } else if (m != null && m.kind == MsgKind.checklist) {
+      pIcon = Icons.checklist_rounded;
+      preview = (m.media?['title'] as String?) ?? 'Checklist';
+    } else if (m != null && m.kind == MsgKind.ledger) {
+      pIcon = Icons.currency_rupee_rounded;
+      preview = (m.media?['title'] as String?) ?? 'Hisaab';
     } else if (m != null && m.kind == MsgKind.poll) {
       pIcon = Icons.poll_rounded;
       preview = (m.media?['q'] as String?) ?? 'Poll';

@@ -709,7 +709,7 @@ class Messenger {
       if (ts is int) at = DateTime.fromMillisecondsSinceEpoch(ts);
       ttl = (plain['ttl'] as int?) ?? 0;
       md = (plain['md'] as Map?)?.cast<String, dynamic>();
-      for (final k in const ['del', 'opened', 'vote', 'pin', 'unpin', 'live', 'edit']) {
+      for (final k in const ['del', 'opened', 'vote', 'pin', 'unpin', 'live', 'edit', 'cl', 'hs']) {
         if (plain.containsKey(k)) control = {k: plain[k]};
       }
     } catch (_) {
@@ -759,8 +759,26 @@ class Messenger {
       } else {
         unawaited(_receipt(from, [msgId], 'delivered', group: gid));
       }
+      _maybeAutoReply(chat, m, from);
     }
     return true;
+  }
+
+  /// Busy mode: answer once per person every 3 hours (never to an auto-reply,
+  /// never for old messages fetched after being offline).
+  void _maybeAutoReply(Chat chat, Message m, String from) {
+    if (!_s.busyNow || chat.isNotes || chat.isBroadcast || chat.left) return;
+    if (chat.isGroup && !_s.busyGroups) return;
+    if (m.kind == MsgKind.system || m.kind == MsgKind.call || m.media?['auto'] == true) return;
+    if (DateTime.now().difference(m.time).inMinutes > 15) return;
+    final key = chat.isGroup ? chat.id : from;
+    final last = _s.busySent[key] ?? 0;
+    if (DateTime.now().millisecondsSinceEpoch - last < 3 * 3600 * 1000) return;
+    final text = _s.busyText.trim();
+    if (text.isEmpty) return;
+    _s.busySent[key] = DateTime.now().millisecondsSinceEpoch;
+    _s.toggle(() {});
+    send(chat, text, extra: {'auto': true});
   }
 
   Future<Map<String, dynamic>> _open(String body, Peer peer) async {
@@ -1142,6 +1160,12 @@ class Messenger {
 
   void _onReminder(Map<String, dynamic> ev) {
     final msgId = ev['msgId'] as String? ?? '';
+    if (msgId.startsWith('bday:')) {
+      final uid = msgId.substring(5);
+      unawaited(Notifier.instance.showBirthday(ev['chat'] as String? ?? '', nameFor(uid), uid));
+      _s.changed();
+      return;
+    }
     final chat = chatById(ev['chat'] as String? ?? '');
     final m = _find(msgId);
     reminders.remove(msgId);
@@ -1168,6 +1192,8 @@ class Messenger {
         'contact' => MsgKind.contact,
         'event' => MsgKind.event,
         'video' => MsgKind.video,
+        'checklist' => MsgKind.checklist,
+        'ledger' => MsgKind.ledger,
         _ => MsgKind.text,
       };
 
@@ -1215,6 +1241,14 @@ class Messenger {
           m.media!['upd'] = DateTime.now().millisecondsSinceEpoch;
         }
       }
+    } else if (c['cl'] is Map) {
+      final v = (c['cl'] as Map).cast<String, dynamic>();
+      final m = _find(v['m'] as String? ?? '');
+      if (m != null && m.kind == MsgKind.checklist) _applyChecklist(from, m, v);
+    } else if (c['hs'] is Map) {
+      final v = (c['hs'] as Map).cast<String, dynamic>();
+      final m = _find(v['m'] as String? ?? '');
+      if (m != null && m.kind == MsgKind.ledger) _applyLedger(from, m, v);
     } else if (c['vote'] is Map) {
       final v = (c['vote'] as Map).cast<String, dynamic>();
       final m = _find(v['m'] as String? ?? '');
@@ -1280,6 +1314,79 @@ class Messenger {
       await _sendPayload(chat, _newId(), {'opened': m.id}, silent: true, onlyTo: sender);
     } catch (_) {}
   }
+
+  // ------------------------------------------------------------------ shared checklist + hisaab
+  Future<void> _shareOp(Chat chat, Map<String, dynamic> payload) async {
+    if (!chat.isReal || chat.isNotes || chat.isBroadcast) return;
+    try {
+      await _sendPayload(chat, _newId(), payload, silent: true);
+    } catch (_) {}
+  }
+
+  /// Checklist: op 'tick' | 'untick' | 'add' (+ text) | 'rm'.
+  void checklistOp(Chat chat, Message m, String op, String itemId, {String text = ''}) {
+    final v = {'m': m.id, 'op': op, 'i': itemId, if (text.isNotEmpty) 't': text};
+    _applyChecklist(_uid ?? 'me', m, v);
+    _s.changed();
+    unawaited(_shareOp(chat, {'cl': v}));
+  }
+
+  void _applyChecklist(String from, Message m, Map<String, dynamic> v) {
+    final md = m.media ??= <String, dynamic>{};
+    final items = [for (final x in (md['items'] as List? ?? [])) (x as Map).cast<String, dynamic>()];
+    final id = v['i'] as String? ?? '';
+    final op = v['op'] as String? ?? '';
+    final i = items.indexWhere((x) => x['id'] == id);
+    if (op == 'add' && i < 0 && id.isNotEmpty && items.length < 100) {
+      final t = (v['t'] as String? ?? '').trim();
+      if (t.isNotEmpty) items.add({'id': id, 't': t.length > 200 ? t.substring(0, 200) : t, 'by': from});
+    } else if (i >= 0 && op == 'tick') {
+      items[i]['done'] = from;
+    } else if (i >= 0 && op == 'untick') {
+      items[i].remove('done');
+    } else if (i >= 0 && op == 'rm' && (items[i]['by'] == from || m.fromMe || m.from == from)) {
+      items.removeAt(i);
+    }
+    md['items'] = items;
+  }
+
+  /// Hisaab: op 'add' (expense map) | 'del' (expense id).
+  void ledgerOp(Chat chat, Message m, String op, Map<String, dynamic> e) {
+    final v = {'m': m.id, 'op': op, 'e': e};
+    _applyLedger(_uid ?? 'me', m, v);
+    _s.changed();
+    unawaited(_shareOp(chat, {'hs': v}));
+  }
+
+  void _applyLedger(String from, Message m, Map<String, dynamic> v) {
+    final md = m.media ??= <String, dynamic>{};
+    final exp = [for (final x in (md['exp'] as List? ?? [])) (x as Map).cast<String, dynamic>()];
+    final e = ((v['e'] as Map?) ?? {}).cast<String, dynamic>();
+    final id = e['id'] as String? ?? '';
+    final op = v['op'] as String? ?? '';
+    final i = exp.indexWhere((x) => x['id'] == id);
+    if (op == 'add' && i < 0 && id.isNotEmpty && exp.length < 500) {
+      final a = (e['a'] as num?)?.toInt() ?? 0;
+      final split = [for (final x in (e['s'] as List? ?? [])) x.toString()];
+      if (a > 0 && split.isNotEmpty && e['p'] is String) {
+        exp.add({
+          'id': id,
+          'd': '${e['d'] ?? ''}',
+          'a': a,
+          'p': e['p'],
+          's': split,
+          if (e['st'] == true) 'st': true,
+          'at': (e['at'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+          'by': from,
+        });
+      }
+    } else if (op == 'del' && i >= 0 && (exp[i]['by'] == from || exp[i]['p'] == from)) {
+      exp.removeAt(i);
+    }
+    md['exp'] = exp;
+  }
+
+  String newItemId() => _newId();
 
   /// Vote in a poll (replaces my previous vote).
   Future<void> vote(Chat chat, Message m, List<int> choices) async {

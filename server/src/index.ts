@@ -26,6 +26,7 @@ import { pushConfigured } from './fcm';
 import { deleteUserStatuses, expireStatuses, statusRoute } from './status';
 import { expireMedia, mediaConfigured, mediaRoute } from './media';
 import { groupRoute } from './groups';
+import { birthdayRoute } from './birthdays';
 import { callRoute } from './calls';
 import { groupCallRoute } from './gcalls';
 import { communityRoute } from './groups';
@@ -491,6 +492,11 @@ async function route(c: Ctx): Promise<Response> {
   if (/^\/v1\/(blocks|reports)(\/|$)/.test(p)) {
     const { user } = await requireUser(c);
     const r = await safetyRoute(c, user, m, p);
+    if (r) return r;
+  }
+  if (p === '/v1/me/birthday' || p === '/v1/birthdays') {
+    const { user } = await requireUser(c);
+    const r = await birthdayRoute(c, user, m, p);
     if (r) return r;
   }
   if (p === '/v1/support') {

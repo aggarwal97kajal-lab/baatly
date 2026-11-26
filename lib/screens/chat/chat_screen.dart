@@ -1,3 +1,4 @@
+import 'shared_cards.dart';
 import '../settings/quick_replies.dart';
 import '../../data/secure_screen.dart';
 import 'package:flutter/material.dart';
@@ -690,6 +691,8 @@ class _ChatScreenState extends State<ChatScreen> {
               item(Icons.poll_rounded, 'Poll', const Color(0xFFE0A100), () => _card(const PollCreateScreen())),
               item(Icons.event_rounded, 'Event', const Color(0xFFD9467A), () => _card(const EventCreateScreen())),
               item(Icons.videocam_rounded, 'Video', const Color(0xFF3A8F6B), _pickVideo),
+              if (!chat.isBroadcast) item(Icons.checklist_rounded, 'Checklist', const Color(0xFFC8553D), () => _card(const ChecklistCreateScreen())),
+              if (!chat.isBroadcast && !chat.isNotes) item(Icons.currency_rupee_rounded, 'Hisaab', const Color(0xFF00897B), () => _card(const LedgerCreateScreen())),
             ],
           ),
         ),
@@ -1598,6 +1601,10 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
       content = ViewOnceContent(chat: widget.chat, m: m, fg: fg);
     } else if (m.kind == MsgKind.poll) {
       content = PollContent(chat: widget.chat, m: m, fg: fg, accent: accent);
+    } else if (m.kind == MsgKind.checklist) {
+      content = ChecklistContent(chat: widget.chat, m: m, fg: fg, accent: accent);
+    } else if (m.kind == MsgKind.ledger) {
+      content = LedgerContent(chat: widget.chat, m: m, fg: fg, accent: accent);
     } else if (m.kind == MsgKind.location) {
       content = LocationContent(chat: widget.chat, m: m, fg: fg);
     } else if (m.kind == MsgKind.contact) {
@@ -1717,6 +1724,18 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
                 Icon(Icons.shortcut_rounded, size: 14, color: fg.withOpacity(0.6)),
                 const SizedBox(width: 3),
                 Text('Forwarded', style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: fg.withOpacity(0.6))),
+              ]),
+            ),
+          ),
+        if (m.media?['auto'] == true && !m.deleted)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.reply_rounded, size: 14, color: fg.withOpacity(0.6)),
+                const SizedBox(width: 3),
+                Text('Auto-reply', style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: fg.withOpacity(0.6))),
               ]),
             ),
           ),
@@ -2435,6 +2454,8 @@ class _InfoBubble extends StatelessWidget {
       MsgKind.location => '📍 Location',
       MsgKind.contact => '👤 ${(m.media?['name'] as String?) ?? 'Contact'}',
       MsgKind.poll => '📊 ${(m.media?['q'] as String?) ?? 'Poll'}',
+      MsgKind.checklist => '☑️ ${(m.media?['title'] as String?) ?? 'Checklist'}',
+      MsgKind.ledger => '₹ ${(m.media?['title'] as String?) ?? 'Hisaab'}',
       MsgKind.event => '📅 ${(m.media?['title'] as String?) ?? 'Event'}',
       _ => m.text,
     };

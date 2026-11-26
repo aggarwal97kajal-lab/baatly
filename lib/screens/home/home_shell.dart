@@ -14,6 +14,8 @@ import '../chat/chat_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'calls_tab.dart';
+import '../../data/birthdays.dart';
+import '../settings/birthdays_screen.dart';
 import '../settings/qr_screen.dart';
 import 'chats_tab.dart';
 import 'community_tab.dart';
@@ -57,6 +59,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         final cb = Notifier.instance.pendingCallBack;
         if (cb != null) _callBack(cb.peer, cb.video);
         unawaited(CallService.instance.syncRecent());
+      unawaited(Birthdays.instance.sync());
+        unawaited(_birthdays());
         final call = Notifier.instance.pendingCall;
         if (call != null) {
           Notifier.instance.pendingCall = null;
@@ -68,15 +72,29 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     }
   }
 
+  /// Date of birth is required: ask once if it's missing (older accounts), then book birthday reminders.
+  Future<void> _birthdays() async {
+    final s = AppState.instance;
+    if (s.myDob.isEmpty) {
+      try {
+        await Birthdays.instance.loadMine();
+      } catch (_) {}
+    }
+    if (s.myDob.isEmpty && mounted) {
+      await Navigator.of(context).push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const DobRequiredScreen()));
+    }
+    unawaited(Birthdays.instance.sync());
+  }
+
   Future<void> _callBack(String peer, bool video) async {
     Notifier.instance.pendingCallBack = null;
     final chat = await Messenger.instance.chatForUser(peer);
     if (chat != null) await CallService.instance.start(chat, video: video);
   }
 
-  void _openFromNotification(String id) {
+  Future<void> _openFromNotification(String id) async {
     Notifier.instance.pendingChat = null;
-    final chat = Messenger.instance.chatById(id);
+    final chat = id.startsWith('u:') ? await Messenger.instance.chatForUser(id.substring(2)) : Messenger.instance.chatById(id);
     if (chat == null || !mounted) return;
     AppState.instance.openChat(chat);
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)));

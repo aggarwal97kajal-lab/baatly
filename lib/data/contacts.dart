@@ -35,6 +35,10 @@ class ContactBook {
 
   /// e164 -> name as saved on this phone.
   final Map<String, String> names = {};
+  /// e164 -> 'MM-DD' birthday saved in the phone book.
+  final Map<String, String> birthdays = {};
+  /// BAATLY user id -> 'MM-DD' (phone-book birthdays of people on BAATLY).
+  final Map<String, String> userBirthdays = {};
 
   static String? toE164(String raw) {
     var s = raw.trim();
@@ -61,7 +65,7 @@ class ContactBook {
     if (st.name != 'granted' && st.name != 'limited') {
       return ContactsResult(false, [], []);
     }
-    final all = await FlutterContacts.getAll(properties: {ContactProperty.name, ContactProperty.phone});
+    final all = await FlutterContacts.getAll(properties: {ContactProperty.name, ContactProperty.phone, ContactProperty.event});
     final people = <String, PhoneContact>{};
     for (final c in all) {
       final String? dn = c.displayName;
@@ -72,6 +76,13 @@ class ContactBook {
         if (e == null || people.containsKey(e)) continue;
         people[e] = PhoneContact(name.isEmpty ? pretty(e) : name, pretty(e), e);
         names[e] = name.isEmpty ? pretty(e) : name;
+        try {
+          for (final ev in c.events) {
+            if (ev.label.label == EventLabel.birthday) {
+              birthdays[e] = '${ev.month.toString().padLeft(2, '0')}-${ev.day.toString().padLeft(2, '0')}';
+            }
+          }
+        } catch (_) {}
       }
     }
     final d = await Api.instance.request('POST', '/v1/contacts/match', {'numbers': people.keys.toList()});
@@ -81,6 +92,8 @@ class ContactBook {
       final m = u as Map<String, dynamic>;
       final phone = m['phone'] as String;
       onPhones.add(phone);
+      final pb = birthdays[phone];
+      if (pb != null) userBirthdays[m['id'] as String] = pb;
       final profile = (m['name'] as String?) ?? '';
       on.add(BaatlyContact(
         m['id'] as String,

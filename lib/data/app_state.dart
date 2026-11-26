@@ -105,12 +105,15 @@ class AppState extends ChangeNotifier {
   Map<String, int> busySent = {};
   // Birthdays. My date of birth 'YYYY-MM-DD' (asked once, required).
   String myDob = '';
-  bool shareBirthday = true;
+  /// Who sees my birthday (day + month only): 0 everyone, 1 my contacts, 3 nobody.
+  int birthdayShare = 1;
   bool birthdayReminders = true;
   /// Birthdays I added myself: user id (or chat id) -> 'MM-DD'.
   Map<String, String> manualBirthdays = {};
   /// From the server / phone contacts: user id -> 'MM-DD'.
   Map<String, String> knownBirthdays = {};
+  /// Birthday cards I closed today ('YYYY-MM-DD:id').
+  Set<String> birthdayCardsHidden = {};
 
   /// Is busy mode answering right now?
   bool get busyNow {
@@ -136,10 +139,11 @@ class AppState extends ChangeNotifier {
         'bg': busyGroups,
         'bsent': busySent,
         'dob': myDob,
-        'shb': shareBirthday,
+        'shb': birthdayShare,
         'bdr': birthdayReminders,
         'mb': manualBirthdays,
         'kb': knownBirthdays,
+        'bch': birthdayCardsHidden.toList(),
       };
 
   void _applyExtras(Map<String, dynamic> j) {
@@ -157,10 +161,11 @@ class AppState extends ChangeNotifier {
     busyGroups = j['bg'] == true;
     busySent = {for (final e in ((j['bsent'] as Map?) ?? {}).entries) '${e.key}': (e.value as num).toInt()};
     myDob = (j['dob'] as String?) ?? '';
-    shareBirthday = j['shb'] != false;
+    birthdayShare = j['shb'] is int ? j['shb'] as int : 1;
     birthdayReminders = j['bdr'] != false;
     manualBirthdays = {for (final e in ((j['mb'] as Map?) ?? {}).entries) '${e.key}': '${e.value}'};
     knownBirthdays = {for (final e in ((j['kb'] as Map?) ?? {}).entries) '${e.key}': '${e.value}'};
+    birthdayCardsHidden = {for (final x in (j['bch'] as List? ?? [])) '$x'};
   }
 
   Map<String, dynamic> privacyJson() => {

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../data/birthdays.dart';
+import '../settings/birthdays_screen.dart';
 
 import '../../data/app_state.dart';
 import '../../data/models.dart';
@@ -116,6 +118,20 @@ class ChatInfoScreen extends StatelessWidget {
             ]),
             const SizedBox(height: 14),
             _Card(children: [
+              if (!chat.isGroup && chat.peerId != null)
+                ListTile(
+                  leading: Icon(Icons.cake_outlined, color: context.primary),
+                  title: const Text('Birthday'),
+                  subtitle: Text(s.birthdayOf(chat.peerId!) == null
+                      ? 'Add their birthday to get a reminder'
+                      : '${Birthdays.fmt(s.birthdayOf(chat.peerId!)!)}${s.manualBirthdays.containsKey(chat.peerId) ? ' · added by you' : ''}'),
+                  trailing: s.knownBirthdays.containsKey(chat.peerId) && !s.manualBirthdays.containsKey(chat.peerId)
+                      ? null
+                      : Icon(Icons.edit_outlined, color: bc.muted, size: 20),
+                  onTap: s.knownBirthdays.containsKey(chat.peerId) && !s.manualBirthdays.containsKey(chat.peerId)
+                      ? null
+                      : () => editManualBirthday(context, chat.peerId!, chat.name),
+                ),
               ListTile(
                 leading: Icon(Icons.perm_media_outlined, color: context.primary),
                 title: const Text('Media, links and docs'),
