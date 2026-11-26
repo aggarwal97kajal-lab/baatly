@@ -190,6 +190,66 @@ class Api {
     return d['etag'] as String;
   }
 
+  /// Same as [putPart], streamed in 64 KB slices so progress moves smoothly.
+  Future<String> putPartStreamed(String id, String upload, int n, List<int> bytes, void Function(int sent) onSent) async {
+    try {
+      final req = await _uploader.putUrl(Uri.parse('$kApiBase/v1/media/big/$id/$n?u=${Uri.encodeQueryComponent(upload)}'));
+      req.headers.set('content-type', 'application/octet-stream');
+      if (_token != null) req.headers.set('authorization', 'Bearer $_token');
+      req.contentLength = bytes.length;
+      const slice = 64 * 1024;
+      for (var i = 0; i < bytes.length; i += slice) {
+        final end = i + slice > bytes.length ? bytes.length : i + slice;
+        req.add(bytes.sublist(i, end));
+        await req.flush().timeout(const Duration(minutes: 2));
+        onSent(end);
+      }
+      final res = await req.close().timeout(const Duration(minutes: 2));
+      final body = await res.transform(utf8.decoder).join();
+      Map<String, dynamic> d = {};
+      try {
+        d = jsonDecode(body) as Map<String, dynamic>;
+      } catch (_) {}
+      if (res.statusCode >= 400) throw ApiException(res.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+      unawaited(addUsage(sent: bytes.length));
+      return d['etag'] as String;
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      onSent(0);
+      throw ApiException(0, 'NETWORK', "Couldn't upload. Check your internet.");
+    }
+  }
+
+  /// Same as [getRange], reporting bytes as they arrive.
+  Future<List<int>> getRangeStreamed(String id, int offset, int length, void Function(int got) onGot) async {
+    final req = http.Request('GET', Uri.parse('$kApiBase/v1/media/$id'))..headers['range'] = 'bytes=$offset-${offset + length - 1}';
+    if (_token != null) req.headers['authorization'] = 'Bearer $_token';
+    try {
+      final r = await _http.send(req).timeout(const Duration(minutes: 2));
+      if (r.statusCode >= 400) {
+        final body = await r.stream.bytesToString();
+        Map<String, dynamic> d = {};
+        try {
+          d = jsonDecode(body) as Map<String, dynamic>;
+        } catch (_) {}
+        throw ApiException(r.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+      }
+      final out = BytesBuilder(copy: false);
+      await for (final c in r.stream.timeout(const Duration(minutes: 2))) {
+        out.add(c);
+        onGot(out.length);
+      }
+      unawaited(addUsage(received: out.length));
+      return out.takeBytes();
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      onGot(0);
+      throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
+    }
+  }
+
   /// Big files: bytes [offset, offset+length) of a stored file.
   Future<List<int>> getRange(String id, int offset, int length) async {
     final req = http.Request('GET', Uri.parse('$kApiBase/v1/media/$id'))..headers['range'] = 'bytes=$offset-${offset + length - 1}';

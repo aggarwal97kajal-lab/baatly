@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:isolate';
 
@@ -114,14 +115,22 @@ class E2E {
   Future<(List<int>, List<int>)> lock(List<int> data) async {
     final key = await _aead.newSecretKey();
     final box = await _aead.encrypt(data, secretKey: key);
-    return (await key.extractBytes(), [...box.nonce, ...box.cipherText, ...box.mac.bytes]);
+    final n = box.nonce, c = box.cipherText, m = box.mac.bytes;
+    final out = Uint8List(n.length + c.length + m.length)
+      ..setAll(0, n)
+      ..setAll(n.length, c)
+      ..setAll(n.length + c.length, m);
+    return (await key.extractBytes(), out);
   }
 
   /// Same as [lock] but on a background isolate, so big files don't freeze the app
   /// (and other messages keep sending meanwhile).
-  static Future<(List<int>, List<int>)> lockInBackground(List<int> data) => Isolate.run(() => E2E.detached().lock(data));
+  // AES-GCM runs in the phone's own (hardware) crypto via cryptography_flutter: much faster
+  // than pure Dart and off the UI thread. A background isolate can't reach that plugin,
+  // so these run here.
+  static Future<(List<int>, List<int>)> lockInBackground(List<int> data) => E2E.detached().lock(data);
 
-  static Future<List<int>> unlockInBackground(List<int> blob, List<int> key) => Isolate.run(() => E2E.detached().unlock(blob, key));
+  static Future<List<int>> unlockInBackground(List<int> blob, List<int> key) => E2E.detached().unlock(blob, key);
 
   Future<List<int>> unlock(List<int> blob, List<int> key) {
     final nonce = blob.sublist(0, 12);

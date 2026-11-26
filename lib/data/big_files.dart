@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -26,16 +26,26 @@ class BigFiles {
     return n;
   }
 
-  static Future<List<int>> _enc(Uint8List plain, List<int> key, int i) => Isolate.run(() async {
-        final box = await AesGcm.with256bits().encrypt(plain, secretKey: SecretKey(key), nonce: _nonce(i));
-        return [...box.cipherText, ...box.mac.bytes];
-      });
+  // Phone's own AES (cryptography_flutter): fast and off the UI thread.
+  static final _aes = AesGcm.with256bits();
 
-  static Future<List<int>> _dec(List<int> blob, List<int> key, int i) => Isolate.run(() async {
-        final cipher = blob.sublist(0, blob.length - _tag);
-        final mac = Mac(blob.sublist(blob.length - _tag));
-        return AesGcm.with256bits().decrypt(SecretBox(cipher, nonce: _nonce(i), mac: mac), secretKey: SecretKey(key));
-      });
+  static Future<List<int>> _enc(List<int> plain, List<int> key, int i) async {
+    final box = await _aes.encrypt(plain, secretKey: SecretKey(key), nonce: _nonce(i));
+    final ct = box.cipherText;
+    final out = Uint8List(ct.length + _tag)
+      ..setAll(0, ct)
+      ..setAll(ct.length, box.mac.bytes);
+    return out;
+  }
+
+  static Future<List<int>> _dec(List<int> blob, List<int> key, int i) {
+    final cipher = blob.sublist(0, blob.length - _tag);
+    final mac = Mac(blob.sublist(blob.length - _tag));
+    return _aes.decrypt(SecretBox(cipher, nonce: _nonce(i), mac: mac), secretKey: SecretKey(key));
+  }
+
+  /// Pieces in flight at once (upload and download).
+  static const _lanes = 3;
 
   static Future<T> _retry<T>(Future<T> Function() f) async {
     Object? last;
@@ -64,17 +74,35 @@ class BigFiles {
     final start = await Api.instance.request('POST', '/v1/media/big', {'size': size + pieces * _tag});
     final id = start['id'] as String;
     final upload = start['upload'] as String;
-    final raf = await file.open();
+    final total = size + pieces * _tag;
+    final sent = List<int>.filled(pieces, 0);
+    void report() => onProgress?.call(sent.fold<int>(0, (a, b) => a + b) / total);
+    final etags = List<String?>.filled(pieces, null);
+    var next = 0;
     try {
-      final parts = <Map<String, dynamic>>[];
-      for (var i = 0; i < pieces; i++) {
-        await raf.setPosition(i * chunk);
-        final plain = await raf.read(min(chunk, size - i * chunk));
-        final enc = await _enc(plain, key, i);
-        final etag = await _retry(() => Api.instance.putPart(id, upload, i + 1, enc));
-        parts.add({'n': i + 1, 'etag': etag});
-        onProgress?.call((i + 1) / pieces);
+      Future<void> lane() async {
+        final raf = await file.open();
+        try {
+          while (true) {
+            final i = next++;
+            if (i >= pieces) return;
+            await raf.setPosition(i * chunk);
+            final plain = await raf.read(min(chunk, size - i * chunk));
+            final enc = await _enc(plain, key, i);
+            etags[i] = await _retry(() => Api.instance.putPartStreamed(id, upload, i + 1, enc, (b) {
+                  sent[i] = b;
+                  report();
+                }));
+            sent[i] = enc.length;
+            report();
+          }
+        } finally {
+          await raf.close();
+        }
       }
+
+      await Future.wait([for (var l = 0; l < min(_lanes, pieces); l++) lane()], eagerError: true);
+      final parts = [for (var i = 0; i < pieces; i++) {'n': i + 1, 'etag': etags[i]}];
       await _retry(() => Api.instance.request('POST', '/v1/media/big/$id/done', {'upload': upload, 'parts': parts}));
       return {'id': id, 'k': _b64(key), 'cv': 2, 'cs': chunk, 'size': size};
     } catch (e) {
@@ -82,8 +110,6 @@ class BigFiles {
         await Api.instance.request('DELETE', '/v1/media/big/$id?u=${Uri.encodeQueryComponent(upload)}');
       } catch (_) {}
       rethrow;
-    } finally {
-      await raf.close();
     }
   }
 
@@ -94,19 +120,53 @@ class BigFiles {
     final size = (md['size'] as num).toInt();
     final cs = (md['cs'] as num?)?.toInt() ?? chunk;
     final pieces = (size + cs - 1) ~/ cs;
+    final total = size + pieces * _tag;
+    final got = List<int>.filled(pieces, 0);
+    void report() => onProgress?.call(got.fold<int>(0, (a, b) => a + b) / total);
     final tmp = File('${out.path}.part');
     final sink = await tmp.open(mode: FileMode.write);
-    try {
-      for (var i = 0; i < pieces; i++) {
+    // Pieces come down 3 at a time but are written in order.
+    final ready = <int, List<int>>{};
+    final waiters = <int, Completer<void>>{};
+    var next = 0;
+    var written = 0;
+    Object? failure;
+    Future<void> lane() async {
+      while (failure == null) {
+        final i = next++;
+        if (i >= pieces) return;
+        // Don't run far ahead of the writer (keeps memory to a few pieces).
+        while (i - written >= _lanes * 2 && failure == null) {
+          final c = waiters.putIfAbsent(written, () => Completer<void>());
+          await c.future;
+        }
         final plainLen = min(cs, size - i * cs);
-        final blob = await _retry(() => Api.instance.getRange(id, i * (cs + _tag), plainLen + _tag));
-        final clear = await _dec(blob, key, i);
-        await sink.writeFrom(clear);
-        onProgress?.call((i + 1) / pieces);
+        final blob = await _retry(() => Api.instance.getRangeStreamed(id, i * (cs + _tag), plainLen + _tag, (b) {
+              got[i] = b;
+              report();
+            }));
+        ready[i] = await _dec(blob, key, i);
+        while (ready.containsKey(written)) {
+          final w = written;
+          await sink.writeFrom(ready.remove(w)!);
+          written = w + 1;
+          waiters.remove(w)?.complete();
+        }
       }
+    }
+
+    try {
+      await Future.wait([for (var l = 0; l < min(_lanes, pieces); l++) lane()], eagerError: true);
+    } catch (e) {
+      failure = e;
+      for (final c in waiters.values) {
+        if (!c.isCompleted) c.complete();
+      }
+      rethrow;
     } finally {
       await sink.close();
     }
+    if (written != pieces) throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
     if (await out.exists()) await out.delete();
     await tmp.rename(out.path);
   }
