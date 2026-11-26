@@ -65,8 +65,13 @@ class Messenger {
       _acks[rid] = done;
       try {
         ws.sink.add(jsonEncode({'type': 'send', 'rid': rid, 'path': path, 'body': body}));
-        final ok = await done.future.timeout(const Duration(seconds: 4), onTimeout: () => false);
+        final ok = await done.future.timeout(const Duration(milliseconds: 2500), onTimeout: () => false);
         if (ok) return;
+        // No answer: the socket is dead (network changed). Reconnect right away.
+        if (identical(_ws, ws)) {
+          _backoff = 1;
+          _dropped();
+        }
       } catch (_) {
       } finally {
         _acks.remove(rid);
@@ -77,6 +82,49 @@ class Messenger {
   StreamSubscription<dynamic>? _sub;
   Timer? _retry, _ping, _saveTimer, _presenceTimer, _purgeTimer;
   int _backoff = 1;
+  DateTime _lastHeard = DateTime(0);
+  StreamSubscription<List<ConnectivityResult>>? _net;
+
+  /// Network came back / switched (Wi-Fi <-> mobile): reconnect at once.
+  void _watchNetwork() {
+    _net ??= Connectivity().onConnectivityChanged.listen((r) {
+      if (_uid == null || _paused || r.contains(ConnectivityResult.none)) return;
+      _backoff = 1;
+      if (_ws != null) _closeSocket();
+      _retry?.cancel();
+      unawaited(_connect());
+    });
+  }
+
+  // ------------------------------------------------------------------ chat list presence
+  Timer? _listPresence;
+
+  /// Chat list is on screen: green dot for whoever is online (live updates
+  /// arrive over the socket; re-subscribed every minute).
+  void watchListPresence(bool on) {
+    _listPresence?.cancel();
+    _listPresence = null;
+    if (!on) return;
+    unawaited(_pullListPresence());
+    _listPresence = Timer.periodic(const Duration(seconds: 60), (_) => unawaited(_pullListPresence()));
+  }
+
+  Future<void> _pullListPresence() async {
+    if (_uid == null || _paused) return;
+    final chats = _s.chats.where((c) => c.isReal && c.peerId != null && c.groupId == null && !c.isNotes && !c.archived).toList()
+      ..sort((a, b) => (b.messages.isEmpty ? DateTime(0) : b.messages.last.time).compareTo(a.messages.isEmpty ? DateTime(0) : a.messages.last.time));
+    final ids = [for (final c in chats.take(60)) c.peerId!];
+    if (ids.isEmpty) return;
+    try {
+      final d = await Api.instance.request('POST', '/v1/users/presence', {'ids': ids});
+      final users = (d['users'] as Map?)?.cast<String, dynamic>() ?? {};
+      for (final c in chats) {
+        final u = users[c.peerId];
+        if (u is Map) c.presence = _presenceText(u.cast<String, dynamic>());
+      }
+      _s.changed();
+    } catch (_) {}
+  }
   bool _paused = false;
   bool _syncing = false;
   final Set<String> _handled = {};
@@ -401,6 +449,7 @@ class Messenger {
     _ws = ch;
     _sub = ch.stream.listen(
       (d) {
+        _lastHeard = DateTime.now();
         if (d is! String || d == 'pong') return;
         try {
           final ev = jsonDecode(d) as Map<String, dynamic>;
@@ -432,12 +481,21 @@ class Messenger {
     _wsReady = true;
     _backoff = 1;
     _ping?.cancel();
-    _ping = Timer.periodic(const Duration(seconds: 25), (_) {
+    _lastHeard = DateTime.now();
+    _ping = Timer.periodic(const Duration(seconds: 15), (_) {
+      // Nothing back for a while = silently dead connection: reconnect.
+      if (DateTime.now().difference(_lastHeard) > const Duration(seconds: 35)) {
+        _backoff = 1;
+        _dropped();
+        return;
+      }
       try {
         _ws?.sink.add('ping');
       } catch (_) {}
     });
+    _watchNetwork();
     await sync();
+    if (_listPresence != null) unawaited(_pullListPresence());
   }
 
   void _closeSocket() {
@@ -460,7 +518,7 @@ class Messenger {
     if (_uid == null || _paused) return;
     _retry?.cancel();
     _retry = Timer(Duration(seconds: _backoff), () => unawaited(_connect()));
-    _backoff = min(_backoff * 2, 30);
+    _backoff = min(_backoff * 2, 5);
   }
 
   /// Picks up everything that arrived while we were away, then resends

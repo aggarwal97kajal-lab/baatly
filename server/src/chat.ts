@@ -175,6 +175,25 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     return json({ privacy: v });
   }
 
+  // Chat list: who is online right now, and subscribe to live changes for them.
+  if (m === 'POST' && p === '/v1/users/presence') {
+    const b = await readJson<{ ids: string[] }>(c.req);
+    const ids = [...new Set((Array.isArray(b.ids) ? b.ids : []).map(String))].filter((x) => /^[\w-]{1,64}$/.test(x) && x !== me.id).slice(0, 60);
+    const out: Record<string, unknown> = {};
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          if (await blocked(env, me.id, id)) return;
+          const h = hub(env, id);
+          await h.fetch('https://hub/watch', { method: 'POST', body: JSON.stringify({ watcher: me.id }) });
+          const r = (await (await h.fetch('https://hub/presence')).json()) as { online: boolean; lastSeen: number | null };
+          out[id] = await presenceFor(env, id, me.id, r.online, r.lastSeen);
+        } catch {}
+      }),
+    );
+    return json({ users: out });
+  }
+
   const pm = p.match(/^\/v1\/users\/([\w-]+)\/presence$/);
   if ((m === 'GET' || m === 'POST') && pm) {
     if (await blocked(env, me.id, pm[1])) return json({ online: false, lastSeen: null });

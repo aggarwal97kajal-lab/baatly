@@ -28,6 +28,18 @@ class ChatsTab extends StatefulWidget {
 class _ChatsTabState extends State<ChatsTab> {
   int _filter = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    Messenger.instance.watchListPresence(true);
+  }
+
+  @override
+  void dispose() {
+    Messenger.instance.watchListPresence(false);
+    super.dispose();
+  }
+
   void _setFilter(int i) => setState(() => _filter = i);
   String _q = '';
   bool _showArchived = false;
@@ -520,7 +532,7 @@ class _ChatRow extends StatelessWidget {
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => showProfilePeek(context, chat),
-            child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 54, online: chat.online)),
+            child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 54, online: chat.online || chat.presence == 'online')),
           ),
           const SizedBox(width: 14),
           Expanded(

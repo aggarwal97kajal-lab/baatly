@@ -19,8 +19,31 @@ export class UserHub extends DurableObject<Env> {
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
+  /**
+   * Sockets that are really alive. A phone that lost its network can leave a
+   * socket that still looks open; the app pings every 15 s, so one that has
+   * gone quiet for 45 s is dead: close it so messages go by push instead.
+   */
   private openSockets(except?: WebSocket) {
-    return this.ctx.getWebSockets().filter((w) => w !== except && w.readyState === WebSocket.OPEN);
+    const t = Date.now();
+    return this.ctx.getWebSockets().filter((w) => {
+      if (w === except || w.readyState !== WebSocket.OPEN) return false;
+      let last = 0;
+      try {
+        last = (w.deserializeAttachment() as { at?: number } | null)?.at ?? 0;
+      } catch {}
+      try {
+        const ping = this.ctx.getWebSocketAutoResponseTimestamp(w);
+        if (ping) last = Math.max(last, ping.getTime());
+      } catch {}
+      if (last && t - last > 45_000) {
+        try {
+          w.close(1001, 'stale');
+        } catch {}
+        return false;
+      }
+      return true;
+    });
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -38,6 +61,7 @@ export class UserHub extends DurableObject<Env> {
       const wasOnline = this.openSockets().length > 0;
       const pair = new WebSocketPair();
       this.ctx.acceptWebSocket(pair[1]);
+      pair[1].serializeAttachment({ at: Date.now() });
       if (!wasOnline) this.ctx.waitUntil(this.tellWatchers(true));
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
@@ -181,6 +205,9 @@ export class UserHub extends DurableObject<Env> {
   // (on-disk, instant), answer "accepted" right away (= ✓), then deliver it.
   // If delivery can't finish now, an alarm retries it.
   async webSocketMessage(ws: WebSocket, data: string | ArrayBuffer) {
+    try {
+      ws.serializeAttachment({ at: Date.now() });
+    } catch {}
     if (typeof data !== 'string' || data === 'ping') return;
     let m: { type?: string; rid?: string; path?: string; body?: unknown };
     try {

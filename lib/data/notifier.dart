@@ -275,6 +275,14 @@ class Notifier {
     final data = <String, dynamic>{...raw};
     if (data['from'] == null && data['fromId'] != null) data['from'] = data['fromId'];
     final acct = data['acct'] as String?;
+    // Like WhatsApp: the message reached this phone = double tick for the sender,
+    // even if BAATLY isn't open.
+    final mid = data['msgId'] as String? ?? '';
+    if (data['type'] == 'msg' && data['from'] is String && mid.isNotEmpty && !mid.startsWith('test-')) {
+      try {
+        await _as(acct, 'POST', '/v1/receipts', {'to': data['from'], 'msgIds': [mid], 'status': 'delivered', if (data['group'] != null) 'group': data['group']});
+      } catch (_) {}
+    }
     if (acct != null) {
       try {
         await Api.instance.load();
