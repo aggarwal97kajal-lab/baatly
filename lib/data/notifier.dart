@@ -471,7 +471,9 @@ class Notifier {
       return;
     }
     await Accounts.bumpUnread(acct);
-    await _show('acct_${acct}_$chat', title, text, {'chat': 'acct:$acct:$chat', 'msgId': data['msgId'] ?? ''}, actions: false, sub: label);
+    await _show('acct_${acct}_$chat', title, text,
+        {'chat': 'acct:$acct:$chat', 'acct': acct, 'from': data['from'] ?? data['fromId'] ?? '', if (data['group'] != null) 'group': data['group'], 'msgId': data['msgId'] ?? ''},
+        actions: false, sub: label);
   }
 
   Future<void> _show(String chat, String title, String line, Map<String, dynamic> payload, {bool actions = true, String? sub}) async {
@@ -496,7 +498,12 @@ class Notifier {
       category: AndroidNotificationCategory.message,
       styleInformation: InboxStyleInformation(lines, contentTitle: title, summaryText: lines.length > 1 ? '${lines.length} new messages' : null),
       subText: sub,
-      actions: !actions ? const [AndroidNotificationAction('switch', 'Switch account', showsUserInterface: true)] : const [
+      actions: !actions
+          ? const [
+              AndroidNotificationAction('reply', 'Reply', inputs: [AndroidNotificationActionInput(label: 'Message')], showsUserInterface: false, cancelNotification: false),
+              AndroidNotificationAction('switch', 'Switch account', showsUserInterface: true),
+            ]
+          : const [
         AndroidNotificationAction('reply', 'Reply', inputs: [AndroidNotificationActionInput(label: 'Message')], showsUserInterface: false, cancelNotification: false),
         AndroidNotificationAction('read', 'Mark as read', showsUserInterface: false),
       ],
@@ -560,50 +567,64 @@ class Notifier {
     onOpenChat?.call(chat);
   }
 
+  /// Calls the server as the account the notification belongs to (two numbers on one phone).
+  Future<Map<String, dynamic>> _as(String? acct, String method, String path, [Object? body]) async {
+    await Api.instance.load();
+    if (acct != null && acct != Api.instance.userId) {
+      final token = await Accounts.tokenFor(acct);
+      if (token == null) throw StateError('account not on this phone');
+      return Api.instance.requestAs(token, method, path, body);
+    }
+    return Api.instance.request(method, path, body);
+  }
+
   Future<void> _markRead(Map<String, dynamic> p) async {
     try {
-      await Api.instance.load();
       final ids = [for (final x in (p['msgIds'] as List? ?? [])) x.toString()].where((x) => x.isNotEmpty).toList();
       if (ids.isEmpty) return;
-      await Api.instance.request('POST', '/v1/receipts', {'to': p['from'], 'msgIds': ids, 'status': 'read', if (p['group'] != null) 'group': p['group']});
+      await _as(p['acct'] as String?, 'POST', '/v1/receipts', {'to': p['from'], 'msgIds': ids, 'status': 'read', if (p['group'] != null) 'group': p['group']});
     } catch (_) {}
   }
 
-  /// Sends a reply straight from the notification (encrypted like any message).
+  /// Sends a reply straight from the notification (encrypted like any message),
+  /// as whichever account the message came to.
   Future<void> _reply(Map<String, dynamic> p, String text) async {
-    final chat = p['chat'] as String? ?? '';
+    final acct = p['acct'] as String?;
+    final rawChat = p['chat'] as String? ?? '';
+    final chat = rawChat.startsWith('acct:') ? rawChat.split(':').skip(2).join(':') : rawChat;
     try {
       await Api.instance.load();
-      final uid = Api.instance.userId;
+      final uid = acct ?? Api.instance.userId;
       if (uid == null) return;
-      await E2E.instance.load(uid);
+      final e2e = acct != null && acct != Api.instance.userId ? E2E.detached() : E2E.instance;
+      await e2e.load(uid);
       final now = DateTime.now().millisecondsSinceEpoch;
       final rnd = Random.secure();
       final msgId = base64Url.encode(List<int>.generate(12, (_) => rnd.nextInt(256))).replaceAll('=', '');
       final payload = {'t': text, 'ts': now};
       final group = p['group'] as String?;
       if (group != null) {
-        final g = await Api.instance.request('GET', '/v1/groups/$group');
+        final g = await _as(acct, 'GET', '/v1/groups/$group');
         final bodies = <String, String>{};
         for (final m in ((g['group'] as Map)['members'] as List)) {
           final mm = (m as Map).cast<String, dynamic>();
           if (mm['id'] == uid || mm['x25519'] == null) continue;
-          bodies[mm['id'] as String] = await E2E.instance.seal(payload, mm['x25519'] as String);
+          bodies[mm['id'] as String] = await e2e.seal(payload, mm['x25519'] as String);
         }
-        await Api.instance.request('POST', '/v1/groups/$group/messages', {'msgId': msgId, 'bodies': bodies});
+        await _as(acct, 'POST', '/v1/groups/$group/messages', {'msgId': msgId, 'bodies': bodies});
       } else {
-        final d = await Api.instance.request('GET', '/v1/users/${p['from']}');
+        final d = await _as(acct, 'GET', '/v1/users/${p['from']}');
         final key = (d['user'] as Map)['x25519'] as String?;
         if (key == null) return;
-        await Api.instance.request('POST', '/v1/messages', {'to': p['from'], 'msgId': msgId, 'body': await E2E.instance.seal(payload, key)});
+        await _as(acct, 'POST', '/v1/messages', {'to': p['from'], 'msgId': msgId, 'body': await e2e.seal(payload, key)});
       }
       await _markRead(p);
-      // Remember it so the chat shows it next time the app opens.
+      // Remember it so the chat shows it next time that account opens.
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
-      final out = <String>[...(prefs.getStringList('notif_outbox') ?? const <String>[]), jsonEncode({'chat': chat, 'id': msgId, 't': text, 'ts': now})];
+      final out = <String>[...(prefs.getStringList('notif_outbox') ?? const <String>[]), jsonEncode({'chat': chat, 'id': msgId, 't': text, 'ts': now, 'acct': uid})];
       await prefs.setStringList('notif_outbox', out);
-      await clear(chat);
+      await clear(rawChat.startsWith('acct:') ? 'acct_${acct}_$chat' : chat);
     } catch (_) {}
   }
 }

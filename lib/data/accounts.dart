@@ -101,6 +101,17 @@ class Accounts {
     }
   }
 
+  /// Saved session of another account on this phone (for replying from its notification).
+  static Future<String?> tokenFor(String uid) async {
+    try {
+      final raw = await _store.read(key: _key);
+      if (raw == null) return null;
+      return (((jsonDecode(raw) as Map)[uid] as Map?)?['token']) as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Notification on the other account: count it for the switcher badge.
   static Future<void> bumpUnread(String uid) async {
     try {

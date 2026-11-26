@@ -7,6 +7,7 @@ import '../../data/backup.dart';
 import 'package:app_links/app_links.dart';
 import '../../data/app_state.dart';
 import '../../data/messenger.dart';
+import '../../data/models.dart';
 import '../../data/status_service.dart';
 import '../../data/notifier.dart';
 import '../../data/calls.dart';
@@ -99,16 +100,28 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     Notifier.instance.pendingChat = null;
     if (id.startsWith('acct:')) {
       final parts = id.split(':');
+      final rest = parts.length >= 3 ? parts.sublist(2).join(':') : '';
       if (parts.length >= 2 && parts[1] != Api.instance.userId) {
+        // Switch to that account; its home screen then opens this chat.
+        Notifier.instance.pendingChat = rest.isEmpty ? null : rest;
         await Accounts.instance.switchTo(parts[1]);
         return;
       }
-      id = parts.length >= 3 ? parts.sublist(2).join(':') : '';
+      id = rest;
     }
-    final chat = id.startsWith('u:') ? await Messenger.instance.chatForUser(id.substring(2)) : Messenger.instance.chatById(id);
+    if (id.isEmpty || id == 'test') return;
+    Chat? chat = id.startsWith('u:') ? await Messenger.instance.chatForUser(id.substring(2)) : Messenger.instance.chatById(id);
+    // Their first message may still be coming in: wait a moment, then make the chat.
+    for (var t = 0; chat == null && t < 8; t++) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      chat = Messenger.instance.chatById(id);
+    }
+    chat ??= await Messenger.instance.chatForUser(id);
     if (chat == null || !mounted) return;
     AppState.instance.openChat(chat);
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)));
+    final c = chat;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: c)));
   }
 
   @override

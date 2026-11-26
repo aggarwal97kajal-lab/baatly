@@ -237,8 +237,14 @@ class Messenger {
       await p.reload();
       final out = p.getStringList('notif_outbox') ?? [];
       if (out.isEmpty) return;
+      final keep = <String>[];
       for (final e in out) {
         final j = jsonDecode(e) as Map<String, dynamic>;
+        // A reply sent from the other account's notification waits for that account.
+        if (j['acct'] != null && j['acct'] != _uid) {
+          keep.add(e);
+          continue;
+        }
         final target = j['chat'] as String;
         Chat? chat;
         for (final c in _s.chats) {
@@ -254,7 +260,11 @@ class Messenger {
         ));
         chat.messages.sort((a, b) => a.time.compareTo(b.time));
       }
-      await p.remove('notif_outbox');
+      if (keep.isEmpty) {
+        await p.remove('notif_outbox');
+      } else {
+        await p.setStringList('notif_outbox', keep);
+      }
       _s.changed();
     } catch (_) {}
   }
