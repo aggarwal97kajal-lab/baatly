@@ -19,6 +19,16 @@ const tr = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', 
 const tj = await tr.json();
 console.log('oauth:', tr.status, tj.error || 'ok');
 if (!tj.access_token) process.exit(0);
+for (const [label, data] of [['plain', { type: 'ping' }], ["with 'from'", { type: 'msg', from: 'abc' }], ["with 'acct'", { type: 'msg', acct: 'abc' }]]) {
+  if (!rows.length) break;
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${tj.access_token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ validate_only: true, message: { token: rows[0].token, data, android: { priority: 'HIGH' } } }),
+  });
+  const t = await res.text();
+  console.log(`payload ${label}:`, res.status, t.slice(0, 160).replace(/\s+/g, ' '));
+}
 for (const [i, r] of rows.entries()) {
   const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
     method: 'POST',
