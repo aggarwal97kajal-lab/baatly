@@ -21,6 +21,7 @@ class Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Mitti.avatarColors[colorIndex % Mitti.avatarColors.length];
+    final deep = Mitti.avatarDeep[colorIndex % Mitti.avatarDeep.length];
     // Material ancestor so the Hero flight never renders debug text styling.
     return Material(
       type: MaterialType.transparency,
@@ -45,7 +46,10 @@ class Avatar extends StatelessWidget {
           Container(
             width: size,
             height: size,
-            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [c, deep]),
+            ),
             alignment: Alignment.center,
             child: Text(
               initials,
@@ -66,7 +70,7 @@ class Avatar extends StatelessWidget {
                 width: size * 0.28,
                 height: size * 0.28,
                 decoration: BoxDecoration(
-                  color: context.primary,
+                  color: const Color(0xFF3ED07C),
                   shape: BoxShape.circle,
                   border: Border.all(color: context.bc.bg, width: 2.5),
                 ),
@@ -247,15 +251,16 @@ class Pill extends StatelessWidget {
         duration: Mitti.fast,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? context.primary : context.bc.raised,
+          color: selected ? context.bc.text : context.bc.raised,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: selected ? context.bc.text : context.bc.line),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 13,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? Colors.white : context.bc.text,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            color: selected ? context.bc.bg : context.bc.text,
           ),
         ),
       ),
@@ -282,4 +287,121 @@ void showComingSoon(BuildContext context, String what) {
       content: Text('$what — coming in a future update'),
       duration: const Duration(seconds: 2),
     ));
+}
+
+
+// ===================================================================== premium building blocks
+
+/// "BAATLY / Chats": small coloured kicker over a big title.
+class LargeTitle extends StatelessWidget {
+  final String? kicker;
+  final String title;
+  const LargeTitle({super.key, this.kicker, required this.title});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      if (kicker != null)
+        Text(kicker!, style: TextStyle(fontSize: 11.5, letterSpacing: 2.6, fontWeight: FontWeight.w700, color: context.primary)),
+      Text(title, style: TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: bc.text)),
+    ]);
+  }
+}
+
+/// Round icon on a soft chip (header buttons).
+class RoundIconChrome extends StatelessWidget {
+  final IconData icon;
+  final double size;
+  const RoundIconChrome({super.key, required this.icon, this.size = 40});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: bc.raised, shape: BoxShape.circle, border: Border.all(color: bc.line)),
+      child: Icon(icon, size: size * 0.5, color: bc.text),
+    );
+  }
+}
+
+class RoundIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  final String? tooltip;
+  final double size;
+  const RoundIconButton({super.key, required this.icon, this.onTap, this.tooltip, this.size = 40});
+  @override
+  Widget build(BuildContext context) {
+    final b = Material(
+      type: MaterialType.transparency,
+      child: InkWell(customBorder: const CircleBorder(), onTap: onTap, child: RoundIconChrome(icon: icon, size: size)),
+    );
+    return tooltip == null ? b : Tooltip(message: tooltip!, child: b);
+  }
+}
+
+/// Rounded-square floating button in the brand gradient, with a coloured glow.
+class GradientFab extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+  final double size;
+  const GradientFab({super.key, required this.icon, required this.onPressed, this.size = 58});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: bc.brand,
+        borderRadius: BorderRadius.circular(size * 0.34),
+        boxShadow: [BoxShadow(color: bc.accent.withOpacity(0.4), blurRadius: 18, offset: const Offset(0, 8))],
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(size * 0.34),
+          onTap: onPressed,
+          child: Icon(icon, color: Colors.white, size: size * 0.44),
+        ),
+      ),
+    );
+  }
+}
+
+/// Grouped settings card (rounded, hairline border).
+class GroupCard extends StatelessWidget {
+  final List<Widget> children;
+  final EdgeInsets margin;
+  const GroupCard({super.key, required this.children, this.margin = const EdgeInsets.fromLTRB(16, 0, 16, 14)});
+  @override
+  Widget build(BuildContext context) {
+    final bc = context.bc;
+    final out = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) out.add(Divider(height: 1, indent: 66, color: bc.line));
+      out.add(children[i]);
+    }
+    return Container(
+      margin: margin,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(color: bc.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: bc.line)),
+      child: Material(type: MaterialType.transparency, child: Column(mainAxisSize: MainAxisSize.min, children: out)),
+    );
+  }
+}
+
+/// Coloured rounded-square icon (settings rows).
+class IconTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  const IconTile({super.key, required this.icon, required this.color});
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(11)),
+        child: Icon(icon, color: Colors.white, size: 19),
+      );
 }

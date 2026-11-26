@@ -69,34 +69,29 @@ class _ChatsTabState extends State<ChatsTab> {
 
         return Scaffold(
           backgroundColor: bc.bg,
-          floatingActionButton: FloatingActionButton(
-            backgroundColor: context.primary,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          floatingActionButton: GradientFab(
+            icon: Icons.add_comment_rounded,
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NewChatScreen())),
-            child: const Icon(Icons.add_comment_rounded),
           ),
           body: SafeArea(
             child: CustomScrollView(slivers: [
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 0),
+                  padding: const EdgeInsets.fromLTRB(20, 14, 14, 0),
                   child: Row(children: [
                     if (_showArchived)
-                      IconButton(onPressed: () => setState(() => _showArchived = false), icon: const Icon(Icons.arrow_back_rounded))
+                      IconButton(onPressed: () => setState(() => _showArchived = false), icon: const Icon(Icons.arrow_back_rounded)),
+                    if (_showArchived)
+                      Text('Archived', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text))
                     else
-                      const BaatlyMark(size: 30),
-                    const SizedBox(width: 8),
-                    Text(_showArchived ? 'Archived' : 'BAATLY',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: _showArchived ? 0 : 1.5, color: bc.text)),
+                      LargeTitle(kicker: 'BAATLY', title: 'Chats'),
                     const Spacer(),
-                    IconButton(
-                      onPressed: () => cameraToChats(context),
-                      icon: Icon(Icons.photo_camera_outlined, color: bc.text),
-                    ),
+                    RoundIconButton(icon: Icons.photo_camera_outlined, onTap: () => cameraToChats(context)),
+                    const SizedBox(width: 8),
                     const AccountSwitchButton(),
                     PopupMenuButton<String>(
-                      icon: Icon(Icons.more_vert_rounded, color: bc.text),
+                      icon: RoundIconChrome(icon: Icons.more_vert_rounded),
+                      padding: EdgeInsets.zero,
                       onSelected: (v) async {
                         if (v == 'bc') {
                           await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BroadcastEditor()));
@@ -125,13 +120,13 @@ class _ChatsTabState extends State<ChatsTab> {
                   child: GestureDetector(
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SearchScreen())),
                     child: Container(
-                      height: 46,
+                      height: 48,
                       padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(24)),
+                      decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(16), border: Border.all(color: bc.line)),
                       child: Row(children: [
                         Icon(Icons.search_rounded, color: bc.muted),
                         const SizedBox(width: 10),
-                        Text('Search', style: TextStyle(color: bc.muted, fontSize: 15)),
+                        Text('Search chats, messages…', style: TextStyle(color: bc.muted, fontSize: 15)),
                       ]),
                     ),
                   ),
@@ -525,7 +520,7 @@ class _ChatRow extends StatelessWidget {
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => showProfilePeek(context, chat),
-            child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 52, online: chat.online)),
+            child: Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 54, online: chat.online)),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -533,7 +528,7 @@ class _ChatRow extends StatelessWidget {
               Row(children: [
                 Expanded(
                   child: Text(chat.name,
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: bc.text)),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: bc.text)),
                 ),
                 Text(chat.draft != null && chat.draftAt != null && chat.sortTime == chat.draftAt ? chatTime(chat.draftAt!) : (m == null ? '' : chatTime(m.time)),
                     style: TextStyle(fontSize: 12, color: unread ? context.primary : bc.muted, fontWeight: unread ? FontWeight.w700 : FontWeight.w400)),
@@ -557,7 +552,7 @@ class _ChatRow extends StatelessWidget {
                       height: 20,
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       alignment: Alignment.center,
-                      decoration: BoxDecoration(color: chat.muted ? bc.muted : context.primary, borderRadius: BorderRadius.circular(10)),
+                      decoration: BoxDecoration(color: chat.muted ? bc.muted : null, gradient: chat.muted ? null : bc.brand, borderRadius: BorderRadius.circular(10)),
                       child: Text('${chat.unread}', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
                     ),
                 ])
@@ -580,7 +575,7 @@ class _ChatRow extends StatelessWidget {
                     height: 20,
                     padding: const EdgeInsets.symmetric(horizontal: 6),
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: chat.muted ? bc.muted : context.primary, borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(color: chat.muted ? bc.muted : null, gradient: chat.muted ? null : bc.brand, borderRadius: BorderRadius.circular(10)),
                     child: Text('${chat.unread}', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
                   ),
               ]),

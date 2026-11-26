@@ -1069,6 +1069,8 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Scaffold(
       appBar: _sel.isNotEmpty ? _selectionBar() : AppBar(
         titleSpacing: 0,
+        backgroundColor: bc.surface,
+        shape: Border(bottom: BorderSide(color: bc.line)),
         title: InkWell(
           onTap: chat.isNotes
               ? (chat.photo == null ? null : () => PhotoViewerScreen.open(context, chat.photo, chat.name))
@@ -1077,7 +1079,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   : () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => chat.isRealGroup ? GroupInfoScreen(chat: chat) : ChatInfoScreen(chat: chat))),
           child: Row(children: [
-            Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 38)),
+            Hero(tag: 'av-${chat.id}', child: Avatar(initials: chat.initials, colorIndex: chat.colorIndex, photo: chat.photo, size: 40, online: chat.presence == 'online')),
             const SizedBox(width: 10),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1576,12 +1578,12 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final me = m.fromMe;
     final bg = me ? bc.outBubble : bc.inBubble;
     final fg = me ? bc.onOutBubble : bc.text;
-    final r = const Radius.circular(18);
+    final r = const Radius.circular(20);
     final radius = BorderRadius.only(
-      topLeft: r,
-      topRight: r,
-      bottomLeft: me ? r : const Radius.circular(4),
-      bottomRight: me ? const Radius.circular(4) : r,
+      topLeft: me ? r : const Radius.circular(6),
+      topRight: me ? const Radius.circular(6) : r,
+      bottomLeft: r,
+      bottomRight: r,
     );
 
     Widget content;
@@ -1702,9 +1704,12 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
               : const EdgeInsets.fromLTRB(14, 10, 12, 8),
       decoration: bare ? null : BoxDecoration(
         color: bg,
-        gradient: me ? bc.accentGradient : null,
+        gradient: me ? bc.brand : null,
         borderRadius: radius,
-        boxShadow: me ? null : const [BoxShadow(color: Color(0x0F000000), blurRadius: 4, offset: Offset(0, 1))],
+        border: me ? null : Border.all(color: bc.line),
+        boxShadow: me
+            ? [BoxShadow(color: bc.accent.withOpacity(0.22), blurRadius: 12, offset: const Offset(0, 4))]
+            : const [BoxShadow(color: Color(0x0F000000), blurRadius: 6, offset: Offset(0, 2))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
         if (!me && widget.chat.isGroup && m.from != null)
@@ -1899,7 +1904,12 @@ class _Composer extends StatelessWidget {
                 child: mic.recording
                     ? _HoldingStrip(elapsed: mic.elapsed, dragX: mic.drag.dx)
                     : Container(
-                  decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(24)),
+                  decoration: BoxDecoration(
+                    color: bc.surface,
+                    borderRadius: BorderRadius.circular(27),
+                    border: Border.all(color: bc.line),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(context.isDark ? 0.35 : 0.08), blurRadius: 16, offset: const Offset(0, 6))],
+                  ),
                   child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                     IconButton(onPressed: onEmoji, icon: Icon(emojiOpen ? Icons.keyboard_rounded : Icons.emoji_emotions_outlined, color: bc.muted)),
                     Expanded(
@@ -1913,7 +1923,8 @@ class _Composer extends StatelessWidget {
                         textCapitalization: TextCapitalization.sentences,
                         style: TextStyle(fontSize: 15, color: bc.text),
                         decoration: InputDecoration(
-                          hintText: 'Message…',
+                          filled: false,
+                          hintText: 'Message',
                           hintStyle: TextStyle(color: bc.muted),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(vertical: 13),
@@ -1931,9 +1942,14 @@ class _Composer extends StatelessWidget {
                   onTap: onSend,
                   onLongPress: editing == null ? onScheduleSend : null,
                   child: Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(color: context.primary, gradient: bc.accentGradient, shape: BoxShape.circle),
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: context.primary,
+                      gradient: bc.brand,
+                      shape: BoxShape.circle,
+                      boxShadow: [BoxShadow(color: bc.accent.withOpacity(0.4), blurRadius: 14, offset: const Offset(0, 6))],
+                    ),
                     child: Icon(Icons.send_rounded, color: Theme.of(context).colorScheme.onPrimary),
                   ),
                 )
@@ -2161,9 +2177,14 @@ class _MicButton extends StatelessWidget {
               scale: rec ? 1.5 : 1,
               duration: Mitti.fast,
               child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(color: context.primary, gradient: context.bc.accentGradient, shape: BoxShape.circle),
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: context.primary,
+                  gradient: context.bc.brand,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: context.bc.accent.withOpacity(0.4), blurRadius: 14, offset: const Offset(0, 6))],
+                ),
                 child: Icon(Icons.mic_rounded, color: Theme.of(context).colorScheme.onPrimary),
               ),
             ),
@@ -2340,7 +2361,7 @@ class CallRecordBubble extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             onTap: onTap,
             child: Ink(
-              decoration: BoxDecoration(color: bg, gradient: me ? bc.accentGradient : null, borderRadius: BorderRadius.circular(16)),
+              decoration: BoxDecoration(color: bg, gradient: me ? bc.brand : null, borderRadius: BorderRadius.circular(16)),
               padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Container(
@@ -2467,7 +2488,7 @@ class _InfoBubble extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
         decoration: BoxDecoration(
           color: bc.outBubble,
-          gradient: bc.accentGradient,
+          gradient: bc.brand,
           borderRadius: const BorderRadius.only(topLeft: Radius.circular(18), topRight: Radius.circular(18), bottomLeft: Radius.circular(18), bottomRight: Radius.circular(4)),
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [

@@ -8,6 +8,7 @@ import '../../data/calls.dart';
 import '../../data/messenger.dart';
 import '../../nav.dart';
 import '../../theme/tokens.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../chat/chat_screen.dart';
 import 'add_to_call.dart';
@@ -201,15 +202,28 @@ class _CallScreenState extends State<CallScreen> {
   Widget _voice() {
     final incoming = s.state == CallState.incoming;
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF3A2A22), Color(0xFF15100D)]),
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: const Alignment(0, -0.35),
+          radius: 1.15,
+          colors: [Color.lerp(const Color(0xFF2A1A14), context.bc.accent, 0.45)!, const Color(0xFF221510), const Color(0xFF0B0806)],
+          stops: const [0, 0.55, 1],
+        ),
       ),
       child: SafeArea(
         child: Column(children: [
           const SizedBox(height: 8),
           _topBar(overVideo: false),
           const Spacer(),
-          Avatar(initials: Messenger.initialsOf(s.peerName), colorIndex: s.peerId.length % 7, photo: Messenger.instance.photoOf(s.peerId), size: 132),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0x40FFFFFF), Color(0x08FFFFFF)]),
+              boxShadow: [BoxShadow(color: context.bc.accent.withOpacity(0.35), blurRadius: 60, spreadRadius: 10)],
+            ),
+            child: Avatar(initials: Messenger.initialsOf(s.peerName), colorIndex: s.peerId.length % 7, photo: Messenger.instance.photoOf(s.peerId), size: 132),
+          ),
           const Spacer(),
           if (incoming)
             Padding(
@@ -223,7 +237,11 @@ class _CallScreenState extends State<CallScreen> {
             Container(
               margin: const EdgeInsets.fromLTRB(14, 0, 14, 18),
               padding: const EdgeInsets.fromLTRB(10, 20, 10, 16),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.07), borderRadius: BorderRadius.circular(30)),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(color: Colors.white.withOpacity(0.12)),
+              ),
               child: Column(children: [
                 Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
                   _round(Icons.volume_up_rounded, 'Speaker', () => cs.speaker(s, !s.speaker), on: s.speaker),

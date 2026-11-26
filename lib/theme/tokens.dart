@@ -16,10 +16,10 @@ class Mitti {
   static const clay = Color(0xFF8A7B70);
 
   // Dark surfaces
-  static const night = Color(0xFF17120F);
-  static const nightSurface = Color(0xFF211A16);
-  static const nightRaised = Color(0xFF2A221D);
-  static const nightLine = Color(0xFF2E2621);
+  static const night = Color(0xFF120E0C);
+  static const nightSurface = Color(0xFF1C1613);
+  static const nightRaised = Color(0xFF251D19);
+  static const nightLine = Color(0xFF2A221E);
   static const nightText = Color(0xFFF5ECE3);
   static const nightMuted = Color(0xFFA39385);
 
@@ -29,13 +29,24 @@ class Mitti {
   static const callGreen = Color(0xFF3E9A63);
 
   static const avatarColors = [
-    Color(0xFFE8A87C),
-    Color(0xFF85A3C9),
-    Color(0xFFC9A0C2),
-    Color(0xFF9CC5A1),
-    Color(0xFFE6C36A),
-    Color(0xFFA7A3D9),
-    Color(0xFFE89C9C),
+    Color(0xFFE08A4E),
+    Color(0xFF4C8FD9),
+    Color(0xFF8E6CCB),
+    Color(0xFF3BA37A),
+    Color(0xFFD9A43A),
+    Color(0xFF6673E0),
+    Color(0xFFD2597E),
+  ];
+
+  /// Deeper end of each avatar gradient.
+  static const avatarDeep = [
+    Color(0xFFC0632B),
+    Color(0xFF2F6CB8),
+    Color(0xFF6B4BA8),
+    Color(0xFF22805A),
+    Color(0xFFB0801F),
+    Color(0xFF4A55C4),
+    Color(0xFFB03A60),
   ];
 
   // Spacing & radii

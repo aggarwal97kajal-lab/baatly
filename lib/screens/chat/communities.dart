@@ -79,7 +79,9 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
   Widget build(BuildContext context) {
     final bc = context.bc;
     return Scaffold(
-      appBar: AppBar(automaticallyImplyLeading: !widget.tab, title: const Text('Communities')),
+      appBar: widget.tab
+          ? AppBar(toolbarHeight: 76, automaticallyImplyLeading: false, title: const LargeTitle(kicker: 'BAATLY', title: 'Community'))
+          : AppBar(title: const Text('Communities')),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(children: [

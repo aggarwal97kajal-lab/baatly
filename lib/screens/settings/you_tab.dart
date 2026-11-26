@@ -50,7 +50,7 @@ class YouTab extends StatelessWidget {
                   child: Row(children: [
                     IconButton(onPressed: () => Navigator.of(context).maybePop(), icon: Icon(Icons.arrow_back_rounded, color: bc.text)),
                     const SizedBox(width: 4),
-                    Text('Settings', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: bc.text)),
+                    Text('Settings', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: bc.text)),
                   ]),
                 )
               else
@@ -58,38 +58,78 @@ class YouTab extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(10, 18, 10, 12),
                   child: Text('You', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
                 ),
-              _Group(children: [
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  leading: GestureDetector(
-                    onTap: () => s.myPhoto != null ? PhotoViewerScreen.open(context, s.myPhoto, name) : changeProfilePhoto(context),
-                    child: Stack(clipBehavior: Clip.none, children: [
-                      Avatar(initials: ini, colorIndex: 2, size: 56, photo: s.myPhoto),
-                      Positioned(
-                        right: -2,
-                        bottom: -2,
-                        child: GestureDetector(
-                          onTap: () => changeProfilePhoto(context),
-                          child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle, border: Border.all(color: bc.surface, width: 2)),
-                          child: const Icon(Icons.photo_camera_rounded, size: 12, color: Colors.white),
-                        ),
-                        ),
-                      ),
-                    ]),
-                  ),
-                  title: Text(name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                  subtitle: Text('${s.username.isEmpty ? '' : '@${s.username} · '}${s.about}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: IconButton(
-                    tooltip: 'QR code',
-                    icon: Icon(Icons.qr_code_rounded, color: context.primary),
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QrScreen())),
-                  ),
+              Material(
+                color: bc.surface,
+                clipBehavior: Clip.antiAlias,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: bc.line)),
+                child: InkWell(
                   onTap: () => _editProfile(context),
+                  child: Stack(children: [
+                    Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Container(
+                      height: 56,
+                      decoration: BoxDecoration(gradient: bc.brand),
+                      child: const DecoratedBox(
+                        decoration: BoxDecoration(gradient: RadialGradient(center: Alignment(0.7, -1.4), radius: 1.2, colors: [Color(0x40FFFFFF), Color(0x00FFFFFF)])),
+                      ),
+                    ),
+                    const SizedBox(height: 62),
+                    ]),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 24,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                          GestureDetector(
+                            onTap: () => s.myPhoto != null ? PhotoViewerScreen.open(context, s.myPhoto, name) : changeProfilePhoto(context),
+                            child: Stack(clipBehavior: Clip.none, children: [
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(color: bc.surface, shape: BoxShape.circle),
+                                child: Avatar(initials: ini, colorIndex: 2, size: 72, photo: s.myPhoto),
+                              ),
+                              Positioned(
+                                right: 0,
+                                bottom: 2,
+                                child: GestureDetector(
+                                  onTap: () => changeProfilePhoto(context),
+                                  child: Container(
+                                    width: 26,
+                                    height: 26,
+                                    decoration: BoxDecoration(gradient: bc.brand, shape: BoxShape.circle, border: Border.all(color: bc.surface, width: 2.5)),
+                                    child: const Icon(Icons.photo_camera_rounded, size: 13, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ]),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: bc.text)),
+                                Text('${s.username.isEmpty ? '' : '@${s.username} · '}${s.about}',
+                                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: bc.muted)),
+                              ]),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: RoundIconButton(
+                              tooltip: 'QR code',
+                              icon: Icons.qr_code_rounded,
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QrScreen())),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ]),
                 ),
-              ]),
+              ),
               const SizedBox(height: 12),
               if (kHasBackend && Api.instance.loggedIn) ...[
                 const _Group(children: [AccountsSection()]),
@@ -142,16 +182,29 @@ class YouTab extends StatelessWidget {
     );
   }
 
+  static const _tileColors = {
+    'Account': Color(0xFFE0A23B),
+    'Privacy': Color(0xFF3BA37A),
+    'Starred messages': Color(0xFFE3B23C),
+    'Fingerprint login': Color(0xFF6673E0),
+    'Security': Color(0xFF2F8F9D),
+    'Chats': Color(0xFF4C8FD9),
+    'Notifications': Color(0xFFD2597E),
+    'Storage and data': Color(0xFF4AA8B6),
+    'Linked devices': Color(0xFF8E6CCB),
+    'Appearance': Color(0xFFE08A4E),
+    'Chat wallpaper': Color(0xFF3BA37A),
+    'Help': Color(0xFF7E8A94),
+    'About BAATLY': Color(0xFFC8553D),
+    'Log out': Color(0xFFD9534F),
+  };
+
   Widget _row(BuildContext context, IconData icon, String title, {String? trailing, VoidCallback? onTap}) {
     final bc = context.bc;
     return ListTile(
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(color: bc.raised, borderRadius: BorderRadius.circular(11)),
-        child: Icon(icon, size: 20, color: context.primary),
-      ),
-      title: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      leading: IconTile(icon: icon, color: _tileColors[title] ?? context.primary),
+      title: Text(title, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w500)),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
         if (trailing != null) Text(trailing, style: TextStyle(fontSize: 12.5, color: bc.muted)),
         Icon(Icons.chevron_right_rounded, color: bc.muted),
@@ -265,7 +318,7 @@ class _Group extends StatelessWidget {
         // Material (not Container) so tap highlights are drawn inside the
         // rounded card instead of leaking out at the corners.
         color: context.bc.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: context.bc.line)),
         clipBehavior: Clip.antiAlias,
         child: Column(children: children),
       );

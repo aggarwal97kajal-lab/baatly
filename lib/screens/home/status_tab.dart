@@ -64,9 +64,9 @@ class StatusTab extends StatelessWidget {
               },
               child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 10, 8, 4),
+                padding: const EdgeInsets.fromLTRB(20, 14, 8, 6),
                 child: Row(children: [
-                  Expanded(child: Text('Status', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text))),
+                  const Expanded(child: LargeTitle(kicker: 'BAATLY', title: 'Updates')),
                   PopupMenuButton<String>(
                     icon: Icon(Icons.more_vert_rounded, color: bc.text),
                     onSelected: (v) {

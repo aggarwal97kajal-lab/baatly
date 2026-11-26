@@ -129,8 +129,8 @@ class CallsTab extends StatelessWidget {
       body: SafeArea(
         child: ListView(children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
-            child: Text('Calls', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+            child: const LargeTitle(kicker: 'BAATLY', title: 'Calls'),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

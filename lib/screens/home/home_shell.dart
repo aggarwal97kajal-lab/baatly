@@ -185,54 +185,64 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         },
         children: pages,
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(color: bc.surface, border: Border(top: BorderSide(color: bc.line))),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 66,
+      extendBody: true,
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Container(
+            height: 62,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: Color.alphaBlend(bc.surface.withOpacity(0.94), bc.bg),
+              borderRadius: BorderRadius.circular(31),
+              border: Border.all(color: bc.line),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(context.isDark ? 0.45 : 0.12), blurRadius: 24, offset: const Offset(0, 8))],
+            ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: List.generate(_items.length, (i) {
                 final on = i == _tab;
                 final it = _items[i];
-                final col = on ? context.primary : bc.muted;
-                return Expanded(
-                  child: InkWell(
-                    onTap: () => _go(i),
-                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      AnimatedContainer(
-                        duration: Mitti.fast,
-                        curve: Curves.easeOut,
-                        width: on ? 54 : 32,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: on ? context.primary.withOpacity(0.15) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-                          Icon(on ? it.$2 : it.$1, color: col, size: 22),
-                          if (i == 0)
-                            ListenableBuilder(
-                              listenable: AppState.instance,
-                              builder: (context, _) {
-                                final n = AppState.instance.chats.where((c) => c.unread > 0 && !c.archived).length;
-                                if (n == 0) return const SizedBox.shrink();
-                                return Positioned(
-                                  top: -4,
-                                  right: on ? 6 : -8,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                    constraints: const BoxConstraints(minWidth: 18),
-                                    decoration: BoxDecoration(color: context.primary, borderRadius: BorderRadius.circular(9)),
-                                    child: Text('$n', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700)),
-                                  ),
-                                );
-                              },
-                            ),
-                        ]),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(it.$3, style: TextStyle(fontSize: 10.5, color: col, fontWeight: on ? FontWeight.w700 : FontWeight.w500)),
+                final icon = Stack(clipBehavior: Clip.none, children: [
+                  Icon(on ? it.$2 : it.$1, color: on ? Colors.white : bc.muted, size: on ? 20 : 23),
+                  if (i == 0 && !on)
+                    ListenableBuilder(
+                      listenable: AppState.instance,
+                      builder: (context, _) {
+                        final n = AppState.instance.chats.where((c) => c.unread > 0 && !c.archived).length;
+                        if (n == 0) return const SizedBox.shrink();
+                        return Positioned(
+                          top: -5,
+                          right: -10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            constraints: const BoxConstraints(minWidth: 17),
+                            decoration: BoxDecoration(gradient: bc.brand, borderRadius: BorderRadius.circular(9)),
+                            child: Text('$n', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                          ),
+                        );
+                      },
+                    ),
+                ]);
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _go(i),
+                  child: AnimatedContainer(
+                    duration: Mitti.medium,
+                    curve: Curves.easeOutCubic,
+                    padding: EdgeInsets.symmetric(horizontal: on ? 16 : 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      gradient: on ? bc.brand : null,
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: on ? [BoxShadow(color: bc.accent.withOpacity(0.35), blurRadius: 14, offset: const Offset(0, 5))] : null,
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      icon,
+                      if (on) ...[
+                        const SizedBox(width: 7),
+                        Text(it.$3, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                      ],
                     ]),
                   ),
                 );

@@ -56,17 +56,57 @@ class AppTheme {
     return base.copyWith(
       textTheme: base.textTheme.apply(bodyColor: text, displayColor: text),
       appBarTheme: AppBarTheme(
-        backgroundColor: sf.surface,
+        backgroundColor: sf.bg,
         foregroundColor: text,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
           fontFamily: 'Poppins',
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: FontWeight.w700,
+          letterSpacing: -0.2,
           color: text,
         ),
+      ),
+      cardTheme: CardThemeData(
+        color: sf.surface,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: sf.line)),
+      ),
+      listTileTheme: const ListTileThemeData(contentPadding: EdgeInsets.symmetric(horizontal: 20)),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: sf.surface,
+        modalBackgroundColor: sf.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: sf.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: sf.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: sf.line)),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        side: BorderSide(color: sf.line),
+        backgroundColor: sf.raised,
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -106,6 +146,12 @@ class BaatlyColors extends ThemeExtension<BaatlyColors> {
   final Color inBubble;
   /// Set for gradient themes: paint out-bubbles / send button with it.
   final Gradient? accentGradient;
+  /// Brand colour, for the premium gradient (accent → a deeper shade).
+  final Color accent;
+
+  /// Gradient for my bubbles, the send button, FAB, active tab, badges.
+  Gradient get brand => accentGradient ??
+      LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color.lerp(accent, Colors.white, 0.06)!, Color.lerp(accent, Colors.black, 0.18)!]);
 
   const BaatlyColors({
     required this.bg,
@@ -118,6 +164,7 @@ class BaatlyColors extends ThemeExtension<BaatlyColors> {
     required this.onOutBubble,
     required this.inBubble,
     this.accentGradient,
+    this.accent = Mitti.terracotta,
   });
 
   factory BaatlyColors.from(Palette p, Surfaces sf, bool dark) => BaatlyColors(
@@ -131,6 +178,7 @@ class BaatlyColors extends ThemeExtension<BaatlyColors> {
         onOutBubble: p.onPrimary,
         inBubble: dark ? sf.raised : Colors.white,
         accentGradient: p.linear,
+        accent: dark ? p.dark : p.light,
       );
 
   static const light = BaatlyColors(
