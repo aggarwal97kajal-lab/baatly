@@ -1,3 +1,4 @@
+import '../../data/secure_screen.dart';
 import 'package:flutter/material.dart';
 
 import 'two_step.dart';
@@ -124,6 +125,34 @@ class PrivacyScreen extends StatelessWidget {
                   );
                 },
               ),
+            const Divider(height: 24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
+              child: Text('Screenshots', style: TextStyle(color: bc.muted)),
+            ),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
+              title: Text('View once photos', style: TextStyle(fontSize: 16, color: bc.text)),
+              subtitle: Text('Screenshots are always blocked', style: TextStyle(color: bc.muted)),
+              trailing: Text('Always', style: TextStyle(color: bc.muted)),
+            ),
+            SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              title: Text('Locked chats', style: TextStyle(fontSize: 16, color: bc.text)),
+              subtitle: Text('Block screenshots and screen recording in locked chats', style: TextStyle(color: bc.muted)),
+              value: s.shotBlockLocked,
+              onChanged: (v) => s.toggle(() => s.shotBlockLocked = v),
+            ),
+            SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              title: Text('All of BAATLY', style: TextStyle(fontSize: 16, color: bc.text)),
+              subtitle: Text('Block screenshots everywhere in the app. Blocked screens show black in recent apps and screen share.', style: TextStyle(color: bc.muted)),
+              value: s.shotBlockAll,
+              onChanged: (v) {
+                s.toggle(() => s.shotBlockAll = v);
+                SecureScreen.refresh();
+              },
+            ),
             const Divider(height: 24),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),

@@ -472,6 +472,19 @@ async function route(c: Ctx): Promise<Response> {
 <script>setTimeout(function(){location.href=${JSON.stringify(deep)}},300)</script></body></html>`;
     return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
   }
+  // Profile link (from "QR code › Share"): opens the person's chat in BAATLY.
+  const ul = p.match(/^\/u\/([\w-]{6,64})$/);
+  if (m === 'GET' && ul) {
+    const deep = `baatly://u/${ul[1]}`;
+    const intent = `intent://u/${ul[1]}#Intent;scheme=baatly;package=app.baatly.baatly;S.browser_fallback_url=${encodeURIComponent('https://baatly-api.pitaragames.workers.dev/get')};end`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chat on BAATLY</title>
+<style>body{margin:0;font-family:system-ui,sans-serif;background:#181210;color:#f3e9e4;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center}
+.b{display:inline-block;margin:10px;padding:14px 28px;border-radius:28px;background:#e06a4e;color:#fff;text-decoration:none;font-weight:700}.l{color:#bda;}</style></head>
+<body><div><div style="font-size:54px">💬</div><h2>Chat on BAATLY</h2>
+<a class="b" href="${intent}">Open in BAATLY</a><p style="opacity:.7">Don't have BAATLY? <a class="l" href="/get">Download</a></p></div>
+<script>setTimeout(function(){location.href=${JSON.stringify(deep)}},300)</script></body></html>`;
+    return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  }
   if (m === 'GET' && p === '/get') {
     return Response.redirect('https://github.com/aggarwal97kajal-lab/baatly/releases/latest/download/baatly.apk', 302);
   }

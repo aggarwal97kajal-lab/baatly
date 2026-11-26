@@ -1,3 +1,5 @@
+import '../settings/quick_replies.dart';
+import '../../data/secure_screen.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -832,6 +834,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     AppState.instance.activeChatId = chat.id;
+    _secure = chat.locked && AppState.instance.shotBlockLocked;
+    if (_secure) SecureScreen.hold();
+    final d = chat.draft;
+    if (d != null && d.isNotEmpty) {
+      _ctrl.text = d;
+      _ctrl.selection = TextSelection.collapsed(offset: d.length);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) Messenger.instance.openChat(chat);
     });
@@ -867,8 +876,29 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Keep what was typed but not sent as a draft (shown in the chat list).
+  void _saveDraft() {
+    final t = _editing != null ? '' : _ctrl.text.trim();
+    final old = chat.draft;
+    if (t.isEmpty) {
+      if (old == null) return;
+      chat.draft = null;
+      chat.draftAt = null;
+    } else {
+      if (t == old) return;
+      chat.draft = t;
+      chat.draftAt = DateTime.now();
+    }
+    Messenger.instance.saveSoon();
+    AppState.instance.changed();
+  }
+
+  bool _secure = false;
+
   @override
   void dispose() {
+    if (_secure) SecureScreen.release();
+    _saveDraft();
     AppState.instance.removeListener(_autoTranslate);
     if (AppState.instance.activeChatId == chat.id) AppState.instance.activeChatId = null;
     Messenger.instance.closeChat(chat);
@@ -1306,6 +1336,38 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ]),
             ),
+          if (!_recording && _editing == null)
+            Builder(builder: (context) {
+              final qs = quickRepliesFor(_ctrl.text);
+              if (qs.isEmpty) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+                constraints: const BoxConstraints(maxHeight: 220),
+                decoration: BoxDecoration(
+                  color: bc.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, -2))],
+                ),
+                child: ListView(shrinkWrap: true, padding: EdgeInsets.zero, children: [
+                  for (final q in qs)
+                    InkWell(
+                      onTap: () {
+                        final t = q['t'] ?? '';
+                        _ctrl.text = t;
+                        _ctrl.selection = TextSelection.collapsed(offset: t.length);
+                        setState(() {});
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('/${q['k']}', style: TextStyle(color: context.primary, fontWeight: FontWeight.w700)),
+                          Text(q['t'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: bc.muted, fontSize: 13)),
+                        ]),
+                      ),
+                    ),
+                ]),
+              );
+            }),
           _Composer(
             onAttach: _attach,
             mic: _MicState(

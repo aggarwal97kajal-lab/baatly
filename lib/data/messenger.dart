@@ -343,6 +343,8 @@ class Messenger {
     if (uid != null) await _loadLocal(uid);
   }
 
+  void saveSoon() => _scheduleSave();
+
   void _scheduleSave() {
     if (_uid == null) return;
     _saveTimer?.cancel();

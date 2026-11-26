@@ -1,3 +1,4 @@
+import '../../data/secure_screen.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -331,11 +332,16 @@ class ViewOnceContent extends StatelessWidget {
           : () async {
               final p = m.mediaPath ?? await Messenger.instance.downloadMedia(m);
               if (p == null || !context.mounted) return;
-              await Navigator.of(context).push(PageRouteBuilder<void>(
-                opaque: false,
-                barrierColor: Colors.black,
-                pageBuilder: (_, __, ___) => PhotoViewerScreen(path: p, title: 'View once'),
-              ));
+              await SecureScreen.hold();
+              try {
+                await Navigator.of(context).push(PageRouteBuilder<void>(
+                  opaque: false,
+                  barrierColor: Colors.black,
+                  pageBuilder: (_, __, ___) => PhotoViewerScreen(path: p, title: 'View once'),
+                ));
+              } finally {
+                await SecureScreen.release();
+              }
               await Messenger.instance.markOpened(chat, m);
             },
       child: Container(

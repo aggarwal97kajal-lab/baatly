@@ -15,6 +15,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'appearance_screen.dart';
 import 'wallpaper_screen.dart';
+import 'quick_replies.dart';
 
 String _size(int b) {
   if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(0)} KB';
@@ -48,6 +49,13 @@ class ChatsSettingsScreen extends StatelessWidget {
             subtitle: const Text('Archived chats will remain archived when you receive a new message'),
             value: s.keepArchived,
             onChanged: (v) => s.toggle(() => s.keepArchived = v),
+          ),
+          const SectionLabel('Tools'),
+          ListTile(
+            leading: const Icon(Icons.bolt_rounded),
+            title: const Text('Quick replies'),
+            subtitle: Text(s.quickReplies.isEmpty ? 'Type "/" in a chat to use saved texts' : '${s.quickReplies.length} saved'),
+            onTap: () => go(const QuickRepliesScreen()),
           ),
           const Divider(),
           ListTile(leading: const Icon(Icons.cloud_upload_outlined), title: const Text('Chat backup'), onTap: () => go(const ChatBackupScreen())),

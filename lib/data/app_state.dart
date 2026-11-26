@@ -90,6 +90,79 @@ class AppState extends ChangeNotifier {
   /// People whose statuses I've hidden (user ids).
   Set<String> hiddenStatus = {};
 
+  // Quick replies: type "/" in a chat. Each {'k': shortcut, 't': text}.
+  List<Map<String, String>> quickReplies = [];
+  // Screenshot block (view-once is always blocked).
+  bool shotBlockLocked = true;
+  bool shotBlockAll = false;
+  // Busy mode (auto-reply). Times are minutes after midnight.
+  bool busyOn = false;
+  String busyText = "I'm busy right now. I'll get back to you soon.";
+  bool busySchedule = false;
+  int busyFrom = 22 * 60, busyTo = 7 * 60;
+  bool busyGroups = false;
+  /// Last auto-reply per person (ms), so one person gets it at most every 3 hours.
+  Map<String, int> busySent = {};
+  // Birthdays. My date of birth 'YYYY-MM-DD' (asked once, required).
+  String myDob = '';
+  bool shareBirthday = true;
+  bool birthdayReminders = true;
+  /// Birthdays I added myself: user id (or chat id) -> 'MM-DD'.
+  Map<String, String> manualBirthdays = {};
+  /// From the server / phone contacts: user id -> 'MM-DD'.
+  Map<String, String> knownBirthdays = {};
+
+  /// Is busy mode answering right now?
+  bool get busyNow {
+    if (!busyOn) return false;
+    if (!busySchedule) return true;
+    final n = DateTime.now();
+    final m = n.hour * 60 + n.minute;
+    return busyFrom <= busyTo ? (m >= busyFrom && m < busyTo) : (m >= busyFrom || m < busyTo);
+  }
+
+  /// 'MM-DD' birthday for a person (manual beats shared).
+  String? birthdayOf(String id) => manualBirthdays[id] ?? knownBirthdays[id];
+
+  Map<String, dynamic> _extrasJson() => {
+        'qr': quickReplies,
+        'sbl': shotBlockLocked,
+        'sba': shotBlockAll,
+        'bo': busyOn,
+        'bt': busyText,
+        'bs': busySchedule,
+        'bf': busyFrom,
+        'bto': busyTo,
+        'bg': busyGroups,
+        'bsent': busySent,
+        'dob': myDob,
+        'shb': shareBirthday,
+        'bdr': birthdayReminders,
+        'mb': manualBirthdays,
+        'kb': knownBirthdays,
+      };
+
+  void _applyExtras(Map<String, dynamic> j) {
+    quickReplies = [
+      for (final x in (j['qr'] as List? ?? []))
+        if (x is Map) {'k': '${x['k'] ?? ''}', 't': '${x['t'] ?? ''}'}
+    ];
+    shotBlockLocked = j['sbl'] != false;
+    shotBlockAll = j['sba'] == true;
+    busyOn = j['bo'] == true;
+    busyText = (j['bt'] as String?) ?? busyText;
+    busySchedule = j['bs'] == true;
+    busyFrom = (j['bf'] as int?) ?? busyFrom;
+    busyTo = (j['bto'] as int?) ?? busyTo;
+    busyGroups = j['bg'] == true;
+    busySent = {for (final e in ((j['bsent'] as Map?) ?? {}).entries) '${e.key}': (e.value as num).toInt()};
+    myDob = (j['dob'] as String?) ?? '';
+    shareBirthday = j['shb'] != false;
+    birthdayReminders = j['bdr'] != false;
+    manualBirthdays = {for (final e in ((j['mb'] as Map?) ?? {}).entries) '${e.key}': '${e.value}'};
+    knownBirthdays = {for (final e in ((j['kb'] as Map?) ?? {}).entries) '${e.key}': '${e.value}'};
+  }
+
   Map<String, dynamic> privacyJson() => {
         'lastSeen': lastSeenRule.toJson(),
         'online': onlineRule,
@@ -190,6 +263,10 @@ class AppState extends ChangeNotifier {
       autoVideos = p.getInt('autoVideos') ?? 1;
       autoDocs = p.getInt('autoDocs') ?? 0;
       hdPhotos = p.getBool('hdPhotos') ?? false;
+      try {
+        final xj = p.getString('extras');
+        if (xj != null) _applyExtras(jsonDecode(xj) as Map<String, dynamic>);
+      } catch (_) {}
     } catch (_) {
       // Storage unavailable (e.g. tests): fall back to defaults.
     }
@@ -231,6 +308,7 @@ class AppState extends ChangeNotifier {
     p.setInt('autoVideos', autoVideos);
     p.setInt('autoDocs', autoDocs);
     p.setBool('hdPhotos', hdPhotos);
+    p.setString('extras', jsonEncode(_extrasJson()));
     if (myPhoto == null) {
       p.remove('myPhoto');
     } else {

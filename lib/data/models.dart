@@ -137,6 +137,15 @@ class Chat {
   String? sendTranslate;
   /// My chat lists ("Family", "Office"…) this chat is in.
   Set<String> lists = {};
+  /// Typed but not sent (shown as "Draft: …" in the chat list).
+  String? draft;
+  DateTime? draftAt;
+  /// Sort time in the chat list: last message, or a newer draft.
+  DateTime get sortTime {
+    final t = last?.time ?? DateTime(0);
+    final d = draftAt;
+    return (draft != null && d != null && d.isAfter(t)) ? d : t;
+  }
   String? phone;
   /// Real chats only: "online" / "last seen …" from the server.
   String? presence;
@@ -207,6 +216,8 @@ class Chat {
         if (autoTranslate != null) 'atr': autoTranslate,
         if (sendTranslate != null) 'str': sendTranslate,
         if (lists.isNotEmpty) 'ls': lists.toList(),
+        if (draft != null) 'dr': draft,
+        if (draft != null && draftAt != null) 'dra': draftAt!.millisecondsSinceEpoch,
         if (locked) 'lk': true,
         'pinned': pinned,
         'archived': archived,
@@ -248,6 +259,8 @@ class Chat {
     c.autoTranslate = j['atr'] as String?;
     c.sendTranslate = j['str'] as String?;
     c.lists = {for (final x in (j['ls'] as List? ?? [])) x.toString()};
+    c.draft = j['dr'] as String?;
+    if (j['dra'] is int) c.draftAt = DateTime.fromMillisecondsSinceEpoch(j['dra'] as int);
     c.favourite = j['fav'] == true;
     c.disappear = (j['dis'] as int?) ?? 0;
     final mute = j['mute'] as int?;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../settings/you_tab.dart';
+import '../settings/qr_screen.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../data/app_state.dart';
@@ -37,7 +38,7 @@ class _ChatsTabState extends State<ChatsTab> {
       builder: (context, _) {
         // A chat opened but never used (no messages) doesn't show, like WhatsApp.
         var list = s.chats
-            .where((c) => c.archived == _showArchived && !c.locked && (c.isGroup || c.messages.isNotEmpty || c.pinned || _filter >= 3))
+            .where((c) => c.archived == _showArchived && !c.locked && (c.isGroup || c.messages.isNotEmpty || c.draft != null || c.pinned || _filter >= 3))
             .toList();
         final lockedCount = s.chats.where((c) => c.locked).length;
         if (_filter == 1) list = list.where((c) => c.unread > 0).toList();
@@ -58,7 +59,7 @@ class _ChatsTabState extends State<ChatsTab> {
         }
         list.sort((a, b) {
           if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
-          return (b.last?.time ?? DateTime(0)).compareTo(a.last?.time ?? DateTime(0));
+          return b.sortTime.compareTo(a.sortTime);
         });
         final unreadCount = s.chats.where((c) => c.unread > 0 && !c.archived).length;
         final archivedCount = s.chats.where((c) => c.archived).length;
@@ -95,6 +96,8 @@ class _ChatsTabState extends State<ChatsTab> {
                       onSelected: (v) async {
                         if (v == 'bc') {
                           await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BroadcastEditor()));
+                        } else if (v == 'qr') {
+                          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QrScreen(scan: true)));
                         } else if (v == 'settings') {
                           await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
                         } else if (v == 'list') {
@@ -105,6 +108,7 @@ class _ChatsTabState extends State<ChatsTab> {
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'bc', child: Text('New broadcast')),
                         PopupMenuItem(value: 'list', child: Text('New list')),
+                        PopupMenuItem(value: 'qr', child: Text('Scan QR code')),
                         PopupMenuItem(value: 'settings', child: Text('Settings')),
                       ],
                     ),
@@ -500,12 +504,32 @@ class _ChatRow extends StatelessWidget {
                   child: Text(chat.name,
                       maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: bc.text)),
                 ),
-                Text(m == null ? '' : chatTime(m.time),
+                Text(chat.draft != null && chat.draftAt != null && chat.sortTime == chat.draftAt ? chatTime(chat.draftAt!) : (m == null ? '' : chatTime(m.time)),
                     style: TextStyle(fontSize: 12, color: unread ? context.primary : bc.muted, fontWeight: unread ? FontWeight.w700 : FontWeight.w400)),
               ]),
               const SizedBox(height: 3),
               if (chat.typing)
                 Text(chat.typingName != null ? '${chat.typingName} is typing…' : 'typing…', style: TextStyle(fontSize: 13, color: context.primary, fontWeight: FontWeight.w700))
+              else if (chat.draft != null)
+                Row(children: [
+                  Text('Draft: ', style: TextStyle(fontSize: 13, color: context.primary, fontWeight: FontWeight.w700)),
+                  Expanded(
+                    child: Text(chat.draft!.replaceAll('\n', ' '),
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: bc.muted)),
+                  ),
+                  if (chat.muted) Icon(Icons.volume_off_rounded, size: 16, color: bc.muted),
+                  if (chat.pinned) Padding(padding: const EdgeInsets.only(left: 4), child: Icon(Icons.push_pin_rounded, size: 15, color: bc.muted)),
+                  if (unread)
+                    Container(
+                      margin: const EdgeInsets.only(left: 6),
+                      constraints: const BoxConstraints(minWidth: 20),
+                      height: 20,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(color: chat.muted ? bc.muted : context.primary, borderRadius: BorderRadius.circular(10)),
+                      child: Text('${chat.unread}', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
+                    ),
+                ])
               else
               Row(children: [
                 if (m != null && m.fromMe) ...[Ticks(status: m.status, color: bc.muted), const SizedBox(width: 3)],

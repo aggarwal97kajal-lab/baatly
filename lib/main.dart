@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'data/api.dart';
 import 'data/app_state.dart';
 import 'data/notifier.dart';
+import 'data/secure_screen.dart';
 import 'widgets/app_lock.dart';
 import 'nav.dart';
 import 'screens/call/call_screen.dart';
@@ -19,6 +20,7 @@ Future<void> main() async {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarColor: Colors.transparent));
   await AppState.instance.load();
   await Api.instance.load();
+  SecureScreen.refresh();
   if (kPushEnabled) {
     FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
     try {

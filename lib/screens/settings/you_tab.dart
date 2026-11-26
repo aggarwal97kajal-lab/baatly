@@ -11,6 +11,7 @@ import 'appearance_screen.dart';
 import 'privacy_screen.dart';
 import '../chat/starred_screen.dart';
 import 'profile_photo.dart';
+import 'qr_screen.dart';
 import '../../widgets/photo_viewer.dart';
 import 'wallpaper_screen.dart';
 import 'more_settings.dart';
@@ -79,7 +80,11 @@ class YouTab extends StatelessWidget {
                   ),
                   title: Text(name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                   subtitle: Text('${s.username.isEmpty ? '' : '@${s.username} · '}${s.about}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                  trailing: IconButton(
+                    tooltip: 'QR code',
+                    icon: Icon(Icons.qr_code_rounded, color: context.primary),
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QrScreen())),
+                  ),
                   onTap: () => _editProfile(context),
                 ),
               ]),

@@ -14,6 +14,7 @@ import '../chat/chat_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'calls_tab.dart';
+import '../settings/qr_screen.dart';
 import 'chats_tab.dart';
 import 'community_tab.dart';
 import 'status_tab.dart';
@@ -113,10 +114,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   /// Call links: baatly://call/<user id>?v=1 → call that person.
   void _listenLinks() {
     _links ??= AppLinks().uriLinkStream.listen((u) async {
-      if (u.scheme != 'baatly' || u.host != 'call' || u.pathSegments.isEmpty) return;
+      if (u.scheme != 'baatly' || u.pathSegments.isEmpty) return;
       final key = u.toString();
       if (key == _lastLink) return;
       _lastLink = key;
+      if (u.host == 'u') {
+        if (mounted) openUserFromQr(context, u.pathSegments.first);
+        return;
+      }
+      if (u.host != 'call') return;
       final id = u.pathSegments.first;
       if (id == Messenger.instance.myId) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This is your own call link')));
