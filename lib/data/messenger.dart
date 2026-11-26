@@ -11,6 +11,7 @@ import 'package:web_socket_channel/io.dart';
 
 import '../config.dart';
 import 'api.dart';
+import 'big_files.dart';
 import 'app_state.dart';
 import 'contacts.dart';
 import 'e2e.dart';
@@ -1849,7 +1850,7 @@ class Messenger {
     _s.changed();
     try {
       final file = File(m.mediaPath!);
-      final bytes = await file.readAsBytes();
+      final big = await file.length() > BigFiles.threshold;
       if (m.kind == MsgKind.image && m.media!['once'] != true && m.media!['stk'] != true) {
         final t = await MediaFiles.thumb(file.path);
         if (t != null) {
@@ -1858,15 +1859,25 @@ class Messenger {
           m.media!['h'] = t.$3;
         }
       }
-      final (key, blob) = await E2E.lockInBackground(bytes);
       m.progress = 0;
-      final id = await Api.instance.upload(blob, onProgress: (p) {
-        m.progress = p;
-        _s.changed();
-      });
-      m.media!['id'] = id;
-      m.media!['k'] = base64Encode(key);
-      m.media!['size'] = bytes.length;
+      if (big) {
+        // Up to 2 GB: encrypted and sent in pieces, never all in memory.
+        final r = await BigFiles.upload(file.path, onProgress: (p) {
+          m.progress = p;
+          _s.changed();
+        });
+        m.media!.addAll(r);
+      } else {
+        final bytes = await file.readAsBytes();
+        final (key, blob) = await E2E.lockInBackground(bytes);
+        final id = await Api.instance.upload(blob, onProgress: (p) {
+          m.progress = p;
+          _s.changed();
+        });
+        m.media!['id'] = id;
+        m.media!['k'] = base64Encode(key);
+        m.media!['size'] = bytes.length;
+      }
     } finally {
       m.busy = false;
       _s.changed();
@@ -1908,15 +1919,22 @@ class Messenger {
     _s.changed();
     try {
       m.progress = 0;
-      final blob = await Api.instance.download(md['id'] as String, onProgress: (p) {
-        m.progress = p;
-        _s.changed();
-      });
-      final clear = await E2E.unlockInBackground(blob, base64Decode(md['k'] as String));
       final name = (md['name'] as String?) ?? 'file';
       final ext = MediaFiles.ext(name);
       final f = File('${(await MediaFiles.dir()).path}/${m.id}${ext.isEmpty ? '' : '.$ext'}');
-      await f.writeAsBytes(clear, flush: true);
+      if (md['cv'] == 2) {
+        await BigFiles.download(md, f, onProgress: (p) {
+          m.progress = p;
+          _s.changed();
+        });
+      } else {
+        final blob = await Api.instance.download(md['id'] as String, onProgress: (p) {
+          m.progress = p;
+          _s.changed();
+        });
+        final clear = await E2E.unlockInBackground(blob, base64Decode(md['k'] as String));
+        await f.writeAsBytes(clear, flush: true);
+      }
       m.mediaPath = f.path;
       return f.path;
     } catch (_) {

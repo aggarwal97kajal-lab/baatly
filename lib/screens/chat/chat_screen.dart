@@ -544,8 +544,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     if (mounted) Navigator.of(context, rootNavigator: true).pop();
     final finalSize = await File(src).length();
-    if (finalSize > 64 * 1024 * 1024) {
-      _toast('Videos up to 64 MB can be sent');
+    if (finalSize > 2 * 1024 * 1024 * 1024) {
+      _toast('Videos up to 2 GB can be sent');
       return;
     }
     final name = f.name.isEmpty ? 'video.mp4' : f.name;
@@ -567,8 +567,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     final f = r?.files.single;
     if (f == null || f.path == null) return;
-    if (f.size > 64 * 1024 * 1024) {
-      _toast('Audio up to 64 MB can be sent');
+    if (f.size > 2 * 1024 * 1024 * 1024) {
+      _toast('Audio up to 2 GB can be sent');
       return;
     }
     var secs = 0;
@@ -604,8 +604,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     final f = r?.files.single;
     if (f == null || f.path == null) return;
-    if (f.size > 64 * 1024 * 1024) {
-      _toast('Files up to 64 MB can be sent');
+    if (f.size > 2 * 1024 * 1024 * 1024) {
+      _toast('Files up to 2 GB can be sent');
       return;
     }
     final kept = await _keep(f.path!, f.name);

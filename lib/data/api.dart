@@ -169,6 +169,48 @@ class Api {
     return out;
   }
 
+  /// Big files: one encrypted part of a multipart upload. Returns the part's etag.
+  Future<String> putPart(String id, String upload, int n, List<int> bytes) async {
+    final req = http.Request('PUT', Uri.parse('$kApiBase/v1/media/big/$id/$n?u=${Uri.encodeQueryComponent(upload)}'))
+      ..headers['content-type'] = 'application/octet-stream'
+      ..bodyBytes = bytes;
+    if (_token != null) req.headers['authorization'] = 'Bearer $_token';
+    http.Response r;
+    try {
+      r = await http.Response.fromStream(await _http.send(req).timeout(const Duration(minutes: 4)));
+    } catch (_) {
+      throw ApiException(0, 'NETWORK', "Couldn't upload. Check your internet.");
+    }
+    Map<String, dynamic> d = {};
+    try {
+      d = jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (_) {}
+    if (r.statusCode >= 400) throw ApiException(r.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+    unawaited(addUsage(sent: bytes.length));
+    return d['etag'] as String;
+  }
+
+  /// Big files: bytes [offset, offset+length) of a stored file.
+  Future<List<int>> getRange(String id, int offset, int length) async {
+    final req = http.Request('GET', Uri.parse('$kApiBase/v1/media/$id'))..headers['range'] = 'bytes=$offset-${offset + length - 1}';
+    if (_token != null) req.headers['authorization'] = 'Bearer $_token';
+    http.Response r;
+    try {
+      r = await http.Response.fromStream(await _http.send(req).timeout(const Duration(minutes: 4)));
+    } catch (_) {
+      throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
+    }
+    if (r.statusCode >= 400) {
+      Map<String, dynamic> d = {};
+      try {
+        d = jsonDecode(r.body) as Map<String, dynamic>;
+      } catch (_) {}
+      throw ApiException(r.statusCode, (d['error'] as String?) ?? 'ERROR', _friendly(d));
+    }
+    unawaited(addUsage(received: r.bodyBytes.length));
+    return r.bodyBytes;
+  }
+
   /// Authenticated JSON call, used by the messenger.
   Future<Map<String, dynamic>> request(String method, String path, [Object? body]) => _call(method, path, body);
 
