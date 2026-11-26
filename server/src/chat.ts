@@ -255,7 +255,7 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     const token = String(b.token ?? '');
     if (token.length < 20 || token.length > 4096) throw new HttpError(400, 'BAD_TOKEN');
     await env.DB.prepare(
-      'INSERT INTO push_tokens (token, user_id, session_id, updated_at) VALUES (?,?,?,?) ON CONFLICT(token) DO UPDATE SET user_id = excluded.user_id, session_id = excluded.session_id, updated_at = excluded.updated_at',
+      'INSERT INTO push_tokens (token, user_id, session_id, updated_at) VALUES (?,?,?,?) ON CONFLICT(token, user_id) DO UPDATE SET session_id = excluded.session_id, updated_at = excluded.updated_at',
     )
       .bind(token, me.id, sessionId, now())
       .run();

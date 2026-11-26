@@ -76,7 +76,7 @@ export async function notify(env: Env, userId: string, title: string, body: stri
       body: JSON.stringify({
         message: {
           token,
-          data: { ...data, title, preview: body },
+          data: { ...data, acct: userId, title, preview: body },
           android: { priority: 'HIGH', ttl: '2419200s' },
         },
       }),

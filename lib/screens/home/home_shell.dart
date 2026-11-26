@@ -15,6 +15,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'calls_tab.dart';
 import '../../data/birthdays.dart';
+import '../../data/accounts.dart';
 import '../settings/birthdays_screen.dart';
 import '../settings/qr_screen.dart';
 import 'chats_tab.dart';
@@ -60,7 +61,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         if (cb != null) _callBack(cb.peer, cb.video);
         unawaited(CallService.instance.syncRecent());
       unawaited(Birthdays.instance.sync());
+      unawaited(Accounts.instance.refresh());
         unawaited(_birthdays());
+        unawaited(Accounts.instance.refresh());
         final call = Notifier.instance.pendingCall;
         if (call != null) {
           Notifier.instance.pendingCall = null;
@@ -94,6 +97,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   Future<void> _openFromNotification(String id) async {
     Notifier.instance.pendingChat = null;
+    if (id.startsWith('acct:')) {
+      final parts = id.split(':');
+      if (parts.length >= 2 && parts[1] != Api.instance.userId) {
+        await Accounts.instance.switchTo(parts[1]);
+        return;
+      }
+      id = parts.length >= 3 ? parts.sublist(2).join(':') : '';
+    }
     final chat = id.startsWith('u:') ? await Messenger.instance.chatForUser(id.substring(2)) : Messenger.instance.chatById(id);
     if (chat == null || !mounted) return;
     AppState.instance.openChat(chat);

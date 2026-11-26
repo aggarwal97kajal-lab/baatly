@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/accounts.dart';
 
 import '../../config.dart';
 import '../../data/api.dart';
@@ -12,6 +13,7 @@ import 'privacy_screen.dart';
 import '../chat/starred_screen.dart';
 import 'profile_photo.dart';
 import 'qr_screen.dart';
+import 'accounts_ui.dart';
 import '../../widgets/photo_viewer.dart';
 import 'wallpaper_screen.dart';
 import 'more_settings.dart';
@@ -89,6 +91,10 @@ class YouTab extends StatelessWidget {
                 ),
               ]),
               const SizedBox(height: 12),
+              if (kHasBackend && Api.instance.loggedIn) ...[
+                const _Group(children: [AccountsSection()]),
+                const SizedBox(height: 12),
+              ],
               _Group(children: [
                 _row(context, Icons.key_rounded, 'Account', trailing: s.phone.isEmpty ? null : s.phone, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen()))),
                 _row(context, Icons.lock_outline_rounded, 'Privacy', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrivacyScreen()))),
@@ -121,6 +127,7 @@ class YouTab extends StatelessWidget {
                 _row(context, Icons.logout_rounded, 'Log out', onTap: () async {
                   await Api.instance.logout();
                   await AppState.instance.resetDemo();
+                  if (await Accounts.instance.afterLogout()) return;
                   if (!context.mounted) return;
                   Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SplashScreen()), (_) => false);
                 }),

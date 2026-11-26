@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'accounts.dart';
 import 'e2e.dart';
 
 /// Runs when a push arrives while BAATLY is closed or in the background.
@@ -270,6 +271,17 @@ class Notifier {
 
   /// Decrypts the pushed message on this phone and shows it.
   Future<void> showFromPush(Map<String, dynamic> data) async {
+    final acct = data['acct'] as String?;
+    if (acct != null) {
+      try {
+        await Api.instance.load();
+        final active = Api.instance.userId;
+        if (active != null && acct != active) {
+          await _showForOtherAccount(acct, data);
+          return;
+        }
+      } catch (_) {}
+    }
     if (data['type'] == 'reminder' && (data['msgId'] as String? ?? '').startsWith('bday:')) {
       final uid = (data['msgId'] as String).substring(5);
       var name = 'Someone';
@@ -397,7 +409,69 @@ class Notifier {
     await _show(chat, title, text, {'chat': chat, 'from': from, if (group != null) 'group': group, 'msgId': data['msgId'] ?? ''});
   }
 
-  Future<void> _show(String chat, String title, String line, Map<String, dynamic> payload) async {
+  /// A push for the account that isn't open on this phone: decrypt with that
+  /// account's key, label it, and tapping switches to that account.
+  Future<void> _showForOtherAccount(String acct, Map<String, dynamic> data) async {
+    final label = await Accounts.labelFor(acct);
+    if (label == null) return; // that account isn't on this phone any more
+    final type = data['type'] as String?;
+    final chat = data['chat'] as String? ?? data['rchat'] as String? ?? '';
+    var title = data['title'] as String? ?? 'BAATLY';
+    String text;
+    if (type == 'call') {
+      text = data['video'] == '1' ? 'Incoming video call · switch account to answer' : 'Incoming voice call · switch account to answer';
+    } else if (type == 'missed_call') {
+      text = data['video'] == '1' ? 'Missed video call' : 'Missed voice call';
+    } else if (type == 'reminder') {
+      final isBday = (data['msgId'] as String? ?? '').startsWith('bday:');
+      title = isBday ? '🎂 Birthday today' : '⏰ Reminder';
+      text = isBday ? 'Send them a wish' : 'Tap to see the message';
+    } else if (type == 'msg') {
+      text = data['preview'] as String? ?? 'New message';
+      final from = data['from'] as String? ?? '';
+      final group = data['group'] as String?;
+      try {
+        final body = data['body'] as String? ?? '';
+        final local = await _localData(acct);
+        var locked = false;
+        for (final c in (local['chats'] as List? ?? [])) {
+          final m = (c as Map).cast<String, dynamic>();
+          if ((m['peer'] == chat || m['gid'] == chat) && m['lk'] == true) locked = true;
+        }
+        final peers = (local['peers'] as Map?)?.cast<String, dynamic>() ?? {};
+        final peer = (peers[from] as Map?)?.cast<String, dynamic>();
+        if (locked) {
+          title = 'BAATLY';
+          text = 'New message';
+        } else if (body.isNotEmpty) {
+          var key = peer?['key'] as String?;
+          if (key == null) {
+            final d = await Api.instance.request('GET', '/v1/users/$from');
+            key = (d['user'] as Map)['x25519'] as String?;
+          }
+          if (key != null) {
+            final e = E2E.detached();
+            await e.load(acct);
+            final plain = await e.open(body, key);
+            if (const ['del', 'opened', 'vote', 'pin', 'unpin', 'live', 'edit', 'cl', 'hs'].any(plain.containsKey)) return;
+            text = _preview(plain);
+          }
+          final name = (peer?['name'] as String?)?.isNotEmpty == true ? peer!['name'] as String : (data['sender'] as String? ?? title);
+          if (group != null) {
+            text = '$name: $text';
+          } else if (name.isNotEmpty) {
+            title = name;
+          }
+        }
+      } catch (_) {}
+    } else {
+      return;
+    }
+    await Accounts.bumpUnread(acct);
+    await _show('acct_${acct}_$chat', title, text, {'chat': 'acct:$acct:$chat', 'msgId': data['msgId'] ?? ''}, actions: false, sub: label);
+  }
+
+  Future<void> _show(String chat, String title, String line, Map<String, dynamic> payload, {bool actions = true, String? sub}) async {
     await init();
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -418,7 +492,8 @@ class Notifier {
       priority: Priority.high,
       category: AndroidNotificationCategory.message,
       styleInformation: InboxStyleInformation(lines, contentTitle: title, summaryText: lines.length > 1 ? '${lines.length} new messages' : null),
-      actions: const [
+      subText: sub,
+      actions: !actions ? null : const [
         AndroidNotificationAction('reply', 'Reply', inputs: [AndroidNotificationActionInput(label: 'Message')], showsUserInterface: false, cancelNotification: false),
         AndroidNotificationAction('read', 'Mark as read', showsUserInterface: false),
       ],

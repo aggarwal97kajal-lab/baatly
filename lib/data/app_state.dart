@@ -270,7 +270,7 @@ class AppState extends ChangeNotifier {
       hdPhotos = p.getBool('hdPhotos') ?? false;
       try {
         final xj = p.getString('extras');
-        if (xj != null) _applyExtras(jsonDecode(xj) as Map<String, dynamic>);
+        _applyExtras(xj == null ? <String, dynamic>{} : jsonDecode(xj) as Map<String, dynamic>);
       } catch (_) {}
     } catch (_) {
       // Storage unavailable (e.g. tests): fall back to defaults.

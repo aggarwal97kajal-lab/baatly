@@ -29,9 +29,10 @@ class Birthdays {
   Birthdays._();
   static final Birthdays instance = Birthdays._();
 
-  static const _schedKey = 'bd_sched';
+  static const _schedKey = 'bd_sched';  // per account (kept with that account's settings)
   bool _syncing = false;
   DateTime? _lastSync;
+  String? _syncedFor;
 
   /// 'MM-DD' -> next local midnight of that day (today counts).
   static DateTime nextOf(String mmdd) {
@@ -119,7 +120,7 @@ class Birthdays {
   /// 12:00 am reminders for the next 30 days. Cheap; runs at most every 6 hours.
   Future<void> sync({bool force = false}) async {
     if (_syncing || !kHasBackend || !Api.instance.loggedIn) return;
-    if (!force && _lastSync != null && DateTime.now().difference(_lastSync!).inHours < 6) return;
+    if (!force && _syncedFor == Api.instance.userId && _lastSync != null && DateTime.now().difference(_lastSync!).inHours < 6) return;
     _syncing = true;
     try {
       final s = AppState.instance;
@@ -138,6 +139,7 @@ class Birthdays {
       }
       await _schedule();
       _lastSync = DateTime.now();
+      _syncedFor = Api.instance.userId;
     } finally {
       _syncing = false;
     }

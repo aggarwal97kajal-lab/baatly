@@ -3,6 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 import '../config.dart';
 import 'api.dart';
+import 'accounts.dart';
 import 'notifier.dart';
 
 /// Push notifications (Firebase Cloud Messaging).
@@ -24,6 +25,13 @@ class Push {
         await Firebase.initializeApp();
         _ready = true;
         FirebaseMessaging.instance.onTokenRefresh.listen(_upload);
+        // While BAATLY is open, pushes for the *other* account on this phone still need showing.
+        FirebaseMessaging.onMessage.listen((m) async {
+          final acct = m.data['acct'];
+          if (acct == null || acct == Api.instance.userId) return;
+          await Notifier.instance.showFromPush(m.data);
+          await Accounts.instance.refresh();
+        });
         await Notifier.instance.init();
       }
       final fm = FirebaseMessaging.instance;

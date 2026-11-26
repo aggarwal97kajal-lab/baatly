@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/accounts.dart';
 import 'package:flutter/services.dart';
 
 import '../../config.dart';
@@ -116,7 +117,14 @@ class _PhoneScreenState extends State<PhoneScreen> {
     final bc = context.bc;
     final flag = _countries.firstWhere((c) => c.$3 == _code).$1;
     return Scaffold(
-      appBar: AppBar(backgroundColor: bc.bg),
+      appBar: AppBar(
+        backgroundColor: bc.bg,
+        automaticallyImplyLeading: false,
+        leading: Accounts.instance.adding
+            ? IconButton(tooltip: 'Cancel', icon: const Icon(Icons.close_rounded), onPressed: () => Accounts.instance.cancelAdd())
+            : null,
+        title: Accounts.instance.adding ? const Text('Add account') : null,
+      ),
       backgroundColor: bc.bg,
       body: SafeArea(
         child: ListView(

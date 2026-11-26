@@ -294,6 +294,22 @@ class Api {
     return d['available'] == true;
   }
 
+  /// Two accounts on one phone: make a saved session the active one.
+  Future<void> adoptSession(String token, String userId) async {
+    await _setToken(token);
+    await rememberUserId(userId);
+  }
+
+  /// Leave this session logged in on the server (it's kept for switching back)
+  /// but drop it from this phone's active slot.
+  Future<void> dropLocalSession() async {
+    await _setToken(null);
+    _userId = null;
+    try {
+      await _storage.delete(key: _userIdKey);
+    } catch (_) {}
+  }
+
   Future<void> logout() async {
     try {
       if (_token != null) await _call('POST', '/v1/auth/logout');

@@ -3,6 +3,7 @@ import '../settings/you_tab.dart';
 import '../settings/busy_mode.dart';
 import '../settings/birthdays_screen.dart';
 import '../settings/qr_screen.dart';
+import '../settings/accounts_ui.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../data/app_state.dart';
@@ -93,6 +94,7 @@ class _ChatsTabState extends State<ChatsTab> {
                       onPressed: () => cameraToChats(context),
                       icon: Icon(Icons.photo_camera_outlined, color: bc.text),
                     ),
+                    const AccountSwitchButton(),
                     PopupMenuButton<String>(
                       icon: Icon(Icons.more_vert_rounded, color: bc.text),
                       onSelected: (v) async {

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../data/accounts.dart';
 
 import 'two_step.dart';
 import 'package:path_provider/path_provider.dart';
@@ -806,6 +807,7 @@ class AccountScreen extends StatelessWidget {
     try {
       await Api.instance.deleteAccount();
       await AppState.instance.resetDemo();
+      if (await Accounts.instance.afterLogout()) return;
       if (!context.mounted) return;
       Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SplashScreen()), (_) => false);
     } catch (e) {
