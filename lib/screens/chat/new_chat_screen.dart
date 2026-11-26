@@ -49,7 +49,7 @@ class NewChatScreen extends StatelessWidget {
         const SectionLabel('Contacts on BAATLY'),
         for (final c in existing)
           ListTile(
-            leading: Avatar(initials: c.initials, colorIndex: c.colorIndex, size: 44),
+            leading: Avatar(initials: c.initials, colorIndex: c.colorIndex, photo: c.photo, size: 44),
             title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text(c.about, maxLines: 1, overflow: TextOverflow.ellipsis),
             onTap: () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ChatScreen(chat: c))),
@@ -249,7 +249,7 @@ class _RealNewChatScreenState extends State<RealNewChatScreen> {
       if (on.isNotEmpty) const SectionLabel('Contacts on BAATLY'),
       for (final c in on)
         ListTile(
-          leading: Avatar(initials: Messenger.initialsOf(c.name), colorIndex: c.userId.codeUnits.fold<int>(0, (a, b) => a + b) % 7, size: 44),
+          leading: Avatar(initials: Messenger.initialsOf(c.name), colorIndex: c.userId.codeUnits.fold<int>(0, (a, b) => a + b) % 7, photo: Messenger.instance.chatById(c.userId)?.photo, size: 44),
           title: Text(c.name, style: bold),
           subtitle: Text(c.about.isEmpty ? ContactBook.pretty(c.phone) : c.about, maxLines: 1, overflow: TextOverflow.ellipsis),
           onTap: () => _open(c),

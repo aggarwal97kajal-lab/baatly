@@ -170,7 +170,7 @@ class CallsTab extends StatelessWidget {
           for (final c in calls)
             ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 22),
-              leading: Avatar(initials: c.initials, colorIndex: c.colorIndex, size: 46),
+              leading: Avatar(initials: c.initials, colorIndex: c.colorIndex, photo: _photoOf(c.peerId), size: 46),
               title: Text(c.name, style: TextStyle(fontWeight: FontWeight.w700, color: c.kind == CallKind.missed ? Mitti.error : bc.text)),
               subtitle: Row(children: [
                 Icon(
@@ -290,7 +290,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> with SingleTickerProvid
                 ),
               child!,
             ]),
-            child: Avatar(initials: widget.log.initials, colorIndex: widget.log.colorIndex, size: 140),
+            child: Avatar(initials: widget.log.initials, colorIndex: widget.log.colorIndex, photo: _photoOf(widget.log.peerId), size: 140),
           ),
           const SizedBox(height: 40),
           Text(widget.log.name, style: const TextStyle(color: cream, fontSize: 26, fontWeight: FontWeight.w700)),
@@ -325,3 +325,6 @@ class _CallDemoScreenState extends State<CallDemoScreen> with SingleTickerProvid
     );
   }
 }
+
+/// Call logs don't keep photos: take the current one from that person's chat.
+String? _photoOf(String? peerId) => peerId == null ? null : Messenger.instance.chatById(peerId)?.photo;
