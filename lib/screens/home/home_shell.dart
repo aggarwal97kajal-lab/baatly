@@ -17,7 +17,6 @@ import 'calls_tab.dart';
 import 'chats_tab.dart';
 import 'community_tab.dart';
 import 'status_tab.dart';
-import '../settings/you_tab.dart';
 import '../settings/chats_settings.dart';
 
 class HomeShell extends StatefulWidget {
@@ -106,7 +105,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     (Icons.blur_circular_outlined, Icons.blur_circular_rounded, 'Updates'),
     (Icons.call_outlined, Icons.call_rounded, 'Calls'),
     (Icons.groups_outlined, Icons.groups_rounded, 'Community'),
-    (Icons.person_outline_rounded, Icons.person_rounded, 'You'),
   ];
 
   StreamSubscription<Uri>? _links;
@@ -136,7 +134,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final bc = context.bc;
-    const pages = [ChatsTab(), StatusTab(), CallsTab(), CommunityTab(), YouTab()];
+    const pages = [ChatsTab(), StatusTab(), CallsTab(), CommunityTab()];
     // Back button on any other tab goes to Chats first; on Chats it leaves the app.
     return PopScope(
       canPop: _tab == 0,

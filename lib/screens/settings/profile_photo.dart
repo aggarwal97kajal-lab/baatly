@@ -12,6 +12,7 @@ import '../../data/messenger.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../theme/palettes.dart';
+import '../../widgets/photo_viewer.dart';
 
 /// Take / choose / remove the profile photo (square crop, uploaded small).
 Future<void> changeProfilePhoto(BuildContext context) async {
@@ -25,6 +26,12 @@ Future<void> changeProfilePhoto(BuildContext context) async {
           padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
           child: Align(alignment: Alignment.centerLeft, child: Text('Profile photo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
         ),
+        if (s.myPhoto != null)
+          ListTile(
+            leading: Icon(Icons.visibility_outlined, color: ctx.primary),
+            title: const Text('View photo'),
+            onTap: () => Navigator.pop(ctx, 'view'),
+          ),
         ListTile(
           leading: Icon(Icons.photo_camera_outlined, color: ctx.primary),
           title: const Text('Camera'),
@@ -46,6 +53,10 @@ Future<void> changeProfilePhoto(BuildContext context) async {
     ),
   );
   if (choice == null || !context.mounted) return;
+  if (choice == 'view') {
+    PhotoViewerScreen.open(context, s.myPhoto, 'You');
+    return;
+  }
   final online = kHasBackend && Api.instance.loggedIn;
   void toast(String t) {
     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));

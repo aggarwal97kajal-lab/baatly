@@ -22,15 +22,13 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
   bool _hasPin = false;
   bool _pinMode = false;
   String? _pinError;
+  DateTime? _justUnlocked;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    AppPin.isSet().then((v) {
-      if (mounted) setState(() => _hasPin = v);
-    });
-    if (_locked) WidgetsBinding.instance.addPostFrameCallback((_) => _unlock());
+    if (_locked) _startLock();
   }
 
   @override
@@ -39,20 +37,48 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  /// When a BAATLY PIN is set, the PIN pad opens straight away (fingerprint is one tap away).
+  /// Without a PIN the fingerprint prompt opens on its own.
+  Future<void> _startLock() async {
+    final has = await AppPin.isSet();
+    if (!mounted) return;
+    setState(() {
+      _hasPin = has;
+      _pinMode = has;
+      _pinError = null;
+    });
+    if (!has) WidgetsBinding.instance.addPostFrameCallback((_) => _unlock());
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
     if (!AppState.instance.appLock) return;
-    if (s == AppLifecycleState.paused) _away = DateTime.now();
-    if (s == AppLifecycleState.resumed && _away != null && DateTime.now().difference(_away!).inSeconds > 30 && !_asking) {
-      setState(() {
-        _locked = true;
-        _pinMode = false;
-      });
-      AppPin.isSet().then((v) {
-        if (mounted) setState(() => _hasPin = v);
-      });
-      _unlock();
+    // The fingerprint / screen-lock prompt itself pauses and resumes the app on many phones.
+    // Those events must not lock again, or the prompt keeps coming back.
+    if (_asking || _locked) return;
+    if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
+      _away ??= DateTime.now();
+    } else if (s == AppLifecycleState.resumed) {
+      final away = _away;
+      _away = null;
+      if (away == null) return;
+      if (_justUnlocked != null && DateTime.now().difference(_justUnlocked!).inSeconds < 5) return;
+      if (DateTime.now().difference(away).inSeconds >= 30) {
+        setState(() => _locked = true);
+        _startLock();
+      }
     }
+  }
+
+  void _open() {
+    if (!mounted) return;
+    _justUnlocked = DateTime.now();
+    _away = null;
+    setState(() {
+      _locked = false;
+      _pinMode = false;
+      _pinError = null;
+    });
   }
 
   Future<void> _unlock() async {
@@ -61,12 +87,17 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
     try {
       final ok = await LocalAuthentication().authenticate(
         localizedReason: 'Unlock BAATLY',
-        options: const AuthenticationOptions(biometricOnly: false, stickyAuth: true),
+        // stickyAuth restarts the prompt every time the app resumes, which loops on some phones.
+        options: const AuthenticationOptions(biometricOnly: false, stickyAuth: false),
       );
-      if (ok && mounted) setState(() => _locked = false);
+      if (ok) _open();
     } catch (_) {
-      // No lock set on the phone: don't trap the user.
-      if (mounted) setState(() => _locked = false);
+      // No lock set on the phone: fall back to the PIN if there is one, otherwise don't trap the user.
+      if (_hasPin) {
+        if (mounted) setState(() => _pinMode = true);
+      } else {
+        _open();
+      }
     } finally {
       _asking = false;
     }
@@ -95,7 +126,7 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
                       ),
                       onDone: (pin) async {
                         if (await AppPin.check(pin)) {
-                          if (mounted) setState(() => _locked = false);
+                          _open();
                         } else if (mounted) {
                           setState(() => _pinError = 'Wrong PIN');
                         }

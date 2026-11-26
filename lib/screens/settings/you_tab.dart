@@ -11,12 +11,21 @@ import 'appearance_screen.dart';
 import 'privacy_screen.dart';
 import '../chat/starred_screen.dart';
 import 'profile_photo.dart';
+import '../../widgets/photo_viewer.dart';
 import 'wallpaper_screen.dart';
 import 'more_settings.dart';
 import 'chats_settings.dart';
 
+/// Settings (opened from the ⋮ menu on Chats). Same content as the old "You" tab.
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => const YouTab(asPage: true);
+}
+
 class YouTab extends StatelessWidget {
-  const YouTab({super.key});
+  final bool asPage;
+  const YouTab({super.key, this.asPage = false});
 
   @override
   Widget build(BuildContext context) {
@@ -32,25 +41,38 @@ class YouTab extends StatelessWidget {
           backgroundColor: bc.bg,
           body: SafeArea(
             child: ListView(padding: const EdgeInsets.symmetric(horizontal: 14), children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 18, 10, 12),
-                child: Text('You', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
-              ),
+              if (asPage)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 8, 10, 10),
+                  child: Row(children: [
+                    IconButton(onPressed: () => Navigator.of(context).maybePop(), icon: Icon(Icons.arrow_back_rounded, color: bc.text)),
+                    const SizedBox(width: 4),
+                    Text('Settings', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: bc.text)),
+                  ]),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 18, 10, 12),
+                  child: Text('You', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: bc.text)),
+                ),
               _Group(children: [
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   leading: GestureDetector(
-                    onTap: () => changeProfilePhoto(context),
+                    onTap: () => s.myPhoto != null ? PhotoViewerScreen.open(context, s.myPhoto, name) : changeProfilePhoto(context),
                     child: Stack(clipBehavior: Clip.none, children: [
                       Avatar(initials: ini, colorIndex: 2, size: 56, photo: s.myPhoto),
                       Positioned(
                         right: -2,
                         bottom: -2,
-                        child: Container(
+                        child: GestureDetector(
+                          onTap: () => changeProfilePhoto(context),
+                          child: Container(
                           width: 22,
                           height: 22,
                           decoration: BoxDecoration(color: context.primary, shape: BoxShape.circle, border: Border.all(color: bc.surface, width: 2)),
                           child: const Icon(Icons.photo_camera_rounded, size: 12, color: Colors.white),
+                        ),
                         ),
                       ),
                     ]),

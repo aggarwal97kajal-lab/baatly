@@ -525,7 +525,7 @@ async function route(c: Ctx): Promise<Response> {
     const r = await statusRoute(c, user, m, p);
     if (r) return r;
   }
-  if (/^\/v1\/(keys|contacts|users|messages|receipts|typing|inbox|ws|push)(\/|$)/.test(p) || /^\/v1\/(me\/(photo|privacy)|mutes)$/.test(p)) {
+  if (/^\/v1\/(keys|contacts|users|messages|receipts|typing|inbox|ws|push|scheduled|reminders)(\/|$)/.test(p) || /^\/v1\/(me\/(photo|privacy)|mutes)$/.test(p)) {
     const { user, sessionId } = await requireUser(c);
     const r = await chatRoute(c, user, m, p, sessionId);
     if (r) return r;

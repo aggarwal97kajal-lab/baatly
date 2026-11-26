@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../settings/you_tab.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../data/app_state.dart';
@@ -94,6 +95,8 @@ class _ChatsTabState extends State<ChatsTab> {
                       onSelected: (v) async {
                         if (v == 'bc') {
                           await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BroadcastEditor()));
+                        } else if (v == 'settings') {
+                          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
                         } else if (v == 'list') {
                           final saved = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ChatListEditor()));
                           if (saved != null && mounted) setState(() => _filter = 4 + s.chatLists.indexOf(saved));
@@ -102,6 +105,7 @@ class _ChatsTabState extends State<ChatsTab> {
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'bc', child: Text('New broadcast')),
                         PopupMenuItem(value: 'list', child: Text('New list')),
+                        PopupMenuItem(value: 'settings', child: Text('Settings')),
                       ],
                     ),
                   ]),
