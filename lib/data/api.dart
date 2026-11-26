@@ -14,6 +14,9 @@ import 'package:passkeys/types.dart';
 
 import '../config.dart';
 
+/// The user tapped ✕ on a file that was sending / downloading.
+class TransferCancelled implements Exception {}
+
 class ApiException implements Exception {
   final int status;
   final String code;
@@ -100,7 +103,7 @@ class Api {
   }
 
   /// Uploads encrypted bytes (with real network progress 0..1); returns the media id.
-  Future<String> upload(List<int> bytes, {void Function(double)? onProgress}) async {
+  Future<String> upload(List<int> bytes, {void Function(double)? onProgress, bool Function()? cancelled}) async {
     final client = _uploader;
     try {
       final req = await client.postUrl(Uri.parse('$kApiBase/v1/media'));
@@ -110,6 +113,10 @@ class Api {
       const chunk = 64 * 1024;
       for (var i = 0; i < bytes.length; i += chunk) {
         final end = i + chunk > bytes.length ? bytes.length : i + chunk;
+        if (cancelled?.call() == true) {
+          req.abort();
+          throw TransferCancelled();
+        }
         req.add(bytes.sublist(i, end));
         await req.flush(); // waits until it's actually sent
         onProgress?.call(end / bytes.length);
@@ -138,7 +145,7 @@ class Api {
     ..idleTimeout = const Duration(seconds: 60);
 
   /// Downloads encrypted media bytes (with progress 0..1).
-  Future<List<int>> download(String id, {void Function(double)? onProgress}) async {
+  Future<List<int>> download(String id, {void Function(double)? onProgress, bool Function()? cancelled}) async {
     final req = http.Request('GET', Uri.parse('$kApiBase/v1/media/$id'));
     if (_token != null) req.headers['authorization'] = 'Bearer $_token';
     http.StreamedResponse r;
@@ -159,9 +166,12 @@ class Api {
     final out = <int>[];
     try {
       await for (final c in r.stream.timeout(const Duration(minutes: 2))) {
+        if (cancelled?.call() == true) throw TransferCancelled();
         out.addAll(c);
         if (total > 0) onProgress?.call(out.length / total);
       }
+    } on TransferCancelled {
+      rethrow;
     } catch (_) {
       throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
     }
@@ -191,7 +201,7 @@ class Api {
   }
 
   /// Same as [putPart], streamed in 64 KB slices so progress moves smoothly.
-  Future<String> putPartStreamed(String id, String upload, int n, List<int> bytes, void Function(int sent) onSent) async {
+  Future<String> putPartStreamed(String id, String upload, int n, List<int> bytes, void Function(int sent) onSent, {bool Function()? cancelled}) async {
     try {
       final req = await _uploader.putUrl(Uri.parse('$kApiBase/v1/media/big/$id/$n?u=${Uri.encodeQueryComponent(upload)}'));
       req.headers.set('content-type', 'application/octet-stream');
@@ -200,6 +210,10 @@ class Api {
       const slice = 64 * 1024;
       for (var i = 0; i < bytes.length; i += slice) {
         final end = i + slice > bytes.length ? bytes.length : i + slice;
+        if (cancelled?.call() == true) {
+          req.abort();
+          throw TransferCancelled();
+        }
         req.add(bytes.sublist(i, end));
         await req.flush().timeout(const Duration(minutes: 2));
         onSent(end);
@@ -215,14 +229,17 @@ class Api {
       return d['etag'] as String;
     } on ApiException {
       rethrow;
+    } on TransferCancelled {
+      rethrow;
     } catch (_) {
+      if (cancelled?.call() == true) throw TransferCancelled();
       onSent(0);
       throw ApiException(0, 'NETWORK', "Couldn't upload. Check your internet.");
     }
   }
 
   /// Same as [getRange], reporting bytes as they arrive.
-  Future<List<int>> getRangeStreamed(String id, int offset, int length, void Function(int got) onGot) async {
+  Future<List<int>> getRangeStreamed(String id, int offset, int length, void Function(int got) onGot, {bool Function()? cancelled}) async {
     final req = http.Request('GET', Uri.parse('$kApiBase/v1/media/$id'))..headers['range'] = 'bytes=$offset-${offset + length - 1}';
     if (_token != null) req.headers['authorization'] = 'Bearer $_token';
     try {
@@ -237,12 +254,15 @@ class Api {
       }
       final out = BytesBuilder(copy: false);
       await for (final c in r.stream.timeout(const Duration(minutes: 2))) {
+        if (cancelled?.call() == true) throw TransferCancelled();
         out.add(c);
         onGot(out.length);
       }
       unawaited(addUsage(received: out.length));
       return out.takeBytes();
     } on ApiException {
+      rethrow;
+    } on TransferCancelled {
       rethrow;
     } catch (_) {
       onGot(0);

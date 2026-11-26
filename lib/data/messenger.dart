@@ -467,7 +467,7 @@ class Messenger {
       }
       if (done.isNotEmpty) await Api.instance.request('POST', '/v1/inbox/ack', {'ids': done});
       for (final c in _s.chats.where((c) => c.isReal).toList()) {
-        for (final m in c.messages.where((m) => m.fromMe && m.status == MsgStatus.sending && !m.busy).toList()) {
+        for (final m in c.messages.where((m) => m.fromMe && m.status == MsgStatus.sending && !m.busy && m.media?['paused'] != true).toList()) {
           // Files go in the background so text messages aren't stuck behind them.
           if (_fileKinds.contains(m.kind)) {
             unawaited(_deliver(c, m));
@@ -968,7 +968,7 @@ class Messenger {
         't': m.text,
         'ts': m.time.millisecondsSinceEpoch,
         if (ttl > 0) 'ttl': ttl,
-        if (m.media != null) 'md': ({...m.media!}..removeWhere((k, _) => const {'orig', 'tr', 'tx', 'sched'}.contains(k))),
+        if (m.media != null) 'md': ({...m.media!}..removeWhere((k, _) => const {'orig', 'tr', 'tx', 'sched', 'paused'}.contains(k))),
       });
       if (!ok) return;
       if (m.status == MsgStatus.sending) m.status = MsgStatus.sent;
@@ -1845,6 +1845,30 @@ class Messenger {
     return m.media!;
   }
 
+  // ------------------------------------------------------------------ cancel / resume file transfers
+  final Set<String> _cancel = {};
+
+  /// ✕ on a file that's sending or downloading.
+  void cancelTransfer(Message m) {
+    if (!m.busy) return;
+    _cancel.add(m.id);
+    if (m.fromMe && m.media?['id'] == null) (m.media ??= {})['paused'] = true;
+    _s.changed();
+  }
+
+  /// ↑ on a file whose sending was cancelled: send it again.
+  void resumeUpload(Message m) {
+    m.media?.remove('paused');
+    _cancel.remove(m.id);
+    for (final c in _s.chats) {
+      if (c.messages.contains(m)) {
+        unawaited(_deliver(c, m));
+        break;
+      }
+    }
+    _s.changed();
+  }
+
   Future<void> _uploadMedia(Message m) async {
     m.busy = true;
     _s.changed();
@@ -1865,7 +1889,7 @@ class Messenger {
         final r = await BigFiles.upload(file.path, onProgress: (p) {
           m.progress = p;
           _s.changed();
-        });
+        }, cancelled: () => _cancel.contains(m.id));
         m.media!.addAll(r);
       } else {
         final bytes = await file.readAsBytes();
@@ -1873,13 +1897,15 @@ class Messenger {
         final id = await Api.instance.upload(blob, onProgress: (p) {
           m.progress = p;
           _s.changed();
-        });
+        }, cancelled: () => _cancel.contains(m.id));
         m.media!['id'] = id;
         m.media!['k'] = base64Encode(key);
         m.media!['size'] = bytes.length;
       }
     } finally {
       m.busy = false;
+      m.progress = null;
+      _cancel.remove(m.id);
       _s.changed();
     }
   }
@@ -1915,6 +1941,7 @@ class Messenger {
     final md = m.media;
     if (m.mediaPath != null && File(m.mediaPath!).existsSync()) return m.mediaPath;
     if (md == null || md['id'] == null || m.busy) return null;
+    _cancel.remove(m.id);
     m.busy = true;
     _s.changed();
     try {
@@ -1926,12 +1953,12 @@ class Messenger {
         await BigFiles.download(md, f, onProgress: (p) {
           m.progress = p;
           _s.changed();
-        });
+        }, cancelled: () => _cancel.contains(m.id));
       } else {
         final blob = await Api.instance.download(md['id'] as String, onProgress: (p) {
           m.progress = p;
           _s.changed();
-        });
+        }, cancelled: () => _cancel.contains(m.id));
         final clear = await E2E.unlockInBackground(blob, base64Decode(md['k'] as String));
         await f.writeAsBytes(clear, flush: true);
       }
@@ -1941,6 +1968,8 @@ class Messenger {
       return null;
     } finally {
       m.busy = false;
+      m.progress = null;
+      _cancel.remove(m.id);
       _s.changed();
     }
   }

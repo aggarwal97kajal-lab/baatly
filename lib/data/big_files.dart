@@ -52,6 +52,8 @@ class BigFiles {
     for (var a = 0; a < 5; a++) {
       try {
         return await f();
+      } on TransferCancelled {
+        rethrow;
       } on ApiException catch (e) {
         last = e;
         if (e.status >= 400 && e.status < 500 && e.status != 408 && e.status != 429) rethrow;
@@ -64,7 +66,8 @@ class BigFiles {
   }
 
   /// Encrypts and uploads [path]. Returns the media fields for the message.
-  static Future<Map<String, dynamic>> upload(String path, {void Function(double)? onProgress}) async {
+  static Future<Map<String, dynamic>> upload(String path, {void Function(double)? onProgress, bool Function()? cancelled}) async {
+    bool stop() => cancelled?.call() == true;
     final file = File(path);
     final size = await file.length();
     if (size > maxSize) throw ApiException(413, 'FILE_TOO_LARGE', 'Files up to 2 GB can be sent.');
@@ -79,20 +82,22 @@ class BigFiles {
     void report() => onProgress?.call(sent.fold<int>(0, (a, b) => a + b) / total);
     final etags = List<String?>.filled(pieces, null);
     var next = 0;
+    var failed = false;
     try {
       Future<void> lane() async {
         final raf = await file.open();
         try {
           while (true) {
             final i = next++;
-            if (i >= pieces) return;
+            if (i >= pieces || failed) return;
+            if (stop()) throw TransferCancelled();
             await raf.setPosition(i * chunk);
             final plain = await raf.read(min(chunk, size - i * chunk));
             final enc = await _enc(plain, key, i);
             etags[i] = await _retry(() => Api.instance.putPartStreamed(id, upload, i + 1, enc, (b) {
                   sent[i] = b;
                   report();
-                }));
+                }, cancelled: stop));
             sent[i] = enc.length;
             report();
           }
@@ -106,6 +111,7 @@ class BigFiles {
       await _retry(() => Api.instance.request('POST', '/v1/media/big/$id/done', {'upload': upload, 'parts': parts}));
       return {'id': id, 'k': _b64(key), 'cv': 2, 'cs': chunk, 'size': size};
     } catch (e) {
+      failed = true;
       try {
         await Api.instance.request('DELETE', '/v1/media/big/$id?u=${Uri.encodeQueryComponent(upload)}');
       } catch (_) {}
@@ -114,7 +120,8 @@ class BigFiles {
   }
 
   /// Downloads + decrypts a big file into [out], piece by piece.
-  static Future<void> download(Map<String, dynamic> md, File out, {void Function(double)? onProgress}) async {
+  static Future<void> download(Map<String, dynamic> md, File out, {void Function(double)? onProgress, bool Function()? cancelled}) async {
+    bool stop() => cancelled?.call() == true;
     final id = md['id'] as String;
     final key = _unb64(md['k'] as String);
     final size = (md['size'] as num).toInt();
@@ -135,6 +142,7 @@ class BigFiles {
       while (failure == null) {
         final i = next++;
         if (i >= pieces) return;
+        if (stop()) throw TransferCancelled();
         // Don't run far ahead of the writer (keeps memory to a few pieces).
         while (i - written >= _lanes * 2 && failure == null) {
           final c = waiters.putIfAbsent(written, () => Completer<void>());
@@ -144,7 +152,7 @@ class BigFiles {
         final blob = await _retry(() => Api.instance.getRangeStreamed(id, i * (cs + _tag), plainLen + _tag, (b) {
               got[i] = b;
               report();
-            }));
+            }, cancelled: stop));
         ready[i] = await _dec(blob, key, i);
         while (ready.containsKey(written)) {
           final w = written;
@@ -165,6 +173,11 @@ class BigFiles {
       rethrow;
     } finally {
       await sink.close();
+      if (written != pieces) {
+        try {
+          await tmp.delete();
+        } catch (_) {}
+      }
     }
     if (written != pieces) throw ApiException(0, 'NETWORK', "Couldn't download. Check your internet.");
     if (await out.exists()) await out.delete();

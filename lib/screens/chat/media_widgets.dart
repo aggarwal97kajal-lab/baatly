@@ -106,14 +106,12 @@ class ImageContent extends StatelessWidget {
                   child: Text('${(m.progress! * 100).round()}%', style: const TextStyle(color: Colors.white, fontSize: 11)),
                 ),
               ),
-            if (!has || m.busy)
+            if (!has || m.busy || m.media?['paused'] == true)
               Center(
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
-                  child: m.busy
-                      ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white, value: m.progress))
-                      : const Icon(Icons.download_rounded, color: Colors.white),
+                  child: TransferIcon(m: m, size: 24),
                 ),
               ),
           ]),
@@ -172,16 +170,15 @@ class DocContent extends StatelessWidget {
                       ? '${MediaFiles.size((size * m.progress!).round())} / ${MediaFiles.size(size)} · ${(m.progress! * 100).round()}%'
                       : m.busy
                           ? 'Preparing…'
-                          : '${size > 0 ? MediaFiles.size(size) : ''}${ext.isEmpty ? '' : ' · $ext'}',
+                          : m.fromMe && m.media?['paused'] == true
+                              ? 'Cancelled · tap ↑ to send'
+                              : '${size > 0 ? MediaFiles.size(size) : ''}${ext.isEmpty ? '' : ' · $ext'}',
                   style: TextStyle(fontSize: 11.5, color: fg.withOpacity(0.75))),
             ]),
           ),
           const SizedBox(width: 6),
-          if (m.busy)
-            Column(mainAxisSize: MainAxisSize.min, children: [
-              SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.2, color: fg, value: m.progress, backgroundColor: fg.withOpacity(0.2))),
-              if (m.progress != null) Text('${(m.progress! * 100).round()}%', style: TextStyle(fontSize: 10, color: fg)),
-            ])
+          if (m.busy || (m.fromMe && m.media?['paused'] == true))
+            TransferIcon(m: m, color: fg, size: 26)
           else if (!has)
             Icon(Icons.download_rounded, color: fg),
         ]),
@@ -287,8 +284,8 @@ class _VoiceContentState extends State<VoiceContent> {
             width: 38,
             height: 38,
             decoration: BoxDecoration(color: widget.accent, shape: BoxShape.circle),
-            child: widget.m.busy
-                ? Padding(padding: const EdgeInsets.all(10), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white, value: widget.m.progress))
+            child: widget.m.busy || (widget.m.fromMe && widget.m.media?['paused'] == true)
+                ? Padding(padding: const EdgeInsets.all(7), child: TransferIcon(m: widget.m, size: 22))
                 : Icon(_on ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white),
           ),
         ),
@@ -462,8 +459,8 @@ class VideoContent extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
-                child: m.busy
-                    ? SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white, value: m.progress))
+                child: m.busy || (m.fromMe && m.media?['paused'] == true)
+                    ? TransferIcon(m: m, size: 26)
                     : Icon(has ? Icons.play_arrow_rounded : Icons.download_rounded, color: Colors.white, size: 30),
               ),
             ),
@@ -540,5 +537,46 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               ]),
             ),
     );
+  }
+}
+
+
+/// While a file is sending or downloading: progress ring with ✕ (tap to cancel).
+/// After a cancelled send: ↑ (tap to send again). Otherwise ↓ (download).
+class TransferIcon extends StatelessWidget {
+  final Message m;
+  final Color color;
+  final double size;
+  final IconData idle;
+  const TransferIcon({super.key, required this.m, this.color = Colors.white, this.size = 26, this.idle = Icons.download_rounded});
+
+  @override
+  Widget build(BuildContext context) {
+    if (m.busy) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Messenger.instance.cancelTransfer(m),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Stack(alignment: Alignment.center, children: [
+            SizedBox(
+              width: size,
+              height: size,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: color, value: m.progress, backgroundColor: color.withOpacity(0.25)),
+            ),
+            Icon(Icons.close_rounded, size: size * 0.55, color: color),
+          ]),
+        ),
+      );
+    }
+    if (m.fromMe && m.media?['paused'] == true) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Messenger.instance.resumeUpload(m),
+        child: Icon(Icons.upload_rounded, size: size + 4, color: color),
+      );
+    }
+    return Icon(idle, size: size + 4, color: color);
   }
 }
