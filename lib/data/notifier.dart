@@ -270,7 +270,10 @@ class Notifier {
   }
 
   /// Decrypts the pushed message on this phone and shows it.
-  Future<void> showFromPush(Map<String, dynamic> data) async {
+  Future<void> showFromPush(Map<String, dynamic> raw) async {
+    // The sender's id arrives as "fromId" ("from" is reserved by Firebase).
+    final data = <String, dynamic>{...raw};
+    if (data['from'] == null && data['fromId'] != null) data['from'] = data['fromId'];
     final acct = data['acct'] as String?;
     if (acct != null) {
       try {

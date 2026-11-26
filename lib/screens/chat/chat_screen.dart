@@ -240,6 +240,8 @@ class _ChatScreenState extends State<ChatScreen> {
         IconButton(tooltip: 'Delete', onPressed: _deleteSelected, icon: const Icon(Icons.delete_outline_rounded)),
         if (ms.any((m) => !m.deleted)) IconButton(tooltip: 'Forward', onPressed: _forwardSelected, icon: const Icon(Icons.shortcut_rounded)),
         PopupMenuButton<String>(
+          // Like WhatsApp: the reactions row goes away when the ⋮ menu opens.
+          onOpened: _hideReactBar,
           onSelected: (v) async {
             switch (v) {
               case 'copy':

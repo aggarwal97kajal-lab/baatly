@@ -185,7 +185,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         },
         children: pages,
       ),
-      extendBody: true,
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(

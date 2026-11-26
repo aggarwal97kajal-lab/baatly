@@ -69,6 +69,10 @@ export async function notify(env: Env, userId: string, title: string, body: stri
   const rows = await env.DB.prepare('SELECT token FROM push_tokens WHERE user_id = ?').bind(userId).all<{ token: string }>();
   if (!rows.results.length) return;
   const at = await accessToken(a);
+  // "from" is a reserved FCM key (the whole push is rejected), so it travels as "fromId".
+  const { from, ...rest } = data;
+  const payload: Record<string, string> = { ...rest, acct: userId, title, preview: body };
+  if (from !== undefined) payload.fromId = String(from);
   for (const { token } of rows.results) {
     const r = await fetch(`https://fcm.googleapis.com/v1/projects/${a.project_id}/messages:send`, {
       method: 'POST',
@@ -76,14 +80,15 @@ export async function notify(env: Env, userId: string, title: string, body: stri
       body: JSON.stringify({
         message: {
           token,
-          data: { ...data, acct: userId, title, preview: body },
+          data: payload,
           android: { priority: 'HIGH', ttl: '2419200s' },
         },
       }),
     });
     if (r.status === 404 || r.status === 400) {
       const t = await r.text();
-      if (/UNREGISTERED|INVALID_ARGUMENT|registration-token-not-registered/i.test(t)) {
+      // Only forget the phone when FCM says the token itself is dead, never for a bad payload.
+      if (/UNREGISTERED|registration-token-not-registered|not a valid FCM registration token/i.test(t)) {
         await env.DB.prepare('DELETE FROM push_tokens WHERE token = ?').bind(token).run();
       } else {
         console.error('FCM send failed', r.status, t.slice(0, 300));
