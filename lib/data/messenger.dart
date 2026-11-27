@@ -198,6 +198,7 @@ class Messenger {
       await E2E.instance.load(uid);
       await _publishKey(uid);
       await _loadLocal(uid);
+      _dropMissingPhotos();
       _s.removeListener(_scheduleSave);
       _s.addListener(_scheduleSave);
       _s.useRealStatuses([], []);
@@ -303,23 +304,59 @@ class Messenger {
     await Api.instance.request('DELETE', '/v1/me/photo');
   }
 
-  /// If my photo is on this phone but not on the server (an upload failed), send it again.
+  /// My photo: on this phone but not on the server -> upload it again;
+  /// on the server but not on this phone (fresh login) -> download it.
   Future<void> _ensureMyPhoto() async {
-    final path = _s.myPhoto;
     final uid = _uid;
-    if (path == null || uid == null) return;
+    if (uid == null) return;
     try {
+      final path = _s.myPhoto;
+      final have = path != null && File(path).existsSync();
       final d = await Api.instance.request('GET', '/v1/users/$uid');
       final ver = ((d['user'] as Map)['photo_ver'] as num?)?.toInt() ?? 0;
-      if (ver == 0 && await File(path).exists()) await uploadMyPhoto(path);
+      if (ver == 0 && have) {
+        await uploadMyPhoto(path!);
+      } else if (ver > 0 && !have) {
+        final r = await Api.instance.request('GET', '/v1/users/$uid/photo');
+        final dir = Directory('${(await getApplicationDocumentsDirectory()).path}/photos');
+        await dir.create(recursive: true);
+        final f = File('${dir.path}/me_$ver.jpg');
+        await f.writeAsBytes(base64Decode(r['photo'] as String), flush: true);
+        _s.myPhoto = f.path;
+        _syncNotesProfile();
+        _s.changed();
+      }
     } catch (_) {}
   }
 
+  /// Photos saved before (old login / restored backup) whose files are gone:
+  /// show initials now, the refresh below downloads them again.
+  void _dropMissingPhotos() {
+    for (final p in _peers.values) {
+      if (p.photo != null && !File(p.photo!).existsSync()) p.photo = null;
+    }
+    for (final c in _s.chats) {
+      if (c.photo != null && !c.isNotes && !File(c.photo!).existsSync()) {
+        c.photo = null;
+        if (c.groupId != null) c.photoVer = 0;
+      }
+    }
+    final mine = _s.myPhoto;
+    if (mine != null && !File(mine).existsSync()) _s.myPhoto = null;
+    _syncNotesProfile();
+  }
+
+  /// Everyone's latest name/about/photo, a few at a time so photos show up fast.
   Future<void> _refreshPeers() async {
-    for (final c in _s.chats.where((c) => c.peerId != null && !c.isNotes).toList()) {
-      try {
-        await _peer(c.peerId!, refresh: true);
-      } catch (_) {}
+    final ids = [for (final c in _s.chats) if (c.peerId != null && !c.isNotes && c.groupId == null) c.peerId!]
+      // Chats without a photo first.
+      ..sort((a, b) => ((_peers[a]?.photo == null) ? 0 : 1).compareTo((_peers[b]?.photo == null) ? 0 : 1));
+    for (var i = 0; i < ids.length; i += 6) {
+      await Future.wait(ids.skip(i).take(6).map((id) async {
+        try {
+          await _peer(id, refresh: true);
+        } catch (_) {}
+      }));
     }
   }
 
@@ -682,7 +719,8 @@ class Messenger {
     }
     _peers[id] = peer;
     final ver = (u['photo_ver'] as int?) ?? 0;
-    if (ver != peer.photoVer || (ver > 0 && peer.photo == null)) await _syncPhoto(peer, ver);
+    final gone = peer.photo != null && !File(peer.photo!).existsSync();
+    if (ver != peer.photoVer || (ver > 0 && (peer.photo == null || gone))) await _syncPhoto(peer, ver);
     return peer;
   }
 
@@ -1667,7 +1705,7 @@ class Messenger {
     chat.members = members;
     chat.admins = admins;
     final pv = (g['photo_ver'] as int?) ?? 0;
-    if (pv > 0 && pv != chat.photoVer) unawaited(_syncGroupPhoto(chat, pv));
+    if (pv > 0 && (pv != chat.photoVer || chat.photo == null || !File(chat.photo!).existsSync())) unawaited(_syncGroupPhoto(chat, pv));
     if (pv == 0 && chat.photo != null) {
       chat.photo = null;
       chat.photoVer = 0;

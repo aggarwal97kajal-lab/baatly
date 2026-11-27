@@ -39,7 +39,14 @@ class Avatar extends StatelessWidget {
                 height: size,
                 fit: BoxFit.cover,
                 cacheWidth: (size * 3).round(),
-                errorBuilder: (_, __, ___) => Container(width: size, height: size, color: c),
+                errorBuilder: (_, __, ___) => Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [c, deep])),
+                  alignment: Alignment.center,
+                  child: Text(initials,
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: size * 0.34, fontFamily: 'Poppins', decoration: TextDecoration.none)),
+                ),
               ),
             )
           else
