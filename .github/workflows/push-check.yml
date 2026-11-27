@@ -29,3 +29,5 @@ jobs:
           sed -i "s/00000000-0000-0000-0000-000000000000/$ID/" wrangler.toml
       - name: Check push
         run: node diag/push_check.mjs
+      - name: Message timing
+        run: npm i --no-save ws@8 && node diag/latency.mjs
