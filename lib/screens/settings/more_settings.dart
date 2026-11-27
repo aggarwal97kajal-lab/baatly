@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import '../../data/accounts.dart';
+import '../../data/messenger.dart';
 
 import 'two_step.dart';
 import 'package:path_provider/path_provider.dart';
@@ -109,6 +110,30 @@ class NotificationsScreen extends StatelessWidget {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text(n == 0 ? "Couldn't reach the server" : 'Sent. A notification should appear in a few seconds${n > 1 ? ' for each account' : ''}.')));
               }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.network_check_rounded),
+            title: const Text('Connection check'),
+            subtitle: const Text('Shows if messages can come and go instantly'),
+            onTap: () async {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Checking…'), duration: Duration(seconds: 2)));
+              final r = await Messenger.instance.connectionCheck();
+              if (!context.mounted) return;
+              String ms(Object? v) => v == null ? 'no answer' : '$v ms';
+              await showDialog<void>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Connection check'),
+                  content: Text([
+                    'Live connection: ${r['live'] == true ? 'connected' : 'not connected'}',
+                    if (r['live'] == true) 'Live reply time: ${ms(r['liveMs'])}',
+                    'Server reply time: ${ms(r['serverMs'])}',
+                    'Server sees you online: ${r['serverSeesOnline'] == true ? 'yes' : 'no'}',
+                  ].join('\n')),
+                  actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+                ),
+              );
             },
           ),
           const SectionLabel('Messages'),

@@ -87,13 +87,58 @@ class Messenger {
 
   /// Network came back / switched (Wi-Fi <-> mobile): reconnect at once.
   void _watchNetwork() {
+    // Android reports "changes" very often (signal, 5G/4G); only act when the
+    // kind of network really changes, and never kill a socket that still answers.
     _net ??= Connectivity().onConnectivityChanged.listen((r) {
-      if (_uid == null || _paused || r.contains(ConnectivityResult.none)) return;
-      _backoff = 1;
-      if (_ws != null) _closeSocket();
-      _retry?.cancel();
-      unawaited(_connect());
+      final key = (r.map((e) => e.name).toList()..sort()).join(',');
+      if (key == _netKey) return;
+      final first = _netKey == null;
+      _netKey = key;
+      if (first || _uid == null || _paused || r.contains(ConnectivityResult.none)) return;
+      if (_ws == null || !_wsReady) {
+        _backoff = 1;
+        _retry?.cancel();
+        unawaited(_connect());
+        return;
+      }
+      // Ask the socket; if it doesn't answer in 4 s it died with the old network.
+      final asked = DateTime.now();
+      try {
+        _ws?.sink.add('ping');
+      } catch (_) {}
+      Timer(const Duration(seconds: 4), () {
+        if (_ws != null && _lastHeard.isBefore(asked)) {
+          _backoff = 1;
+          _dropped();
+        }
+      });
     });
+  }
+
+  String? _netKey;
+
+  /// For Settings > Connection check: is the live connection working, and how fast.
+  Future<Map<String, Object?>> connectionCheck() async {
+    final out = <String, Object?>{'live': _ws != null && _wsReady};
+    if (_ws != null && _wsReady) {
+      final asked = DateTime.now();
+      try {
+        _ws?.sink.add('ping');
+      } catch (_) {}
+      for (var i = 0; i < 50 && !_lastHeard.isAfter(asked); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      out['liveMs'] = _lastHeard.isAfter(asked) ? _lastHeard.difference(asked).inMilliseconds : null;
+    }
+    try {
+      final t = DateTime.now();
+      final d = await Api.instance.request('GET', '/v1/users/$_uid/presence');
+      out['serverMs'] = DateTime.now().difference(t).inMilliseconds;
+      out['serverSeesOnline'] = d['online'] == true;
+    } catch (_) {
+      out['serverMs'] = null;
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------ chat list presence
