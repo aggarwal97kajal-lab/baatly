@@ -448,6 +448,7 @@ class Notifier {
         for (final c in (local['chats'] as List? ?? [])) {
           final m = (c as Map).cast<String, dynamic>();
           if ((m['peer'] == chat || m['gid'] == chat) && m['lk'] == true) locked = true;
+          if ((m['peer'] == chat || m['gid'] == chat) && ((m['mute'] as num?) ?? 0) > DateTime.now().millisecondsSinceEpoch) return; // muted chat
         }
         final peers = (local['peers'] as Map?)?.cast<String, dynamic>() ?? {};
         final peer = (peers[from] as Map?)?.cast<String, dynamic>();

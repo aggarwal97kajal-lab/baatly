@@ -19,6 +19,7 @@ import 'media.dart';
 import 'models.dart';
 import 'push.dart';
 import 'notifier.dart';
+import 'side_link.dart';
 import 'calls.dart';
 import 'group_calls.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -205,6 +206,7 @@ class Messenger {
     }
     _paused = false;
     unawaited(_connect());
+    unawaited(SideLinks.instance.start());
     unawaited(Push.instance.start());
     unawaited(StatusService.instance.refresh());
     unawaited(_pullPrivacy());
@@ -432,6 +434,7 @@ class Messenger {
   Future<void> stop() async {
     _s.removeListener(_scheduleSave);
     await _saveNow();
+    SideLinks.instance.stop();
     _closeSocket();
     _retry?.cancel();
     _uid = null;
@@ -445,6 +448,7 @@ class Messenger {
   void pause() {
     if (CallService.instance.current != null) return; // keep signalling alive during a call
     _paused = true;
+    SideLinks.instance.stop();
     _closeSocket();
     _retry?.cancel();
     unawaited(_saveNow());
@@ -466,6 +470,7 @@ class Messenger {
     }
     _paused = false;
     unawaited(_connect());
+    unawaited(SideLinks.instance.start());
     StatusService.instance.refreshSoon();
   }
 

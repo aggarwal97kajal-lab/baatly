@@ -216,7 +216,7 @@ export async function chatRoute(c: Ctx, me: Me, m: string, p: string, sessionId:
     if (!exists) throw new HttpError(404, 'USER_NOT_FOUND');
     // Blocked: pretend it was sent (like WhatsApp: one tick, never delivered).
     if (isBlocked) return json({ ok: true, at: now() });
-    const ev = await deliver(env, to, { type: 'msg', from: me.id, msgId, body });
+    const ev = await deliver(env, to, { type: 'msg', from: me.id, msgId, body, ...(b.silent ? { silent: true } : {}) });
     if (!b.silent && ev.live === 0 && pushConfigured(env)) {
       const job = (async () => {
         await notify(env, to, me.name || me.phone, 'New message', {

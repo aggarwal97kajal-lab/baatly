@@ -200,7 +200,7 @@ export async function groupRoute(c: Ctx, me: Me, m: string, p: string): Promise<
       Object.entries(b.bodies ?? {})
         .filter(([u, body]) => u !== me.id && members.has(u) && typeof body === 'string' && body.length < 64 * 1024)
         .map(async ([u, body]) => {
-          const ev = await deliver(env, u, { type: 'msg', from: me.id, group: gid, msgId, body });
+          const ev = await deliver(env, u, { type: 'msg', from: me.id, group: gid, msgId, body, ...(b.silent ? { silent: true } : {}) });
           at = ev.at as number;
           if (!b.silent && ev.live === 0 && pushConfigured(env)) {
             bg(
